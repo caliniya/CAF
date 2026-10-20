@@ -13,7 +13,7 @@ func StartLogin(index int32) error {
 		return fmt.Errorf("会话索引不能小于 0")
 	}
 
-	native.processLibrary.Lock()
+	processLibrary.Lock()
 	defer processLibrary.Unlock()
 
 	exports := processLibrary.loaded
