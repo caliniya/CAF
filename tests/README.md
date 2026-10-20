@@ -14,8 +14,13 @@
 | `lagrange_windows_test.go` | 仅 Windows x64；子进程加载 DLL，解析导出，不调用 Initialize/Start |
 | `lagrange_other_test.go` | 其他平台明确拒绝装载，且不创建缓存 |
 | `frontend.test.mjs` | 桌面绑定命名空间、调用、状态、登录错误转发 |
+| `development.test.ps1` | 模拟 7 次开发脚本运行，检查默认/覆盖路径、异常恢复及 VS Code 调试配置；不运行真实 Wails |
 
 从根目录运行 `go test -count=1 ./tests`，或在这里运行 `go test -count=1`。目录中不导入 Wails 窗口包，因此无需 GTK。`test.ps1` 另用 `bindings` 标签对包含窗口入口的整个工程执行 vet。
+
+`test.ps1` 同时运行 PowerShell 开发脚本检查；也可单独运行 `.\tests\development.test.ps1`。
+这类检查把 `go` 替换为测试函数，不启动 GUI 或后台进程，不依赖 Pester。
+实际 VS Code/Delve 断点、WebView2 窗口仍需在 Windows 上验证。
 
 原生资源记录从 `../platforms/desktop/natives/PROVENANCE.json` 读取。测试产生的文件使用临时目录，不修改项目 DLL。Windows 原生加载测试用子进程释放文件锁，不尝试卸载 NativeAOT。
 

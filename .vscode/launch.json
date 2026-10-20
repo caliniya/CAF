@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CAF: Debug (Windows x64)",
+      "type": "go",
+      "request": "launch",
+      "mode": "exec",
+      "program": "${workspaceFolder}/build/bin/CAF-debug.exe",
+      "preLaunchTask": "CAF: Build debug (Windows x64)",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "CAF_DATA_DIR": "${workspaceFolder}/build/dev-data"
+      }
+    }
+  ]
+}

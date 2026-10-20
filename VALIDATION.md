@@ -33,3 +33,14 @@
 - Linux/macOS GUI 没有实机验证，当前环境没有 GTK/WebKit 开发库；其他桌面原生后端未实现。Android 仅目录占位。
 
 build/bin/、build/checks/ 和自动生成的绑定是可再生构建产物，不纳入源码补丁。
+
+## 开发目录与 VS Code 配置增量验证
+
+- Linux x64 使用便携 PowerShell 7.6.7 执行 `test.ps1`：Go 测试、bindings vet、5 个前端测试全部通过。
+- 新增 `tests/development.test.ps1`：模拟 7 次开发运行，覆盖默认目录、绝对/相对环境变量、显式参数优先级、非零退出及异常后的环境/工作目录恢复；不启动实际 Wails GUI 或服务器。
+- PowerShell 脚本语法解析通过；VS Code 配置 JSON 可解析，preLaunchTask 与调试 EXE 路径一致，无旧 workspace Launch Package 覆盖；共享配置可纳入 Git，开发数据及个人编辑器配置保持忽略。
+- 按 `.vscode/tasks.json` 原样执行固定版本 CLI 的 Windows x64 debug 构建，成功生成 `build/bin/CAF-debug.exe`。该文件包含 DWARF 调试节，构建信息确认 `-gcflags="all=-N -l"`，并具有 desktop/production/debug/devtools 标签。
+- 使用全新 CAF_DATA_DIR 进行该构建，绑定生成没有创建应用数据。`go mod verify`、`go mod tidy -diff`、Windows production/debug vet 和 `git diff --check` 通过。
+- 本次没有 Windows/VS Code 图形环境，因此未实际执行 F5/Delve 断点或打开 WebView2；Windows PowerShell 5.1 仅保持兼容语法，实测解释器为 Linux PowerShell 7.6.7。发布版目录策略、原生 DLL 及 Lagrange 子模块没有改变。
+
+`build/dev-data/` 是开发运行数据，不是可任意清理的构建产物；旧根目录 data/ 不会自动迁移或删除。

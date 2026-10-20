@@ -10,7 +10,7 @@ CAF 是 Go 编写的 Agent 框架工程骨架，界面使用 Wails v2.17.0。现
 
 ```powershell
 git submodule update --init --recursive
-.\dev.ps1       # 开发运行，使用项目根目录 data/
+.\dev.ps1       # 开发运行，默认使用 build/dev-data/
 .\build.ps1     # 输出 build/bin/CAF.exe
 .\test.ps1      # Go 测试、vet；有 Node 时也运行前端测试
 ```
@@ -24,6 +24,33 @@ go test -count=1 ./tests
 ```
 
 前端是纯 HTML/CSS/JS，没有 npm 依赖或前端打包步骤。Node 仅用于可选的前端测试。应用不需要 JRE；已有 NativeAOT DLL 不要求另装 .NET 运行时，但 Windows 窗口仍需要 WebView2。
+
+## 开发数据目录与 VS Code
+
+开发数据放在 `build/dev-data/`，不再占用工程根目录的 `data/`；发布版默认路径不变。
+开发脚本按 `-DataDir` 参数 → 已有 `CAF_DATA_DIR` 环境变量 → 默认路径的顺序选择目录。
+脚本中的相对覆盖路径以项目根目录为基准，转换成绝对路径再交给 Wails，避免跟着开发 EXE 的位置变化：
+
+```powershell
+.\dev.ps1 -DataDir 'build/my-dev-data'
+.\dev.ps1 -DataDir 'D:\CAF-data'
+```
+
+脚本退出（包括报错）后会原样恢复环境变量及当前目录。旧 `data/` 不会自动删除或迁移；
+若要保留旧开发数据，请先关闭程序，再把内容迁到新目录。开发数据仍可能包含凭据，不能当作可随意清理的构建产物。
+
+在 VS Code 中打开项目文件夹或 `CAF.code-workspace`，安装官方 Go 扩展（`golang.go`）：
+
+- **F5**：在“运行和调试”选择 `CAF: Debug (Windows x64)`。预启动任务调用固定版本 Wails CLI，使用 `-debug` 构建 `build/bin/CAF-debug.exe`，然后由 Go/Delve 调试器启动；可打 Go 断点。第一次使用按扩展提示安装/更新 `dlv`。
+- **Ctrl+Shift+P → Tasks: Run Task → CAF: Wails dev**：等同 `dev.ps1`，用于 Wails 自动重建/刷新；也可直接在终端执行脚本。它不是 F5 断点调试。
+- 两种方式都默认使用 `build/dev-data/`。修改 F5 目录时，改 `.vscode/launch.json` 的 `env.CAF_DATA_DIR`，建议使用 `${workspaceFolder}` 开头的绝对路径。
+- 不再使用原来的 `Launch Package`、`go run main.go` 或 Code Runner 的“运行当前文件”。这些入口不会自动执行 Wails 构建流程，缺少 Wails 的 build tags；也不会执行 dev.ps1 的目录设置。
+- F5 使用内嵌页面，不提供 dev 模式的热更新；改代码后停止并重新 F5。普通浏览器预览也不等于具备 Go 绑定的 Wails 窗口。
+
+`.vscode/launch.json`、`tasks.json`、`extensions.json` 是共享配置，纳入 Git；其他个人编辑器配置仍忽略。
+调试 EXE 与发布的 `CAF.exe` 分开，开发数据目录也被 Git 忽略，不需要提交。
+这组调试配置面向当前 Windows x64 开发环境，不修改核心平台接口。
+配置方式参考 [Wails IDE 指南](https://wails.io/docs/guides/ides/) 和 [Go 扩展调试文档](https://github.com/golang/vscode-go/wiki/debugging)。
 
 ## 项目结构
 
@@ -69,7 +96,7 @@ scripts/build-native.ps1    可选的 Windows 原生库重编脚本
 
 ## 便携目录与二进制
 
-- 发布版默认将数据写入 EXE 旁的 `data/`；开发脚本使用工程根目录的 `data/`。
+- 发布版默认将数据写入 EXE 旁的 `data/`；开发脚本使用 `build/dev-data/`。
 - `CAF_DATA_DIR` 可覆盖数据目录；相对值始终相对 EXE 目录，而不是启动工作目录。平台解析为绝对路径后再传给核心。
 - Windows DLL 源文件位于 `platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll`，复用已有二进制，不含 PDB。
 - DLL 内嵌 EXE，显式加载时提取到 `data/natives/win-x64/<SHA-256>/`。相同内容复用，升级使用新目录，避免覆盖被锁定的 DLL。
@@ -91,6 +118,7 @@ go test -count=1 ./tests
 go test -race -count=1 ./tests  # 可选；需要对应 C 编译工具链
 go vet -tags bindings ./...
 node --test tests/frontend.test.mjs
+.\tests\development.test.ps1  # 无窗口的开发脚本与 VS Code 配置检查
 ```
 
 `go test ./tests` 不依赖 Wails/GTK；整个工程的无窗口检查使用 `go test -tags bindings ./...`。Linux GUI 仍需 GTK/WebKit 开发库。测试分工和覆盖率命令见 [tests/README.md](tests/README.md)。

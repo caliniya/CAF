@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CAF: Build debug (Windows x64)",
+      "type": "process",
+      "command": "go",
+      "args": [
+        "run",
+        "github.com/wailsapp/wails/v2/cmd/wails@v2.17.0",
+        "build",
+        "-debug",
+        "-platform",
+        "windows/amd64",
+        "-o",
+        "CAF-debug.exe"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "CGO_ENABLED": "0"
+        }
+      },
+      "problemMatcher": "$go",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "CAF: Wails dev",
+      "type": "process",
+      "command": "pwsh",
+      "windows": {
+        "command": "powershell.exe"
+      },
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/dev.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "always"
+      }
+    }
+  ]
+}
