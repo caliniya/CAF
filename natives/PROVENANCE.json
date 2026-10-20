@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/LagrangeDev/Lagrange.Core.git",
+  "commit": "20c2ba079b5ee67156bd71419ed54ea61a24e91f",
+  "runtime": "win-x64",
+  "artifact": "Lagrange.Core.NativeAPI.dll",
+  "bytes": 16261632,
+  "sha256": "2cb457a82c6a002d606502ea322887626bca6cf673ef07c71c76b2bf5b26492c",
+  "compilePatch": "patches/lagrange-nativeapi-net10.patch",
+  "note": "Reused the user-provided NativeAOT DLL from the existing CAF repository; no QQ credentials or PDB included."
+}

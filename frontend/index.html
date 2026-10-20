@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CAF</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <header><span class="mark">CAF</span><span class="badge">Go · Wails</span></header>
+      <h1>从这里开始。</h1>
+      <p class="intro">Agent 框架的桌面工程骨架。先把界面、目录和原生库入口准备好。</p>
+      <section aria-labelledby="status-heading">
+        <h2 id="status-heading">运行状态</h2>
+        <dl id="status"><dt>应用</dt><dd>正在连接 Go 后端…</dd></dl>
+        <div class="actions">
+          <button id="refresh" type="button">刷新状态</button>
+          <button id="load" type="button" disabled>加载 Lagrange 本地库</button>
+        </div>
+        <p id="message" role="status" aria-live="polite"></p>
+      </section>
+      <aside>加载仅解析函数地址，不会创建 QQ 会话或自动登录。Agent、登录和消息收发将在后续实现。</aside>
+    </main>
+    <script type="module" src="/main.mjs"></script>
+  </body>
+</html>

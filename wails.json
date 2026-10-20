@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "CAF",
+  "outputfilename": "CAF",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:install": "",
+  "frontend:dev:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "wailsjsdir": "build/generated",
+  "info": {
+    "companyName": "CAF",
+    "productName": "CAF",
+    "productVersion": "0.1.0",
+    "comments": "CAF Agent Framework"
+  }
+}

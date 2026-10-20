@@ -1,0 +1,88 @@
+diff --git a/Lagrange.Core.NativeAPI/NativeModel/Message/BotGroupMemberStruct.cs b/Lagrange.Core.NativeAPI/NativeModel/Message/BotGroupMemberStruct.cs
+index 57e3076..bb2ca2f 100644
+--- a/Lagrange.Core.NativeAPI/NativeModel/Message/BotGroupMemberStruct.cs
++++ b/Lagrange.Core.NativeAPI/NativeModel/Message/BotGroupMemberStruct.cs
+@@ -49,21 +49,21 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+                 member.GroupLevel,
+                 Encoding.UTF8.GetString(member.MemberCard),
+                 Encoding.UTF8.GetString(member.SpecialTitle),
+-                DateTime.ParseExact(
++                DateTimeOffset.ParseExact(
+                     Encoding.UTF8.GetString(member.JoinTime),
+                     "O",
+                     CultureInfo.InvariantCulture
+-                ),
+-                DateTime.ParseExact(
++                ).ToUnixTimeSeconds(),
++                DateTimeOffset.ParseExact(
+                     Encoding.UTF8.GetString(member.LastMsgTime),
+                     "O",
+                     CultureInfo.InvariantCulture
+-                ),
+-                DateTime.ParseExact(
++                ).ToUnixTimeSeconds(),
++                DateTimeOffset.ParseExact(
+                     Encoding.UTF8.GetString(member.ShutUpTimestamp),
+                     "O",
+                     CultureInfo.InvariantCulture
+-                )
++                ).ToUnixTimeSeconds()
+             );
+         }
+ 
+@@ -81,9 +81,9 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+                 GroupLevel = member.GroupLevel,
+                 MemberCard = Encoding.UTF8.GetBytes(member.MemberCard ?? string.Empty),
+                 SpecialTitle = Encoding.UTF8.GetBytes(member.SpecialTitle ?? string.Empty),
+-                JoinTime = Encoding.UTF8.GetBytes(member.JoinTime.ToString("O")),
+-                LastMsgTime = Encoding.UTF8.GetBytes(member.LastMsgTime.ToString("O")),
+-                ShutUpTimestamp = Encoding.UTF8.GetBytes(member.ShutUpTimestamp.ToString("O"))
++                JoinTime = Encoding.UTF8.GetBytes(DateTimeOffset.FromUnixTimeSeconds(member.JoinTime).UtcDateTime.ToString("O", CultureInfo.InvariantCulture)),
++                LastMsgTime = Encoding.UTF8.GetBytes(DateTimeOffset.FromUnixTimeSeconds(member.LastMsgTime).UtcDateTime.ToString("O", CultureInfo.InvariantCulture)),
++                ShutUpTimestamp = Encoding.UTF8.GetBytes(DateTimeOffset.FromUnixTimeSeconds(member.ShutUpTimestamp).UtcDateTime.ToString("O", CultureInfo.InvariantCulture))
+             };
+         }
+     }
+diff --git a/Lagrange.Core.NativeAPI/NativeModel/Message/BotStrangerStruct.cs b/Lagrange.Core.NativeAPI/NativeModel/Message/BotStrangerStruct.cs
+index 10e933f..38d071e 100644
+--- a/Lagrange.Core.NativeAPI/NativeModel/Message/BotStrangerStruct.cs
++++ b/Lagrange.Core.NativeAPI/NativeModel/Message/BotStrangerStruct.cs
+@@ -18,7 +18,8 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+         public ulong Level = 0;
+         public int Gender = 0;
+         public long RegistrationTime = 0;
+-        public long Birthday = 0;
++        // Keep the C ABI field as int64; reserve a value outside the DateTime range for null.
++        public long Birthday = long.MinValue;
+         public ulong Age = 0;
+         public ByteArrayNative QID = new();
+         public long Source = 0;
+@@ -36,8 +37,8 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+                 Encoding.UTF8.GetString(stranger.Remark),
+                 stranger.Level,
+                 (BotGender)stranger.Gender,
+-                DateTimeOffset.FromUnixTimeSeconds(stranger.RegistrationTime).LocalDateTime,
+-                DateTimeOffset.FromUnixTimeSeconds(stranger.Birthday).LocalDateTime,
++                stranger.RegistrationTime,
++                stranger.Birthday == long.MinValue ? null : stranger.Birthday,
+                 stranger.Age,
+                 Encoding.UTF8.GetString(stranger.QID),
+                 Encoding.UTF8.GetString(stranger.Country),
+@@ -57,8 +58,8 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+                 Remark = Encoding.UTF8.GetBytes(stranger.Remark),
+                 Level = stranger.Level,
+                 Gender = (int)stranger.Gender,
+-                RegistrationTime = new DateTimeOffset(stranger.RegistrationTime).ToUnixTimeSeconds(),
+-                Birthday = new DateTimeOffset(stranger.Birthday ?? new()).ToUnixTimeSeconds(),
++                RegistrationTime = stranger.RegistrationTime,
++                Birthday = stranger.Birthday ?? long.MinValue,
+                 Age = stranger.Age,
+                 QID = Encoding.UTF8.GetBytes(stranger.QID),
+                 Country = Encoding.UTF8.GetBytes(stranger.Country),
+@@ -67,4 +68,4 @@ namespace Lagrange.Core.NativeAPI.NativeModel.Message
+             };
+         }
+     }
+-}
+\ No newline at end of file
++}
