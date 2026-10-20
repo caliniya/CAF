@@ -1,4 +1,4 @@
-module github.com/caliniya/CAF-Go
+module github.com/caliniya/caf
 
 go 1.25.0
 

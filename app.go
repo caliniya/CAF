@@ -6,9 +6,9 @@ import (
 	"os"
 	"sync"
 
-	core "github.com/caliniya/CAF-Go/internal/app"
-	"github.com/caliniya/CAF-Go/internal/lagrange"
-	"github.com/caliniya/CAF-Go/internal/paths"
+	core "github.com/caliniya/caf/internal/app"
+	"github.com/caliniya/caf/internal/lagrange"
+	"github.com/caliniya/caf/internal/paths"
 )
 
 // App is the small Wails binding surface. Business code stays independent of Wails.

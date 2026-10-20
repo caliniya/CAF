@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/caliniya/CAF-Go/natives"
+	"github.com/caliniya/caf/natives"
 )
 
 type Status struct {

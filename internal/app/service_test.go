@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/caliniya/CAF-Go/internal/lagrange"
-	"github.com/caliniya/CAF-Go/internal/paths"
+	"github.com/caliniya/caf/internal/lagrange"
+	"github.com/caliniya/caf/internal/paths"
 )
 
 type fakeNative struct {
