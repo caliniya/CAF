@@ -12,12 +12,15 @@ import (
 
 // These are raw addresses, NOT typed wrappers or a complete login API.
 type nativeExports struct {
-	Initialize     goinvoke.FunctionPointer
-	Start          goinvoke.FunctionPointer
-	Stop           goinvoke.FunctionPointer
-	FreeMemory     goinvoke.FunctionPointer
-	GetQrCodeEvent goinvoke.FunctionPointer
-	GetOnlineEvent goinvoke.FunctionPointer
+	Initialize           goinvoke.FunctionPointer
+	Start                goinvoke.FunctionPointer
+	Stop                 goinvoke.FunctionPointer
+	FreeMemory           goinvoke.FunctionPointer
+	GetQrCodeEvent       goinvoke.FunctionPointer
+	GetOnlineEvent       goinvoke.FunctionPointer
+	CreateMessageBuilder goinvoke.FunctionPointer
+	AddText              goinvoke.FunctionPointer
+	SendGroupMessage     goinvoke.FunctionPointer
 }
 
 var processLibrary struct {

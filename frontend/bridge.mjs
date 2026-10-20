@@ -4,7 +4,7 @@ export function createClient(bindings) {
   if (!backend || typeof backend.GetStatus !== "function" || typeof backend.LoadNativeLibrary !== "function" || typeof backend.BeginLogin !== "function") {
     throw new Error("请通过 Wails 启动 CAF；普通浏览器预览没有 Go 后端。");
   }
-  return {
+  return {                                                        
     status: () => backend.GetStatus(),
     loadNative: () => backend.LoadNativeLibrary(),
     beginLogin: () => backend.BeginLogin(),

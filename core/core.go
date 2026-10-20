@@ -14,7 +14,6 @@ import (
 var Platform *Core
 
 // Core 是唯一的业务协调对象，也直接向 Wails 提供可调用的方法。
-// 平台实现只提供能力，不再通过 desktop.App 或 Service 间接管理核心。
 type Core struct {
 	mu          sync.Mutex
 	paths       platform.Paths

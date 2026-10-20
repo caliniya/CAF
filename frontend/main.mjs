@@ -16,7 +16,7 @@ function render(status) {
     list.append(term, description);
   }
   load.disabled = !status.ready || !status.native?.supported || status.native?.loaded;
-  message.textContent = status.lastError || (status.ready ? "工程已就绪；尚未启动任何 QQ 登录。" : "正在初始化，请稍后刷新状态。");
+  message.textContent = status.lastError || (status.ready ? "就绪" : "正在初始化");
 }
 
 async function update() {
@@ -33,7 +33,7 @@ load.addEventListener("click", async () => {
   message.textContent = "正在释放并加载本地库…";
   try {
     render(await client.loadNative());
-    message.textContent = "本地库加载完成。仅解析导出，没有发起登录。";
+    message.textContent = "本地库加载完成";
   } catch (error) {
     await update();
     message.textContent = errorMessage(error);

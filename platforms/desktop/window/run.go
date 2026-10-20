@@ -1,4 +1,3 @@
-// Package window 只配置桌面窗口，直接绑定核心，不再额外包装 App 或 Service。
 package window
 
 import (
