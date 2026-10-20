@@ -1,11 +1,13 @@
 //go:build windows && amd64
 
-package lagrange
+package tests
 
 import (
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/caliniya/caf/platforms/desktop/native"
 )
 
 // This test runs only on Windows x64. It resolves symbols but never calls Initialize/Start.
@@ -20,7 +22,7 @@ func TestLoadsWindowsNativeExportsWithoutLogin(t *testing.T) {
 		}
 		return
 	}
-	loader := NewLoader()
+	loader := native.NewLoader()
 	state, err := loader.Load(os.Getenv("CAF_NATIVE_TEST_DATA"))
 	if err != nil || !state.Loaded || state.Exports != 6 {
 		t.Fatal("native loading failed", state, err)

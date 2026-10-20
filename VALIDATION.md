@@ -2,26 +2,34 @@
 
 2026-10-20，Linux x64 环境；Go 1.27.3、Wails CLI v2.17.0、Node v18.20.4。
 
-## 已通过
+## 本次已通过
 
-- `go mod verify`：模块校验通过；`go mod tidy -diff` 无变化。
-- `gofmt`：全部 Go 源文件已格式化。
-- `go test -tags bindings -count=1 ./...`：14 个 Go 测试通过。
-- `go test -race -tags bindings -count=1 ./...`：通过。
-- `go vet -tags bindings ./...`：通过。
-- 前端 `.mjs` 文件的 `node --check` 及 `node --test tests/frontend.test.mjs`：4 个测试通过。
-- `wails build -platform windows/amd64`：生成 `build/bin/CAF.exe`；确认为 Windows x64 GUI PE。构建过程成功生成 Go/JS 绑定，未执行 npm 安装或前端打包命令。
-- Windows x64 的 `cmd/nativecheck` 和原生加载测试程序交叉编译通过；`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet -tags production ./...` 通过。
-- 内置 DLL 与旧 CAF 工程的文件 SHA-256 相同；静态检查确认 6 个需要的导出存在，文件不是 Git LFS 占位符。
-- DLL 提取测试覆盖完整内容校验、缓存复用、损坏修复、并发提取，以及带空格/中文的路径。
-- Linux 下实际运行 `cmd/nativecheck`，正确报“未实现该平台”，且没有提取 Windows DLL。
-- 对固定子模块提交的干净导出副本执行 `git apply --check`，NativeAPI 兼容补丁可应用；子模块本身保持干净。
+- `go mod verify`：模块校验通过；`go mod tidy -diff` 无变化，没有新增依赖。
+- 全部自有 Go 文件通过 gofmt；测试集中在 `tests/`，不额外公开私有实现。
+- `go test -count=1 ./tests`：32 个 Go 黑盒测试通过。
+- `go test -tags bindings -count=1 ./...`：整个工程通过无窗口构建/测试。
+- `go test -race -count=1 ./tests`：通过。
+- 业务覆盖率命令见 tests/README.md：本次 Linux 参与构建的目标包语句覆盖率为 88.7%，不代表 Windows 原生装载已实际运行。
+- `go vet -tags bindings ./...` 和 Windows x64 `go vet -tags production ./...` 均通过。
+- 前端文件的 `node --check` 及 `node --test tests/frontend.test.mjs`：5 个测试通过，包括登录未实现错误转发。
+- `go list -deps ./core/...` 检查通过：核心不依赖 desktop、Wails、goinvoke 或原生资源包。
+- Windows x64 的整个测试程序和 cmd/nativecheck 交叉编译通过，确认为 x64 Console PE。
+- `wails build -platform windows/amd64`：成功生成 build/bin/CAF.exe，确认为 Windows x64 GUI PE。
+- 绑定生成时使用全新的 CAF_DATA_DIR，构建后该目录仍不存在：构造与生成绑定没有触发平台初始化或 DLL 提取。
+- 生成的 desktop.App 仅包含 GetStatus / LoadNativeLibrary / BeginLogin；Startup、Shutdown 未作为 JS 业务方法暴露。
+- 桌面后端的真实 BeginLogin 在测试中明确返回 ErrLoginNotImplemented，不创建原生缓存或尝试登录。注入假后端的成功仅用于验证调用路由。
+
+## 已有资源与保留边界
+
+- DLL 从原 natives/win-x64/ 原样移动到 platforms/desktop/natives/win-x64/；内容与 PROVENANCE.json 的 SHA-256 一致，未重新编译，不包含 PDB。
+- 缓存测试仍验证提取内容、路径、损坏修复、复用和并发；NativeAOT 映射不卸载。
+- Lagrange 子模块固定提交未改变，未修改其源码；重编时仍在构建副本上应用补丁。
 
 ## 尚未验证 / 尚未实现
 
-- 当前没有 Windows 运行环境：**没有实际打开 Wails 窗口或执行 Windows DLL 装载测试**。Windows 专用测试已写好，`test.ps1` 会在目标 Windows x64 电脑上运行它。
-- PowerShell 脚本未在 Windows 上执行；`scripts/build-native.ps1` 的 Windows NativeAOT 发布也未运行。本次直接复用已有 DLL，而非重新编译。
-- 没有执行 Initialize/Start；没有 QQ 登录、消息收发、模型接入或 Agent 工具执行测试。这些业务尚未实现，不能把加载成功当作登录成功。
-- 未构建 Linux/macOS GUI；本环境不具备对应 GTK/WebKit 开发库。非 Windows 原生加载及 Android 仅预留结构，没有可运行实现。
+- 没有 Windows 运行环境：没有实际打开窗口或执行 Windows DLL 装载测试。Windows 测试程序已交叉编译，可在目标机用 test.ps1 执行测试。
+- PowerShell 脚本及 Windows NativeAOT 发布没有在 Windows 实机执行。本次复用已有 DLL。
+- QQ 配置结构体封送、真实初始化、登录、二维码/在线事件、消息收发和 Agent 业务均未实现。加载库或 BeginLogin 方法存在不等于登录可用。
+- Linux/macOS GUI 没有实机验证，当前环境没有 GTK/WebKit 开发库；其他桌面原生后端未实现。Android 仅目录占位。
 
-`build/bin/`、`build/checks/` 和生成的 JS 绑定均为可再生构建产物，不纳入初始源码提交。
+build/bin/、build/checks/ 和自动生成的绑定是可再生构建产物，不纳入源码补丁。

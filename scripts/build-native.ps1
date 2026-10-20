@@ -26,9 +26,9 @@ try {
     }
     & dotnet publish (Join-Path $Source 'Lagrange.Core.NativeAPI/Lagrange.Core.NativeAPI.csproj') -c $Configuration -r win-x64 -p:NativeLib=Shared -o $Publish --disable-build-servers
     if ($LASTEXITCODE -ne 0) { throw 'NativeAOT publish failed' }
-    $Destination = Join-Path $Root 'natives/win-x64/Lagrange.Core.NativeAPI.dll'
+    $Destination = Join-Path $Root 'platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll'
     Copy-Item -LiteralPath (Join-Path $Publish 'Lagrange.Core.NativeAPI.dll') -Destination $Destination -Force
-    $MetadataPath = Join-Path $Root 'natives/PROVENANCE.json'
+    $MetadataPath = Join-Path $Root 'platforms/desktop/natives/PROVENANCE.json'
     $Metadata = Get-Content -LiteralPath $MetadataPath -Raw | ConvertFrom-Json
     $Metadata.commit = $Commit.Trim()
     $Metadata.bytes = (Get-Item -LiteralPath $Destination).Length
@@ -36,7 +36,7 @@ try {
     $Metadata.note = 'Built locally from the pinned submodule commit plus patches/*.patch; no PDB is bundled.'
     $Json = $Metadata | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText($MetadataPath, $Json + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host 'Updated natives/win-x64/Lagrange.Core.NativeAPI.dll. Rebuild CAF to embed it.'
+    Write-Host 'Updated platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll. Rebuild CAF to embed it.'
 } finally {
     Pop-Location
 }

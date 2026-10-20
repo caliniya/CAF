@@ -1,6 +1,6 @@
 //go:build !windows || !amd64
 
-package lagrange
+package native
 
 import "errors"
 

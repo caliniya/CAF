@@ -41,7 +41,7 @@ load.addEventListener("click", async () => {
 });
 
 try {
-  client = createClient(window.go?.main?.App);
+  client = createClient(window.go);
   await update();
 } catch (error) {
   refresh.disabled = true;

@@ -2,6 +2,8 @@
 
 CAF 将 AI 对话、工具调用和 QQ 消息接入整合到一个桌面程序。
 
-界面使用 Wails，核心使用 Go，Lagrange NativeAPI 通过 goinvoke 内置调用。界面只调用核心服务，不在页面里直接处理 DLL 地址。
+`core` 定义业务、平台契约和统一 Runtime；`platforms/desktop` 提供目录、原生库和窗口实现，入口负责选择并注入。核心不 import 桌面或 Wails。
 
-当前只做工程骨架和原生库加载入口；Agent、登录和消息业务后续再写。优先 Windows 桌面，Android 暂时占位，数据尽量随程序目录迁移。
+Runtime 持有路径和后端引用，调用方只使用普通 Go 方法。页面经 Wails 门面调用核心，DLL 参数、函数指针和内存处理留在平台实现中。
+
+目前实现工程骨架和原生库装载；登录接口明确返回未实现，Agent、登录和消息业务后续再写。优先 Windows 桌面，Android 仅占位，数据尽量随程序目录迁移。

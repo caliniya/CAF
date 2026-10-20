@@ -1,16 +1,18 @@
 //go:build !windows || !amd64
 
-package lagrange
+package tests
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/caliniya/caf/platforms/desktop/native"
 )
 
 func TestUnsupportedPlatformIsExplicitAndDoesNotExtract(t *testing.T) {
 	data := filepath.Join(t.TempDir(), "not-created")
-	loader := NewLoader()
+	loader := native.NewLoader()
 	state, err := loader.Load(data)
 	if err == nil || state.Supported || state.Loaded {
 		t.Fatal("unsupported platform pretended to load", state, err)
