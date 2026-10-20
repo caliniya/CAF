@@ -1,46 +1,38 @@
-# 验证记录
+# 本次验证记录
 
-2026-10-20，Linux x64 环境；Go 1.27.3、Wails CLI v2.17.0、Node v18.20.4。
+2026-10-20，基于 830e209；Linux x64 环境，Go 1.27.3、Wails CLI v2.17.0、PowerShell 7.6.7、Node v18.20.4。
 
-## 本次已通过
+## 已通过
 
-- `go mod verify`：模块校验通过；`go mod tidy -diff` 无变化，没有新增依赖。
-- 全部自有 Go 文件通过 gofmt；测试集中在 `tests/`，不额外公开私有实现。
-- `go test -count=1 ./tests`：32 个 Go 黑盒测试通过。
-- `go test -tags bindings -count=1 ./...`：整个工程通过无窗口构建/测试。
-- `go test -race -count=1 ./tests`：通过。
-- 业务覆盖率命令见 tests/README.md：本次 Linux 参与构建的目标包语句覆盖率为 88.7%，不代表 Windows 原生装载已实际运行。
-- `go vet -tags bindings ./...` 和 Windows x64 `go vet -tags production ./...` 均通过。
-- 前端文件的 `node --check` 及 `node --test tests/frontend.test.mjs`：5 个测试通过，包括登录未实现错误转发。
-- `go list -deps ./core/...` 检查通过：核心不依赖 desktop、Wails、goinvoke 或原生资源包。
-- Windows x64 的整个测试程序和 cmd/nativecheck 交叉编译通过，确认为 x64 Console PE。
-- `wails build -platform windows/amd64`：成功生成 build/bin/CAF.exe，确认为 Windows x64 GUI PE。
-- 绑定生成时使用全新的 CAF_DATA_DIR，构建后该目录仍不存在：构造与生成绑定没有触发平台初始化或 DLL 提取。
-- 生成的 desktop.App 仅包含 GetStatus / LoadNativeLibrary / BeginLogin；Startup、Shutdown 未作为 JS 业务方法暴露。
-- 桌面后端的真实 BeginLogin 在测试中明确返回 ErrLoginNotImplemented，不创建原生缓存或尝试登录。注入假后端的成功仅用于验证调用路由。
+- test.ps1：36 个 Go 测试、bindings 标签的整个工程 vet、7 次开发脚本模拟及配置检查、5 个前端测试通过。
+- go test -race -count=1 ./tests：通过。
+- go test -tags bindings -count=1 ./...：整个工程的无窗口编译与测试通过。
+- Windows x64 production/debug vet 通过；整个测试程序和 nativecheck 交叉编译通过。
+- go mod verify 和 go mod tidy -diff 通过，没有新增或修改依赖。
+- gofmt、前端 node --check 与 git diff --check 通过。
+- core 的依赖检查通过：不依赖具体平台、Wails、goinvoke 或 DLL 资源包。
+- 目标包覆盖率 87.4%，仅指本次 Linux 参与构建的 core、桌面后端和原生缓存代码，不代表 Windows 装载或登录覆盖率。
+- Wails Windows x64 发布版和按 VS Code 预启动任务执行的 debug 构建通过，分别生成 CAF.exe 与 CAF-debug.exe；调试版包含 DWARF 和 all=-N -l。
+- 实际生成的 JS 指向 window.go.core.Core，页面需要的 GetStatus、LoadNativeLibrary、BeginLogin 均存在；Startup/Shutdown 不作为 JS 方法暴露。
+- 构建使用全新 CAF_DATA_DIR，生成绑定没有初始化平台、创建数据目录、提取 DLL 或尝试登录。
+- 全局引用测试验证 core.Platform、页面方法和调用方使用同一个核心与后端；构造独立测试实例不会自动覆盖全局入口。
+- 实际桌面 BeginLogin 仍明确返回 ErrLoginNotImplemented，不提取 DLL、不创建会话、不假报登录成功；假后端仅验证调用路由。
 
-## 已有资源与保留边界
+原来基线 main.go 的参数/类型错误和登录转发测试失败已修复，不通过删除错误/并发场景掩盖失败。
+旧 Service 与桌面 App 的测试迁为同一 Core 的生命周期、状态、重试、全局入口和上下文测试。
 
-- DLL 从原 natives/win-x64/ 原样移动到 platforms/desktop/natives/win-x64/；内容与 PROVENANCE.json 的 SHA-256 一致，未重新编译，不包含 PDB。
-- 缓存测试仍验证提取内容、路径、损坏修复、复用和并发；NativeAOT 映射不卸载。
-- Lagrange 子模块固定提交未改变，未修改其源码；重编时仍在构建副本上应用补丁。
+## 原生资源未变
 
-## 尚未验证 / 尚未实现
+- Lagrange 子模块仍为 20c2ba079b5ee67156bd71419ed54ea61a24e91f，工作区未修改。
+- DLL 没有移动或重新编译，SHA-256 仍为 2cb457a82c6a002d606502ea322887626bca6cf673ef07c71c76b2bf5b26492c。
+- 不包含 PDB，不调用 Release/FreeLibrary；Windows 库仍只支持当前 win-x64 目标。
 
-- 没有 Windows 运行环境：没有实际打开窗口或执行 Windows DLL 装载测试。Windows 测试程序已交叉编译，可在目标机用 test.ps1 执行测试。
-- PowerShell 脚本及 Windows NativeAOT 发布没有在 Windows 实机执行。本次复用已有 DLL。
-- QQ 配置结构体封送、真实初始化、登录、二维码/在线事件、消息收发和 Agent 业务均未实现。加载库或 BeginLogin 方法存在不等于登录可用。
-- Linux/macOS GUI 没有实机验证，当前环境没有 GTK/WebKit 开发库；其他桌面原生后端未实现。Android 仅目录占位。
+## 未实测与未实现
 
-build/bin/、build/checks/ 和自动生成的绑定是可再生构建产物，不纳入源码补丁。
+- Linux 宿主无法实际运行 Windows GUI、Delve F5 或 Windows DLL；这些检查是交叉编译，不是实机运行。
+- Windows PowerShell 5.1、Windows NativeAOT 重编和 Android 未执行；现有脚本由 Linux PowerShell 7.6.7 回归验证。
+- QQ 参数封送、二维码解析、凭据持久化、登录/消息收发与 Agent 业务没有实现。
+- Linux/macOS 图形后端与其原生库未验证，Android 仍是占位。
 
-## 开发目录与 VS Code 配置增量验证
-
-- Linux x64 使用便携 PowerShell 7.6.7 执行 `test.ps1`：Go 测试、bindings vet、5 个前端测试全部通过。
-- 新增 `tests/development.test.ps1`：模拟 7 次开发运行，覆盖默认目录、绝对/相对环境变量、显式参数优先级、非零退出及异常后的环境/工作目录恢复；不启动实际 Wails GUI 或服务器。
-- PowerShell 脚本语法解析通过；VS Code 配置 JSON 可解析，preLaunchTask 与调试 EXE 路径一致，无旧 workspace Launch Package 覆盖；共享配置可纳入 Git，开发数据及个人编辑器配置保持忽略。
-- 按 `.vscode/tasks.json` 原样执行固定版本 CLI 的 Windows x64 debug 构建，成功生成 `build/bin/CAF-debug.exe`。该文件包含 DWARF 调试节，构建信息确认 `-gcflags="all=-N -l"`，并具有 desktop/production/debug/devtools 标签。
-- 使用全新 CAF_DATA_DIR 进行该构建，绑定生成没有创建应用数据。`go mod verify`、`go mod tidy -diff`、Windows production/debug vet 和 `git diff --check` 通过。
-- 本次没有 Windows/VS Code 图形环境，因此未实际执行 F5/Delve 断点或打开 WebView2；Windows PowerShell 5.1 仅保持兼容语法，实测解释器为 Linux PowerShell 7.6.7。发布版目录策略、原生 DLL 及 Lagrange 子模块没有改变。
-
-`build/dev-data/` 是开发运行数据，不是可任意清理的构建产物；旧根目录 data/ 不会自动迁移或删除。
+补丁只包含源码、文档与测试，不包含生成的绑定、EXE、测试产物、账号数据或依赖目录。
+build/dev-data 是开发运行数据，不能当作可任意删除的构建产物；本次没有删除或迁移旧数据。

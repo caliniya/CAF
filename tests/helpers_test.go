@@ -30,6 +30,7 @@ func (b *fakeBackend) BeginLogin(context.Context) error { b.loginCalls++; return
 func (b *fakeBackend) Close() error                     { b.closeCalls++; return b.closeErr }
 
 var _ platform.Backend = (*fakeBackend)(nil)
+var _ platform.QQPlatform = (*fakeBackend)(nil)
 
 func testPaths(t *testing.T) platform.Paths {
 	t.Helper()
@@ -40,7 +41,7 @@ func testPaths(t *testing.T) platform.Paths {
 	return p
 }
 
-func testRuntime(t *testing.T, b platform.Backend) *core.Core {
+func testCore(t *testing.T, b platform.Backend) *core.Core {
 	t.Helper()
 	rt, err := core.NewCore(testPaths(t), b)
 	if err != nil {

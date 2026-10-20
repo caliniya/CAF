@@ -11,7 +11,7 @@ import (
 	"github.com/caliniya/caf/core/platform"
 )
 
-func TestRuntimeConstructionOnlyStoresPathsAndBackend(t *testing.T) {
+func TestCoreConstructionOnlyStoresPathsAndBackend(t *testing.T) {
 	p := testPaths(t)
 	b := &fakeBackend{state: platform.NativeStatus{Supported: true}}
 	rt, err := core.NewCore(p, b)
@@ -31,7 +31,7 @@ func TestRuntimeConstructionOnlyStoresPathsAndBackend(t *testing.T) {
 	}
 }
 
-func TestRuntimeRejectsInvalidConfiguration(t *testing.T) {
+func TestCoreRejectsInvalidConfiguration(t *testing.T) {
 	if _, err := core.NewCore(testPaths(t), nil); !errors.Is(err, platform.ErrBackendRequired) {
 		t.Fatal(err)
 	}
@@ -40,13 +40,13 @@ func TestRuntimeRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestRuntimeRequiresExplicitInitialization(t *testing.T) {
+func TestCoreRequiresExplicitInitialization(t *testing.T) {
 	b := &fakeBackend{}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.LoadNative(); !errors.Is(err, platform.ErrNotInitialized) {
 		t.Fatal(err)
 	}
-	if err := rt.BeginLogin(context.Background()); !errors.Is(err, platform.ErrNotInitialized) {
+	if _, err := rt.BeginLogin(); !errors.Is(err, platform.ErrNotInitialized) {
 		t.Fatal(err)
 	}
 	if b.loadCalls != 0 || b.loginCalls != 0 {
@@ -54,9 +54,9 @@ func TestRuntimeRequiresExplicitInitialization(t *testing.T) {
 	}
 }
 
-func TestRuntimeInjectsAndInitializesBackendOnce(t *testing.T) {
+func TestCoreInjectsAndInitializesBackendOnce(t *testing.T) {
 	b := &fakeBackend{state: platform.NativeStatus{Supported: true}}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestRuntimeInjectsAndInitializesBackendOnce(t *testing.T) {
 	if err := rt.LoadNative(); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.BeginLogin(context.Background()); err != nil {
+	if _, err := rt.BeginLogin(); err != nil {
 		t.Fatal(err)
 	}
 	if b.loadCalls != 1 || b.loginCalls != 1 || !rt.State().Native.Loaded {
@@ -77,10 +77,10 @@ func TestRuntimeInjectsAndInitializesBackendOnce(t *testing.T) {
 	}
 }
 
-func TestRuntimeInitializationFailureCanBeRetried(t *testing.T) {
+func TestCoreInitializationFailureCanBeRetried(t *testing.T) {
 	failure := errors.New("init failed")
 	b := &fakeBackend{initErr: failure}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Init(); !errors.Is(err, failure) || rt.State().Ready || rt.State().LastError != failure.Error() {
 		t.Fatal("init failure was lost", err)
 	}
@@ -90,10 +90,10 @@ func TestRuntimeInitializationFailureCanBeRetried(t *testing.T) {
 	}
 }
 
-func TestRuntimeLoadFailureAndRetry(t *testing.T) {
+func TestCoreLoadFailureAndRetry(t *testing.T) {
 	failure := errors.New("native failed")
 	b := &fakeBackend{loadErr: failure}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -106,31 +106,33 @@ func TestRuntimeLoadFailureAndRetry(t *testing.T) {
 	}
 }
 
-func TestRuntimeChecksLoginContextAndReportsBackendError(t *testing.T) {
+func TestCoreChecksLoginContextAndReportsBackendError(t *testing.T) {
 	b := &fakeBackend{loginErr: platform.ErrLoginNotImplemented}
-	rt := testRuntime(t, b)
-	if err := rt.Init(); err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.BeginLogin(nil); !errors.Is(err, platform.ErrContextRequired) {
-		t.Fatal(err)
+	rt := testCore(t, b)
+	rt.Startup(nil)
+	if _, err := rt.BeginLogin(); !errors.Is(err, platform.ErrContextRequired) {
+		t.Fatal("没有保留无效启动上下文的错误", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	rt.Startup(ctx)
 	cancel()
-	if err := rt.BeginLogin(ctx); !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
+	if _, err := rt.BeginLogin(); !errors.Is(err, context.Canceled) {
+		t.Fatal("未使用核心保存的生命周期上下文", err)
 	}
 	if b.loginCalls != 0 {
-		t.Fatal("invalid context reached backend")
+		t.Fatal("无效上下文进入了平台后端")
 	}
-	if err := rt.BeginLogin(context.Background()); !errors.Is(err, platform.ErrLoginNotImplemented) || b.loginCalls != 1 {
+	// 另建独立实例验证平台返回的真实错误，不伪装登录成功。
+	other := testCore(t, b)
+	other.Startup(context.Background())
+	if _, err := other.BeginLogin(); !errors.Is(err, platform.ErrLoginNotImplemented) || b.loginCalls != 1 {
 		t.Fatal(err)
 	}
 }
 
-func TestRuntimeCloseIsIdempotentAndRejectsFurtherOperations(t *testing.T) {
+func TestCoreCloseIsIdempotentAndRejectsFurtherOperations(t *testing.T) {
 	b := &fakeBackend{}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +145,7 @@ func TestRuntimeCloseIsIdempotentAndRejectsFurtherOperations(t *testing.T) {
 	if !rt.State().Closed || rt.State().Ready {
 		t.Fatal("bad closed state")
 	}
-	for _, operation := range []func() error{rt.Init, rt.LoadNative, func() error { return rt.BeginLogin(context.Background()) }} {
+	for _, operation := range []func() error{rt.Init, rt.LoadNative, func() error { _, err := rt.BeginLogin(); return err }} {
 		if err := operation(); !errors.Is(err, platform.ErrClosed) {
 			t.Fatal(err)
 		}
@@ -153,10 +155,10 @@ func TestRuntimeCloseIsIdempotentAndRejectsFurtherOperations(t *testing.T) {
 	}
 }
 
-func TestRuntimeRetainsCloseFailureWithoutClosingTwice(t *testing.T) {
+func TestCoreRetainsCloseFailureWithoutClosingTwice(t *testing.T) {
 	failure := errors.New("close failed")
 	b := &fakeBackend{closeErr: failure}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Close(); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
@@ -165,9 +167,9 @@ func TestRuntimeRetainsCloseFailureWithoutClosingTwice(t *testing.T) {
 	}
 }
 
-func TestRuntimeSerializesConcurrentOperations(t *testing.T) {
+func TestCoreSerializesConcurrentOperations(t *testing.T) {
 	b := &fakeBackend{}
-	rt := testRuntime(t, b)
+	rt := testCore(t, b)
 	if err := rt.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +183,7 @@ func TestRuntimeSerializesConcurrentOperations(t *testing.T) {
 			if err := rt.LoadNative(); err != nil {
 				t.Error(err)
 			}
-			if err := rt.BeginLogin(context.Background()); err != nil {
+			if _, err := rt.BeginLogin(); err != nil {
 				t.Error(err)
 			}
 		}()

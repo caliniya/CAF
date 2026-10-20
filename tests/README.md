@@ -1,33 +1,40 @@
 # 集中测试目录
 
-全部自有 Go 测试使用 `package tests`，通过公开接口测试业务包；没有独立测试 Go module，也不在业务目录留下 `*_test.go`。
+全部自有 Go 测试使用 package tests 和公开接口；没有单独测试 module，也不在业务目录放测试文件。
 
 | 文件 | 内容 |
 | --- | --- |
-| `helpers_test.go` | 可注入的假后端与测试工厂，不调用真实登录 |
-| `runtime_test.go` | 路径所有权、显式初始化、后端注入、错误重试、取消、关闭和并发 |
-| `service_test.go` | 应用服务与统一 Runtime 的协作 |
-| `backend_test.go` | 真正桌面后端的路径、生命周期、未实现登录，以及 UI 注入/关闭 |
-| `desktop_test.go` | 界面门面的构造与启动，不打开窗口或登录 |
-| `paths_test.go` | 桌面便携路径、覆盖配置和非法目录 |
-| `natives_test.go` | 通过公开 Extract 检查 DLL、来源校验、缓存、损坏修复和并发 |
-| `lagrange_windows_test.go` | 仅 Windows x64；子进程加载 DLL，解析导出，不调用 Initialize/Start |
-| `lagrange_other_test.go` | 其他平台明确拒绝装载，且不创建缓存 |
-| `frontend.test.mjs` | 桌面绑定命名空间、调用、状态、登录错误转发 |
-| `development.test.ps1` | 模拟 7 次开发脚本运行，检查默认/覆盖路径、异常恢复及 VS Code 调试配置；不运行真实 Wails |
+| helpers_test.go | 假平台及独立核心构造，不调用真实 QQ 登录 |
+| core_test.go | 构造、路径副本、初始化、错误重试、关闭和并发 |
+| core_ui_test.go | 页面直接调用核心、全局同一实例、上下文取消、带类型 nil、缺失 QQ 能力和启动重试 |
+| backend_test.go | 桌面基础/QQ 两个接口，目录不可变、明确未实现登录、关闭保护 |
+| desktop_test.go | 真实桌面后端交给核心启动，不开窗口、不加载或登录 |
+| paths_test.go | 桌面便携路径、相对覆盖和非法路径 |
+| natives_test.go | DLL 提取、来源校验、缓存、损坏修复和并发 |
+| lagrange_windows_test.go | 仅 Windows x64；子进程加载 DLL，不调用 Initialize/Start |
+| lagrange_other_test.go | 非支持平台明确报错，且不创建缓存 |
+| frontend.test.mjs | core.Core 命名空间、转发、状态和登录错误；拒绝旧 desktop.App 命名空间 |
+| development.test.ps1 | 7 次模拟开发脚本运行和 VS Code 配置，无窗口、不依赖 Pester |
 
-从根目录运行 `go test -count=1 ./tests`，或在这里运行 `go test -count=1`。目录中不导入 Wails 窗口包，因此无需 GTK。`test.ps1` 另用 `bindings` 标签对包含窗口入口的整个工程执行 vet。
+根目录运行：
 
-`test.ps1` 同时运行 PowerShell 开发脚本检查；也可单独运行 `.\tests\development.test.ps1`。
-这类检查把 `go` 替换为测试函数，不启动 GUI 或后台进程，不依赖 Pester。
-实际 VS Code/Delve 断点、WebView2 窗口仍需在 Windows 上验证。
+```powershell
+.\test.ps1
+go test -count=1 ./tests
+go test -race -count=1 ./tests
+go test -tags bindings -count=1 ./...
+node --test tests/frontend.test.mjs
+```
 
-原生资源记录从 `../platforms/desktop/natives/PROVENANCE.json` 读取。测试产生的文件使用临时目录，不修改项目 DLL。Windows 原生加载测试用子进程释放文件锁，不尝试卸载 NativeAOT。
+核心与后端测试不导入 Wails 窗口包，无需 GTK。整个工程在无窗口环境用 bindings 标签做检查。
+全局入口测试只在单个顺序测试里模拟 main 装配，并在结束后恢复全局变量；其他测试使用独立 Core，不修改全局状态。
+假平台登录返回成功只验证调用路由；真实桌面登录必须明确返回 ErrLoginNotImplemented。
+Windows 原生加载测试用子进程释放文件锁，不尝试卸载 NativeAOT。
 
-集中测试时，业务覆盖率需要显式选取目标包：
+覆盖率可用：
 
 ```powershell
 go test -count=1 -coverpkg=./core/...,./platforms/desktop,./platforms/desktop/native,./platforms/desktop/natives ./tests
 ```
 
-核心调用测试通过假后端验证注入和路由；真正桌面后端的登录方法必须返回 `platform.ErrLoginNotImplemented`，不会把假后端的成功当作真实登录已实现。
+Windows 窗口、VS Code/Delve 断点和真实登录仍需在相应环境单独验证。

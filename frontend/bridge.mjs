@@ -1,5 +1,6 @@
 export function createClient(bindings) {
-  const backend = bindings?.desktop?.App;
+  // 页面直接访问核心对象；平台后端的选择和注入由 Go 启动入口完成。
+  const backend = bindings?.core?.Core;
   if (!backend || typeof backend.GetStatus !== "function" || typeof backend.LoadNativeLibrary !== "function" || typeof backend.BeginLogin !== "function") {
     throw new Error("请通过 Wails 启动 CAF；普通浏览器预览没有 Go 后端。");
   }

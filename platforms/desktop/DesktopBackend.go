@@ -1,4 +1,4 @@
-// Package desktop implements platform contracts for the desktop application.
+// Package desktop 提供桌面平台实现，不持有或创建另一份核心。
 package desktop
 
 import (
@@ -19,8 +19,9 @@ type DesktopBackend struct {
 }
 
 var _ platform.Backend = (*DesktopBackend)(nil)
+var _ platform.QQPlatform = (*DesktopBackend)(nil)
 
-// New is safe during Wails binding generation: no directories, DLL or QQ session.
+// New 只创建后端对象，不创建目录、不加载 DLL，也不尝试登录。
 func New() *DesktopBackend { return &DesktopBackend{loader: native.NewLoader()} }
 
 func (b *DesktopBackend) Init(paths platform.Paths) error {
@@ -44,7 +45,7 @@ func (b *DesktopBackend) Init(paths platform.Paths) error {
 	if err := os.MkdirAll(paths.Logs, 0700); err != nil {
 		return err
 	}
-	
+
 	b.paths, b.initialized = paths, true
 	return nil
 }
@@ -86,8 +87,7 @@ func (b *DesktopBackend) BeginLogin(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// Native parameter marshalling/session/event handling is not implemented yet.
-	// Never pretend login succeeded or call Initialize/Start with guessed arguments.
+	// DLL 参数封送、会话及事件处理尚未实现，不用猜测的参数调用 Initialize/Start。
 	return platform.ErrLoginNotImplemented
 }
 
@@ -95,6 +95,6 @@ func (b *DesktopBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.closed = true
-	// No sessions/tasks exist yet. NativeAOT mappings remain pinned until process exit.
+	// 暂无已创建的 QQ 会话；NativeAOT 映射保留到进程退出，不执行卸载。
 	return nil
 }

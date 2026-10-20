@@ -1,137 +1,142 @@
 # CAF
 
-CAF 是 Go 编写的 Agent 框架工程骨架，界面使用 Wails v2.17.0。现阶段优先 Windows x64；模型、工具执行和 QQ 登录业务尚未实现。
+CAF 是 Go 编写的 Agent 框架骨架，界面使用 Wails v2.17.0，现阶段优先 Windows x64。
+模型、工具执行和真实 QQ 登录尚未实现。
 
-仓库：`caliniya/CAF`；原 Java/Arc 项目：`caliniya/CAFOrigin`。Go module 为 `github.com/caliniya/caf`。
+仓库：`caliniya/CAF`；原 Java/Arc 项目：`caliniya/CAFOrigin`。
+Go module：`github.com/caliniya/caf`。
 
-## Windows x64 开始使用
+## 开始使用
 
-准备 Go 1.25+（本次使用 1.27.3 验证）和 WebView2 Runtime：
+准备 Go 1.25+、Windows WebView2 Runtime；本次使用 Go 1.27.3 验证：
 
 ```powershell
 git submodule update --init --recursive
-.\dev.ps1       # 开发运行，默认使用 build/dev-data/
-.\build.ps1     # 输出 build/bin/CAF.exe
-.\test.ps1      # Go 测试、vet；有 Node 时也运行前端测试
+.\dev.ps1       # 开发运行，数据默认放在 build/dev-data/
+.\build.ps1     # 发布输出 build/bin/CAF.exe
+.\test.ps1      # 核心、平台、脚本和前端测试
 ```
 
-脚本使用固定版本 Wails CLI，不要求全局安装。首次下载 Go 模块和子模块需要联网。若 PowerShell 禁止本地脚本，可直接运行：
+脚本调用固定版本 Wails CLI，无需全局安装。前端是纯 HTML/CSS/JS，没有 npm 构建依赖；
+Node 仅用于可选前端测试。程序不需要 JRE；内置 NativeAOT DLL 不要求另装 .NET 运行时。
 
-```powershell
-go mod download
-go run github.com/wailsapp/wails/v2/cmd/wails@v2.17.0 build -platform windows/amd64
-go test -count=1 ./tests
-```
+## 核心在哪里，怎么调用
 
-前端是纯 HTML/CSS/JS，没有 npm 依赖或前端打包步骤。Node 仅用于可选的前端测试。应用不需要 JRE；已有 NativeAOT DLL 不要求另装 .NET 运行时，但 Windows 窗口仍需要 WebView2。
-
-## 开发数据目录与 VS Code
-
-开发数据放在 `build/dev-data/`，不再占用工程根目录的 `data/`；发布版默认路径不变。
-开发脚本按 `-DataDir` 参数 → 已有 `CAF_DATA_DIR` 环境变量 → 默认路径的顺序选择目录。
-脚本中的相对覆盖路径以项目根目录为基准，转换成绝对路径再交给 Wails，避免跟着开发 EXE 的位置变化：
-
-```powershell
-.\dev.ps1 -DataDir 'build/my-dev-data'
-.\dev.ps1 -DataDir 'D:\CAF-data'
-```
-
-脚本退出（包括报错）后会原样恢复环境变量及当前目录。旧 `data/` 不会自动删除或迁移；
-若要保留旧开发数据，请先关闭程序，再把内容迁到新目录。开发数据仍可能包含凭据，不能当作可随意清理的构建产物。
-
-在 VS Code 中打开项目文件夹或 `CAF.code-workspace`，安装官方 Go 扩展（`golang.go`）：
-
-- **F5**：在“运行和调试”选择 `CAF: Debug (Windows x64)`。预启动任务调用固定版本 Wails CLI，使用 `-debug` 构建 `build/bin/CAF-debug.exe`，然后由 Go/Delve 调试器启动；可打 Go 断点。第一次使用按扩展提示安装/更新 `dlv`。
-- **Ctrl+Shift+P → Tasks: Run Task → CAF: Wails dev**：等同 `dev.ps1`，用于 Wails 自动重建/刷新；也可直接在终端执行脚本。它不是 F5 断点调试。
-- 两种方式都默认使用 `build/dev-data/`。修改 F5 目录时，改 `.vscode/launch.json` 的 `env.CAF_DATA_DIR`，建议使用 `${workspaceFolder}` 开头的绝对路径。
-- 不再使用原来的 `Launch Package`、`go run main.go` 或 Code Runner 的“运行当前文件”。这些入口不会自动执行 Wails 构建流程，缺少 Wails 的 build tags；也不会执行 dev.ps1 的目录设置。
-- F5 使用内嵌页面，不提供 dev 模式的热更新；改代码后停止并重新 F5。普通浏览器预览也不等于具备 Go 绑定的 Wails 窗口。
-
-`.vscode/launch.json`、`tasks.json`、`extensions.json` 是共享配置，纳入 Git；其他个人编辑器配置仍忽略。
-调试 EXE 与发布的 `CAF.exe` 分开，开发数据目录也被 Git 忽略，不需要提交。
-这组调试配置面向当前 Windows x64 开发环境，不修改核心平台接口。
-配置方式参考 [Wails IDE 指南](https://wails.io/docs/guides/ides/) 和 [Go 扩展调试文档](https://github.com/golang/vscode-go/wiki/debugging)。
-
-## 项目结构
+**全局入口就是 `core.Platform`，类型为 `*core.Core`，定义在 `core/core.go`。**
+它统一持有路径、状态、上下文和平台接口引用。没有额外的 desktop.App 或 Service。
 
 ```text
-main.go                     嵌入前端、选择桌面后端、组装入口
-core/runtime.go             统一持有路径与后端，管理生命周期、错误和调用
-core/platform/              后端接口、路径数据、原生状态与公共错误
-core/app/                   面向应用的服务与状态 DTO
-core/agent/                 Agent 业务占位
-platforms/desktop/backend.go 桌面后端，实现 core/platform.Backend
-platforms/desktop/paths.go   桌面默认目录、相对路径解析
-platforms/desktop/ui.go      Wails 绑定门面，调用核心服务
-platforms/desktop/window/   Wails 窗口配置（与纯 Go 后端分开）
-platforms/desktop/native/   Windows x64 goinvoke 装载、导出解析
-platforms/desktop/natives/  内置 DLL、来源记录、提取与缓存
-platforms/android/          仅占位，目前没有安卓构建或实现
-frontend/                   HTML/CSS/JS 页面与调用桥接
-tests/                      集中的 Go 黑盒测试、前端测试
-lagrange/                   固定版本 Lagrange.Core Git 子模块
-patches/                    NativeAPI 编译兼容补丁
-scripts/build-native.ps1    可选的 Windows 原生库重编脚本
+main 选择桌面实现 → 创建一个 Core → 赋给 core.Platform
+                                  ↓
+Wails 直接绑定同一个 *core.Core ← 其他 Go 包访问 core.Platform
+                                  ↓
+                       Backend / QQPlatform 接口
+                                  ↓
+                            桌面平台实现
 ```
 
-业务不再放在 `internal/`。`core` 不依赖桌面、Wails、goinvoke 或嵌入的 Windows DLL；`platforms/desktop` 依赖核心契约，不反向注册到核心，不使用全局运行时或 Go `init()` 偷偷初始化。
+`main.go` 是唯一的应用装配位置：
 
-## 核心与平台如何接起来
+```go
+// 由入口决定平台，核心不导入 desktop，也不自己猜测平台。
+backend := desktop.New()
+paths, err := desktop.DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
+if err != nil {
+    log.Fatal(err)
+}
+core.Platform, err = core.NewCore(paths, backend)
+if err != nil {
+    log.Fatal(err)
+}
+// 窗口直接绑定这一个指针，不创建第二份核心。
+if err := window.Run(assets, core.Platform); err != nil {
+    log.Fatal(err)
+}
+```
 
-`core/platform.Backend` 定义：
+应用启动完成后，其他 Go 包可直接调用：
 
-- `Init(Paths)`：使用确定的路径准备运行环境；不自动装载 DLL 或登录。
-- `NativeStatus()`：无副作用的状态查询。
-- `LoadNative()`：显式装载并解析导出，不创建 QQ 会话。
-- `BeginLogin(context.Context)`：发起登录的契约；当前桌面返回 `ErrLoginNotImplemented`。
-- `Close()`：结束该后端的生命周期；不卸载 NativeAOT DLL。
+```go
+// 这些调用都作用于同一个核心，不需要重新 NewCore。
+paths := core.Platform.Paths()
+status := core.Platform.GetStatus()
+status, err := core.Platform.LoadNativeLibrary()
+status, err = core.Platform.BeginLogin()
+```
 
-`core.NewRuntime(paths, backend)` 只校验并保存引用，`Runtime.Init()` 才调用后端初始化。路径以值拷贝保存，通过 `Runtime.Paths()` 读取；没有运行途中随意改路径的 setter。调用方使用 `Runtime.LoadNative()` / `Runtime.BeginLogin(ctx)`，无需知道平台或原生地址。
+以上为分别调用的示例；实际代码按需接收返回值并处理 error。
+全局入口只在 main 启动阶段赋值，不能在运行时反复替换，也不要把 `*core.Core` 解引用后按值复制。
+测试或命令行检查可用 NewCore 创建独立实例，但不会自动覆盖全局入口。
 
-`core/app.Service` 使用同一个 Runtime；桌面 `App` 只是界面门面。入口选择 `desktop.New()` 并注入 `desktop.NewApp(backend)`，Wails 的 Startup 回调才解析目录、创建 Runtime 并执行 Init。构造对象或生成绑定不会创建目录、加载 DLL 或登录；Shutdown 调用 Close。
+## 核心与平台的职责
 
-当前界面绑定为 `window.go.desktop.App`，只暴露 GetStatus、LoadNativeLibrary、BeginLogin。Startup / Shutdown 是生命周期回调，不作为 JS 业务接口。前端通过 `frontend/bridge.mjs` 集中调用，不到处散落平台判断。
+- `core/core.go`：核心实例、全局入口、初始化、关闭、加载与登录请求编排。
+- `core/status.go`：核心状态和页面数据，不另设转发服务。
+- `core/platform.Backend`：平台基础能力，只定义 Init、NativeStatus、LoadNative、Close。
+- `core/platform.QQPlatform`：独立的 QQ 能力，目前定义 BeginLogin(context.Context) error。
+- `platforms/desktop`：目录解析、本地库装载等具体实现；同一桌面对象实现上面两个接口。
+- `platforms/desktop/window`：只负责 Wails 窗口配置，把核心的 Startup/Shutdown 接到窗口生命周期并直接 Bind 核心。
 
-**登录契约不等于登录已完成：**目前没有配置结构体封送、会话管理、二维码/在线事件处理。BeginLogin 明确返回未实现错误，不会伪装成功，也不会用猜测的参数调用 Initialize/Start。界面仍只有状态查看和本地库装载按钮。
+核心通过接口调用后端，不 import desktop、Wails、goinvoke 或 Windows DLL 资源。
+QQPlatform 是跨平台业务能力，不照抄裸 DLL 的 Start(index) 整数签名；
+原生索引、结构体封送、事件内存与状态码仍由后端处理。基础后端可以不提供 QQ 能力，此时核心明确返回 ErrQQUnavailable。
 
-## 便携目录与二进制
+## 生命周期与页面绑定
 
-- 发布版默认将数据写入 EXE 旁的 `data/`；开发脚本使用 `build/dev-data/`。
-- `CAF_DATA_DIR` 可覆盖数据目录；相对值始终相对 EXE 目录，而不是启动工作目录。平台解析为绝对路径后再传给核心。
-- Windows DLL 源文件位于 `platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll`，复用已有二进制，不含 PDB。
-- DLL 内嵌 EXE，显式加载时提取到 `data/natives/win-x64/<SHA-256>/`。相同内容复用，升级使用新目录，避免覆盖被锁定的 DLL。
-- NativeAOT 映射保留到进程退出，Close 不调用 Release/FreeLibrary。
-- 目前只有 Windows x64 的原生实现；其他桌面平台返回明确的未支持错误。安卓仍需单独验证运行壳、数据目录和 Android/Bionic 原生库，不能复用 Windows DLL。
+1. `NewCore(paths, backend)` 只校验与保存引用；构造时不创建目录、不加载库、不登录。
+2. Wails 的 `Startup(ctx)` 直接通知核心；核心保存生命周期上下文并初始化一次后端。
+3. 页面用 `GetStatus`、`LoadNativeLibrary`、`BeginLogin` 调用核心，不传 Go 的 context 对象。
+4. `Shutdown(ctx)` 直接关闭同一核心，取消其子上下文，只关闭后端一次；NativeAOT 库不会卸载。
 
-不打开窗口，只检查装载：
+初始化失败会保留原始错误，允许重试。关闭后不能再次初始化或启动登录。
+无界面程序也可使用 `Init()` / `LoadNative()` / `Close()`。
+
+前端命名空间已改为 **`window.go.core.Core`**；`frontend/bridge.mjs` 统一处理它。
+Startup/Shutdown 已接为 Wails 生命周期回调，不作为 JS 调用方法；其余公开、参数可序列化的核心方法会生成绑定。
+平台接口和原生函数指针都保留在核心私有字段，不直接暴露给页面。
+
+**BeginLogin 的链路已接通，不等于真实登录已实现。**
+当前桌面实现明确返回“QQ 登录尚未实现”，不会猜测参数调用 Initialize/Start，也不会假报上线。
+没有新增二维码解码、登录凭据持久化、消息收发或 Agent 执行功能。
+
+## 目录与开发调试
+
+- 发布版默认使用 EXE 旁的 `data/`；开发脚本和 F5 使用 `build/dev-data/`。
+- dev.ps1 的优先级是 `-DataDir` 参数 → 已有 CAF_DATA_DIR → 默认目录。
+- 开发脚本将相对覆盖路径按项目根目录转成绝对路径；程序自身接收相对 CAF_DATA_DIR 时仍按 EXE 目录解析。
+- 旧 data/ 不自动删除或迁移。开发数据可能包含凭据，不能当作可随意删除的构建产物。
 
 ```powershell
-go run ./cmd/nativecheck -data-dir "$PWD/data"
+.\dev.ps1 -DataDir 'build/my-data'
 ```
 
-## 测试
+VS Code 打开项目目录或 CAF.code-workspace，安装官方 Go 扩展：
 
-所有自有 Go 测试均在 `tests/`，使用 `package tests` 和公开接口；仍是同一个 Go module。原生缓存测试检查提取结果，不访问或额外导出包内变量。
+- F5 选择 `CAF: Debug (Windows x64)`：先由 Wails 构建 CAF-debug.exe，再由 Delve 启动；首次调试用 `Go: Install/Update Tools` 安装 dlv。
+- 自动重建/刷新用终端执行 dev.ps1，或运行任务 `CAF: Wails dev`。它不是断点调试。
+- 不用“运行当前文件”或普通 Launch Package 代替 Wails 构建。
+- F5 的目录由 `.vscode/launch.json` 中 CAF_DATA_DIR 配置；修改源码后需停止并重新 F5。
+
+## 原生库与后续平台
+
+DLL 位于 `platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll`，原样嵌入 EXE，不含 PDB。
+显式加载时提取到数据目录的 `natives/win-x64/<SHA-256>/`，按内容复用缓存，不覆盖正在加载的 DLL。
+映射保留到进程退出，不调用 Release/FreeLibrary。本次没有修改二进制或 Lagrange 子模块。
 
 ```powershell
-go test -count=1 ./tests
-go test -race -count=1 ./tests  # 可选；需要对应 C 编译工具链
-go vet -tags bindings ./...
-node --test tests/frontend.test.mjs
-.\tests\development.test.ps1  # 无窗口的开发脚本与 VS Code 配置检查
+go run ./cmd/nativecheck -data-dir "$PWD/build/dev-data"
 ```
 
-`go test ./tests` 不依赖 Wails/GTK；整个工程的无窗口检查使用 `go test -tags bindings ./...`。Linux GUI 仍需 GTK/WebKit 开发库。测试分工和覆盖率命令见 [tests/README.md](tests/README.md)。
+Android 只保留占位目录；后续提供自己的平台接口实现与窗口壳，不复用 Windows DLL。
+可选重编 NativeAPI 仍使用 `scripts/build-native.ps1`，在源码副本上应用补丁，需要 .NET 10 和 Windows C++ 工具链。
 
-## 可选：重编 NativeAPI
-
-改动 C# 或原生补丁时，在 Windows 上准备 .NET 10 SDK、Visual Studio C++ 桌面工具链和 Windows SDK：
+## 验证
 
 ```powershell
-.\scripts\build-native.ps1
-.\build.ps1
+.\test.ps1
+go test -race -count=1 ./tests
+go test -tags bindings -count=1 ./...
 ```
 
-脚本将固定子模块源码导出到 `build/native-src/`，在副本应用 `patches/*.patch`，发布后更新桌面资源目录中的 DLL 和 PROVENANCE.json。不会修改子模块，也不会记录无法推送的本地子模块提交。
-
-验证边界见 [VALIDATION.md](VALIDATION.md)，第三方来源见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+全部自有测试集中在 tests/。检查分工见 [tests/README.md](tests/README.md)，
+结果与尚未实测的边界见 [VALIDATION.md](VALIDATION.md)，应用本次补丁见 [MIGRATION.md](MIGRATION.md)。

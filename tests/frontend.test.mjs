@@ -4,15 +4,15 @@ import { createClient, statusRows, errorMessage } from "../frontend/bridge.mjs";
 
 test("requires an actual Wails backend instead of pretending browser preview works", () => {
   assert.throws(() => createClient(undefined), /Wails/);
-  assert.throws(() => createClient({ desktop: { App: { GetStatus() {} } } }), /Wails/);
+  assert.throws(() => createClient({ core: { Core: { GetStatus() {} } } }), /Wails/);
   assert.throws(() => createClient({ main: { App: { GetStatus() {}, LoadNativeLibrary() {}, BeginLogin() {} } } }), /Wails/);
 });
 
 test("forwards methods without automatically loading native code", async () => {
   let loads = 0;
   const client = createClient({
-    desktop: {
-      App: {
+    core: {
+      Core: {
         GetStatus: async () => ({ name: "CAF" }),
         LoadNativeLibrary: async () => { loads++; return { native: { loaded: true } }; },
         BeginLogin: async () => ({ name: "CAF" }),
@@ -33,7 +33,8 @@ test("forwards login and preserves an explicit not-implemented error", async () 
     LoadNativeLibrary: async () => ({}),
     BeginLogin: async () => { calls++; throw new Error("QQ login is not implemented"); },
   };
-  const client = createClient({ desktop: { App: backend } });
+  const client = createClient({ core: { Core: backend } });
+  assert.throws(() => createClient({ desktop: { App: backend } }), /Wails/);
   assert.equal(calls, 0);
   await assert.rejects(() => client.beginLogin(), /not implemented/);
   assert.equal(calls, 1);

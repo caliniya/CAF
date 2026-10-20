@@ -1,4 +1,4 @@
-// nativecheck loads and resolves exports only. It does not create a QQ session or log in.
+// nativecheck 只检查本地库装载与导出解析，不创建 QQ 会话或发起登录。
 package main
 
 import (

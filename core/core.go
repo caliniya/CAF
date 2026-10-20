@@ -1,125 +1,199 @@
-// Package core owns the shared runtime; it never selects a concrete platform.
+// Package core 统一处理业务、状态和生命周期，不选择或导入具体平台实现。
 package core
 
 import (
 	"context"
-	"errors"
+	"reflect"
 	"sync"
 
 	"github.com/caliniya/caf/core/platform"
 )
 
-var Platform Core
+// Platform 是程序的全局核心入口。main 在启动窗口前赋值，运行期间不再替换。
+// 核心内部持有后端接口；这里保存指针，避免复制带互斥锁的 Core。
+var Platform *Core
 
-type State struct {
-	Ready     bool
-	Closed    bool
-	Native    platform.NativeStatus
-	LastError string
-}
-
-// Runtime owns one backend and one immutable set of paths. All backend operations
-// are serialized, including shutdown. Use separate instances for isolated tests.
+// Core 是唯一的业务协调对象，也直接向 Wails 提供可调用的方法。
+// 平台实现只提供能力，不再通过 desktop.App 或 Service 间接管理核心。
 type Core struct {
 	mu          sync.Mutex
 	paths       platform.Paths
 	backend     platform.Backend
-	qq          platform.QQPlatfrom
+	qq          platform.QQPlatform
+	ctx         context.Context
+	cancel      context.CancelFunc
 	initialized bool
 	closed      bool
 	lastError   string
+	initErr     error
 	closeErr    error
 }
 
-// NewRuntime only validates and stores references; it does not initialize or load anything.
+// NewCore 只校验和保存引用，不初始化平台、不创建目录、不加载 DLL。
+// 测试可创建独立实例；仅 main 将应用使用的实例赋给全局 Platform。
 func NewCore(paths platform.Paths, backend platform.Backend) (*Core, error) {
-	if backend == nil {
+	if nilBackend(backend) {
 		return nil, platform.ErrBackendRequired
 	}
 	if err := paths.Validate(); err != nil {
 		return nil, err
 	}
-	return &Core{paths: paths, backend: backend}, nil
+	qq, _ := backend.(platform.QQPlatform)
+	return &Core{paths: paths, backend: backend, qq: qq}, nil
 }
 
-// Paths returns a value copy, not a mutable reference to runtime configuration.
-func (r *Core) Paths() platform.Paths { return r.paths }
-
-func (r *Core) State() State {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return State{
-		Ready: r.initialized && !r.closed, Closed: r.closed,
-		Native: r.backend.NativeStatus(), LastError: r.lastError,
+// nilBackend 同时拒绝普通 nil 和装进接口后的带类型 nil，避免稍后调用时崩溃。
+func nilBackend(backend platform.Backend) bool {
+	if backend == nil {
+		return true
 	}
+	value := reflect.ValueOf(backend)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	}
+	return false
 }
 
-func (r *Core) record(err error) error {
-	r.lastError = ""
+// Paths 返回路径副本；初始化之后不能通过此方法修改运行目录。
+func (c *Core) Paths() platform.Paths { return c.paths }
+
+func (c *Core) record(err error) error {
+	c.lastError = ""
 	if err != nil {
-		r.lastError = err.Error()
+		c.lastError = err.Error()
 	}
 	return err
 }
 
-func (r *Core) readyError() error {
-	if r.closed {
+func (c *Core) readyError() error {
+	if c.closed {
 		return platform.ErrClosed
 	}
-	if !r.initialized {
+	if !c.initialized {
+		if c.initErr != nil {
+			return c.initErr
+		}
 		return platform.ErrNotInitialized
 	}
 	return nil
 }
 
-// Init is explicit and retryable on failure. A successful initialization runs only once.
-func (r *Core) Init() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return r.record(platform.ErrClosed)
+func (c *Core) initLocked() error {
+	if c.closed {
+		return c.record(platform.ErrClosed)
 	}
-	if r.initialized {
+	if c.initialized {
 		return nil
 	}
-	err := r.backend.Init(r.paths)
-	r.initialized = err == nil
-	return r.record(err)
-}
-
-func (r *Core) LoadNative() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.readyError(); err != nil {
-		return r.record(err)
+	if c.backend == nil {
+		c.initErr = platform.ErrBackendRequired
+	} else {
+		c.initErr = c.backend.Init(c.paths)
 	}
-	_, err := r.backend.LoadNative()
-	return r.record(err)
+	c.initialized = c.initErr == nil
+	if c.initialized && c.ctx == nil {
+		// 命令行可直接 Init；窗口运行则使用 Startup 提供的生命周期上下文。
+		c.ctx, c.cancel = context.WithCancel(context.Background())
+	}
+	return c.record(c.initErr)
 }
 
-func (r *Core) BeginLogin(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.readyError(); err != nil {
-		return r.record(err)
+// Init 显式初始化平台；成功后不重复初始化，失败后允许重试。
+func (c *Core) Init() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.initLocked()
+}
+
+// Startup 接收 Wails 启动通知；业务状态和上下文都由同一个核心保存。
+func (c *Core) Startup(ctx context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		c.record(platform.ErrClosed)
+		return
+	}
+	if c.initialized {
+		return
 	}
 	if ctx == nil {
-		return r.record(platform.ErrContextRequired)
+		c.initErr = c.record(platform.ErrContextRequired)
+		return
 	}
 	if err := ctx.Err(); err != nil {
-		return r.record(err)
+		c.initErr = c.record(err)
+		return
 	}
-	return errors.New("")
-	//return r.record(r.backend.BeginLogin(ctx))
+	c.ctx, c.cancel = context.WithCancel(ctx)
+	if c.initLocked() != nil {
+		c.cancel()
+		c.ctx, c.cancel = nil, nil
+	}
 }
 
-func (r *Core) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return r.closeErr
+func (c *Core) loadNativeLocked() error {
+	if err := c.readyError(); err != nil {
+		return c.record(err)
 	}
-	r.closed = true
-	r.closeErr = r.backend.Close()
-	return r.record(r.closeErr)
+	_, err := c.backend.LoadNative()
+	return c.record(err)
 }
+
+// LoadNative 只加载和解析本地库，不创建 QQ 会话，便于无界面的装载检查。
+func (c *Core) LoadNative() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.loadNativeLocked()
+}
+
+// LoadNativeLibrary 为页面返回操作后的状态，仍然操作当前这一个核心。
+func (c *Core) LoadNativeLibrary() (Status, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	err := c.loadNativeLocked()
+	return c.statusLocked(), err
+}
+
+// BeginLogin 使用启动时保存的上下文，页面无需传递 Go 的 context 对象。
+// QQ 能力与基础 Backend 分开；桌面端尚未实现真实登录时必须明确报错。
+func (c *Core) BeginLogin() (Status, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	err := c.readyError()
+	if err == nil {
+		switch {
+		case c.ctx == nil:
+			err = platform.ErrContextRequired
+		case c.ctx.Err() != nil:
+			err = c.ctx.Err()
+		case c.qq == nil:
+			err = platform.ErrQQUnavailable
+		default:
+			err = c.qq.BeginLogin(c.ctx)
+		}
+	}
+	c.record(err)
+	return c.statusLocked(), err
+}
+
+// Close 先取消核心的任务上下文，再关闭平台；重复调用只返回第一次的结果。
+// 关闭平台不是卸载 NativeAOT DLL，映射仍需保留到进程结束。
+func (c *Core) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return c.closeErr
+	}
+	c.closed = true
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.backend != nil {
+		c.closeErr = c.backend.Close()
+	}
+	return c.record(c.closeErr)
+}
+
+// Shutdown 接收 Wails 关闭通知，不创建新实例，也不重复关闭后端。
+func (c *Core) Shutdown(_ context.Context) { _ = c.Close() }

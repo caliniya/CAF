@@ -1,18 +1,29 @@
-# 本次迁移
+# 本次迁移：统一核心
 
-本次合并补丁基于上游提交 `0b3aec23b44fe667862b44a025902f2e3ab7aef8`，已经包含之前“测试集中到 tests/”的修改。**未应用旧测试补丁时，只应用这次的新补丁，不需要先应用旧补丁。**
+补丁基于 `830e209`，文件名 `CAF-unified-core.patch`。
+只应用本次补丁；之前的 core/platform、开发目录和 VS Code 补丁已在基线中，不要重复应用。
 
 ```powershell
-git apply --check CAF-core-platform.patch
-git apply CAF-core-platform.patch
+git apply --check .\CAF-unified-core.patch
+git apply .\CAF-unified-core.patch
 .\test.ps1
 .\build.ps1
 ```
 
-如已有其他本地改动，先保存并使用 `--check` 检查；不要强制覆盖。新补丁没有提交或推送到远程。
+有其他本地改动时先保存，检查报错就不要继续强行应用。
+本次没有提交或推送代码，没有修改 Lagrange 子模块或 DLL。
 
-主要变化：业务迁入 `core/`；平台契约在 `core/platform/`；桌面后端在 `platforms/desktop/`；Runtime 统一持有路径与实现；Go 测试集中在 `tests/`。根目录 App 移为桌面门面，JS 命名空间从 `main.App` 改为 `desktop.App`，前端桥接同步更新。
+主要变化：
 
-现有 DLL 只是从 `natives/win-x64/` 原样移动至 `platforms/desktop/natives/win-x64/`，没有重新编译或改变内容。不要使用旧的构建脚本往原路径复制 DLL。
+- 全局 `core.Platform` 改为 `*core.Core`，main 创建一次并赋值；窗口绑定同一实例，不复制互斥锁。
+- 删除 `platforms/desktop/ui.go` 中的 App 和 `core/app/service.go` 中的 Service；业务、状态与生命周期直接在 core 中。
+- 窗口函数接收 *core.Core。核心自行处理 Startup/Shutdown 和页面调用。
+- 前端由 window.go.desktop.App 改为 window.go.core.Core；已同步修改 bridge 和测试，生成文件由 Wails 重新生成。
+- QQ 接口从拼写有误的 QQPlatfrom 整理为 QQPlatform，与 Backend 分开；使用普通 Go 上下文和 error，不把裸 DLL 索引当作可直接使用的登录接口。
+- 启动和登录错误正常记录、传递；桌面登录继续明确返回尚未实现，不新增任何实际 QQ 登录。
+- 所有自有测试仍在 tests，原 Runtime/Service 测试更新为 Core 与全局同一实例的测试，没有删掉错误、并发和生命周期覆盖。
 
-真实 QQ 登录并未新增：只提供平台接口和转发链路，桌面实现明确返回“尚未实现”。安卓仍只有占位说明。
+原先 Go 调用 BeginLogin(ctx) 的位置，改为核心 Startup(ctx) 保存上下文后调用 BeginLogin()，返回 (core.Status,error)。
+命令行可先 Init，再调用核心方法；程序入口与命令行检查都已更新。
+
+数据位置、F5 配置和原生库重编脚本不变；开发数据仍在 build/dev-data，旧数据不会被删除。
