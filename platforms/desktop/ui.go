@@ -34,7 +34,7 @@ func (a *App) Startup(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	rt, err := core.NewRuntime(directories, a.backend)
+	rt, err := core.NewCore(directories, a.backend)
 	a.err = err
 	if err != nil {
 		return

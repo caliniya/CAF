@@ -2,7 +2,6 @@
 package platform
 
 import (
-	"context"
 	"errors"
 )
 
@@ -23,14 +22,9 @@ type NativeStatus struct {
 	Exports   int    `json:"exports"`
 }
 
-// Backend is owned by one Runtime. Construction and NativeStatus must be side-effect-free.
-// Init prepares immutable paths; loading and login are explicit, separate operations.
-// BeginLogin starts a flow, not proof of being online. Close ends sessions/tasks;
-// it must not unload a NativeAOT library that was loaded into the process.
 type Backend interface {
 	Init(Paths) error
 	NativeStatus() NativeStatus
 	LoadNative() (NativeStatus, error)
-	BeginLogin(context.Context) error
 	Close() error
-}
+}                                                        

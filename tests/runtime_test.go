@@ -14,7 +14,7 @@ import (
 func TestRuntimeConstructionOnlyStoresPathsAndBackend(t *testing.T) {
 	p := testPaths(t)
 	b := &fakeBackend{state: platform.NativeStatus{Supported: true}}
-	rt, err := core.NewRuntime(p, b)
+	rt, err := core.NewCore(p, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,10 +32,10 @@ func TestRuntimeConstructionOnlyStoresPathsAndBackend(t *testing.T) {
 }
 
 func TestRuntimeRejectsInvalidConfiguration(t *testing.T) {
-	if _, err := core.NewRuntime(testPaths(t), nil); !errors.Is(err, platform.ErrBackendRequired) {
+	if _, err := core.NewCore(testPaths(t), nil); !errors.Is(err, platform.ErrBackendRequired) {
 		t.Fatal(err)
 	}
-	if _, err := core.NewRuntime(platform.Paths{}, &fakeBackend{}); err == nil {
+	if _, err := core.NewCore(platform.Paths{}, &fakeBackend{}); err == nil {
 		t.Fatal("relative/empty paths accepted")
 	}
 }

@@ -30,7 +30,7 @@ func run(data string) error {
 	if err != nil {
 		return err
 	}
-	rt, err := core.NewRuntime(directories, backend)
+	rt, err := core.NewCore(directories, backend)
 	if err != nil {
 		return err
 	}

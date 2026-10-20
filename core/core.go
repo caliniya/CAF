@@ -3,10 +3,13 @@ package core
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/caliniya/caf/core/platform"
 )
+
+var Platform Core
 
 type State struct {
 	Ready     bool
@@ -17,10 +20,11 @@ type State struct {
 
 // Runtime owns one backend and one immutable set of paths. All backend operations
 // are serialized, including shutdown. Use separate instances for isolated tests.
-type Runtime struct {
+type Core struct {
 	mu          sync.Mutex
 	paths       platform.Paths
 	backend     platform.Backend
+	qq          platform.QQPlatfrom
 	initialized bool
 	closed      bool
 	lastError   string
@@ -28,20 +32,20 @@ type Runtime struct {
 }
 
 // NewRuntime only validates and stores references; it does not initialize or load anything.
-func NewRuntime(paths platform.Paths, backend platform.Backend) (*Runtime, error) {
+func NewCore(paths platform.Paths, backend platform.Backend) (*Core, error) {
 	if backend == nil {
 		return nil, platform.ErrBackendRequired
 	}
 	if err := paths.Validate(); err != nil {
 		return nil, err
 	}
-	return &Runtime{paths: paths, backend: backend}, nil
+	return &Core{paths: paths, backend: backend}, nil
 }
 
 // Paths returns a value copy, not a mutable reference to runtime configuration.
-func (r *Runtime) Paths() platform.Paths { return r.paths }
+func (r *Core) Paths() platform.Paths { return r.paths }
 
-func (r *Runtime) State() State {
+func (r *Core) State() State {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return State{
@@ -50,7 +54,7 @@ func (r *Runtime) State() State {
 	}
 }
 
-func (r *Runtime) record(err error) error {
+func (r *Core) record(err error) error {
 	r.lastError = ""
 	if err != nil {
 		r.lastError = err.Error()
@@ -58,7 +62,7 @@ func (r *Runtime) record(err error) error {
 	return err
 }
 
-func (r *Runtime) readyError() error {
+func (r *Core) readyError() error {
 	if r.closed {
 		return platform.ErrClosed
 	}
@@ -69,7 +73,7 @@ func (r *Runtime) readyError() error {
 }
 
 // Init is explicit and retryable on failure. A successful initialization runs only once.
-func (r *Runtime) Init() error {
+func (r *Core) Init() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -83,7 +87,7 @@ func (r *Runtime) Init() error {
 	return r.record(err)
 }
 
-func (r *Runtime) LoadNative() error {
+func (r *Core) LoadNative() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.readyError(); err != nil {
@@ -93,7 +97,7 @@ func (r *Runtime) LoadNative() error {
 	return r.record(err)
 }
 
-func (r *Runtime) BeginLogin(ctx context.Context) error {
+func (r *Core) BeginLogin(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.readyError(); err != nil {
@@ -105,10 +109,11 @@ func (r *Runtime) BeginLogin(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return r.record(err)
 	}
-	return r.record(r.backend.BeginLogin(ctx))
+	return errors.New("")
+	//return r.record(r.backend.BeginLogin(ctx))
 }
 
-func (r *Runtime) Close() error {
+func (r *Core) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {

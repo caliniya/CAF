@@ -7,6 +7,6 @@ import (
 
 var LoginFaildErr = errors.New("");
 
-type QQPlatfron interface{
+type QQPlatfrom interface{
 	StartLogin(int) int;
 }

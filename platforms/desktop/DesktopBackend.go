@@ -10,7 +10,7 @@ import (
 	"github.com/caliniya/caf/platforms/desktop/native"
 )
 
-type Backend struct {
+type DesktopBackend struct {
 	mu          sync.Mutex
 	paths       platform.Paths
 	loader      *native.Loader
@@ -18,12 +18,12 @@ type Backend struct {
 	closed      bool
 }
 
-var _ platform.Backend = (*Backend)(nil)
+var _ platform.Backend = (*DesktopBackend)(nil)
 
 // New is safe during Wails binding generation: no directories, DLL or QQ session.
-func New() *Backend { return &Backend{loader: native.NewLoader()} }
+func New() *DesktopBackend { return &DesktopBackend{loader: native.NewLoader()} }
 
-func (b *Backend) Init(paths platform.Paths) error {
+func (b *DesktopBackend) Init(paths platform.Paths) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.closed {
@@ -44,17 +44,18 @@ func (b *Backend) Init(paths platform.Paths) error {
 	if err := os.MkdirAll(paths.Logs, 0700); err != nil {
 		return err
 	}
+	
 	b.paths, b.initialized = paths, true
 	return nil
 }
 
-func (b *Backend) NativeStatus() platform.NativeStatus {
+func (b *DesktopBackend) NativeStatus() platform.NativeStatus {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.loader.Status()
 }
 
-func (b *Backend) readyError() error {
+func (b *DesktopBackend) readyError() error {
 	if b.closed {
 		return platform.ErrClosed
 	}
@@ -64,7 +65,7 @@ func (b *Backend) readyError() error {
 	return nil
 }
 
-func (b *Backend) LoadNative() (platform.NativeStatus, error) {
+func (b *DesktopBackend) LoadNative() (platform.NativeStatus, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.readyError(); err != nil {
@@ -73,7 +74,7 @@ func (b *Backend) LoadNative() (platform.NativeStatus, error) {
 	return b.loader.Load(b.paths.Data)
 }
 
-func (b *Backend) BeginLogin(ctx context.Context) error {
+func (b *DesktopBackend) BeginLogin(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.readyError(); err != nil {
@@ -90,7 +91,7 @@ func (b *Backend) BeginLogin(ctx context.Context) error {
 	return platform.ErrLoginNotImplemented
 }
 
-func (b *Backend) Close() error {
+func (b *DesktopBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.closed = true

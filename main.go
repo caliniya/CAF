@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 
+	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/platforms/desktop"
 	"github.com/caliniya/caf/platforms/desktop/window"
 )
@@ -17,10 +18,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// Entry point selects the implementation. Constructors do not initialize it.
+	// 怎么选取平台后端?
 	backend := desktop.New()
-	app := desktop.NewApp(backend)
-	if err := window.Run(assets, app); err != nil {
+	core.Platform = core.NewCore(backend)
+	if err := window.Run(assets, core.Platform); err != nil {
 		log.Fatal(err)
 	}
 }

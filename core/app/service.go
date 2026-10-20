@@ -23,9 +23,9 @@ type Status struct {
 	LastError string                `json:"lastError,omitempty"`
 }
 
-type Service struct{ runtime *core.Runtime }
+type Service struct{ runtime *core.Core }
 
-func New(rt *core.Runtime) (*Service, error) {
+func New(rt *core.Core) (*Service, error) {
 	if rt == nil {
 		return nil, errors.New("a core runtime is required")
 	}

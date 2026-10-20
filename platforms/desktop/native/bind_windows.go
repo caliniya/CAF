@@ -38,8 +38,7 @@ func bindNative(path string) (string, int, error) {
 	}
 	exports := &nativeExports{}
 	err := goinvoke.Unmarshal(path, exports)
-	// Pin partial and successful mappings. Native AOT must NEVER be unloaded with
-	// Release/FreeLibrary, even when a later symbol lookup fails.
+
 	processLibrary.pinned = append(processLibrary.pinned, exports)
 	if err != nil {
 		return "", 0, fmt.Errorf("load Lagrange native exports: %w", err)
@@ -53,6 +52,5 @@ func bindNative(path string) (string, int, error) {
 		}
 	}
 	processLibrary.loaded, processLibrary.path = exports, path
-	// Deliberately no Initialize/Start/Call here: loading must not attempt QQ login.
 	return path, 6, nil
 }

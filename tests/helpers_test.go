@@ -40,9 +40,9 @@ func testPaths(t *testing.T) platform.Paths {
 	return p
 }
 
-func testRuntime(t *testing.T, b platform.Backend) *core.Runtime {
+func testRuntime(t *testing.T, b platform.Backend) *core.Core {
 	t.Helper()
-	rt, err := core.NewRuntime(testPaths(t), b)
+	rt, err := core.NewCore(testPaths(t), b)
 	if err != nil {
 		t.Fatal(err)
 	}
