@@ -15,9 +15,15 @@ dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
 .actions { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
 button { background: #26344e; color: #e2e8f0; border: 1px solid #475569; padding: 10px 16px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
 button:hover:not(:disabled) { border-color: #93c5fd; }
-#load { background: #2563eb; border-color: #3b82f6; }
+#login { background: #2563eb; border-color: #3b82f6; }
 button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
 button:disabled { opacity: .5; cursor: default; }
 #message { color: #bfdbfe; min-height: 24px; font-size: 13px; line-height: 1.7; }
 aside { font-size: 12px; }
 @media (max-width: 720px) { main { padding: 24px; } h1 { font-size: 26px; } }
+
+#qr { width: 240px; max-width: 100%; background: white; margin-top: 20px; }
+#send-form { display: grid; gap: 14px; }
+label { display: grid; gap: 8px; }
+input, textarea { width: 100%; background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; padding: 10px; font: inherit; }
+textarea { min-height: 80px; resize: vertical; }

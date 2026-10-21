@@ -15,6 +15,10 @@ var (
 	ErrLoginNotImplemented = errors.New("QQ 登录尚未实现；目前只支持加载本地库并解析导出")
 	ErrQQUnavailable       = errors.New("当前平台未提供 QQ 接口")
 	ErrQQIntegrationPaused = errors.New("QQ 集成已暂停，当前不加载 Lagrange.Core 本地库")
+	ErrNativeRetired       = errors.New("已改用 LagrangeGo，不再加载 C# 本地库")
+	ErrQQConfigRequired    = errors.New("请先在数据目录 qq/config.json 中配置签名服务")
+	ErrQQLoginInProgress   = errors.New("QQ 登录正在进行，请勿重复发起")
+	ErrQQNotOnline         = errors.New("QQ 尚未上线")
 )
 
 type NativeStatus struct {
@@ -26,7 +30,7 @@ type NativeStatus struct {
 }
 
 // Backend 只负责基础平台能力；QQPlatform 是单独注入核心的可选能力。
-// 核心负责生命周期与业务编排，后端不应再次创建核心或卸载 NativeAOT 库。
+// 核心负责生命周期与业务编排。原生库方法暂留兼容，不再用于 QQ 登录。
 type Backend interface {
 	Init(Paths) error
 	NativeStatus() NativeStatus

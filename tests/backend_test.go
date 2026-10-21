@@ -47,7 +47,7 @@ func TestDesktopLoginExplicitlyReportsPausedWithoutLoading(t *testing.T) {
 	if err := b.Init(p); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.QQ().BeginLogin(context.Background()); !errors.Is(err, platform.ErrQQIntegrationPaused) {
+	if err := b.QQ().BeginLogin(context.Background()); !errors.Is(err, platform.ErrQQConfigRequired) {
 		t.Fatal(err)
 	}
 	if b.NativeStatus().Loaded {
@@ -70,7 +70,7 @@ func TestDesktopNativeLoadingIsPausedOnEveryPlatform(t *testing.T) {
 	}
 	for range 2 {
 		state, err := b.LoadNative()
-		if !errors.Is(err, platform.ErrQQIntegrationPaused) || state != before || b.NativeStatus() != before {
+		if !errors.Is(err, platform.ErrNativeRetired) || state != before || b.NativeStatus() != before {
 			t.Fatal("显式调用加载也应保持暂停状态", state, err)
 		}
 	}

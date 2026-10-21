@@ -1,32 +1,41 @@
 export function createClient(bindings) {
-  // 页面直接访问核心对象；平台后端的选择和注入由 Go 启动入口完成。
+  // 页面只访问核心对象，不接触 SDK 客户端、签名配置或凭据。
   const backend = bindings?.core?.Core;
-  if (!backend || typeof backend.GetStatus !== "function" || typeof backend.LoadNativeLibrary !== "function" || typeof backend.BeginLogin !== "function") {
+  if (!backend || !["GetStatus", "BeginLogin", "CancelLogin", "SendGroupText"].every((name) => typeof backend[name] === "function")) {
     throw new Error("请通过 Wails 启动 CAF；普通浏览器预览没有 Go 后端。");
   }
   return {
     status: () => backend.GetStatus(),
-    loadNative: () => backend.LoadNativeLibrary(),
     beginLogin: () => backend.BeginLogin(),
+    cancelLogin: () => backend.CancelLogin(),
+    sendGroupText: (group, text) => backend.SendGroupText(group, text),
   };
 }
 
+export const phaseNames = {
+  idle: "未登录", starting: "正在创建会话", waiting: "等待扫码",
+  scanned: "已扫码，等待手机确认", logging_in: "正在登录", online: "已上线",
+  error: "登录或连接失败", closed: "已关闭", unavailable: "当前后端未提供 QQ",
+};
+
 export function statusRows(status) {
-  const native = status.native ?? {};
+  const qq = status.qq ?? {};
   return [
     ["应用", `${status.name ?? "CAF"} ${status.version ?? ""}`.trim()],
     ["平台", status.platform || "尚未启动"],
     ["数据目录", status.dataDir || "尚未初始化"],
-    ["原生库", native.paused ? "QQ 集成已暂停 · 不加载" : native.loaded ? `已加载 · ${native.exports} 个导出` : native.supported ? "待加载" : "当前平台尚未实现"],
-    ...(native.path ? [["库缓存", native.path]] : []),
+    ["QQ 后端", qq.provider || "尚未提供"],
+    ["QQ 状态", phaseNames[qq.phase] || "未知状态"],
+    ...(qq.account ? [["登录账号", String(qq.account)]] : []),
   ];
 }
 
-export function canLoadNative(status) {
-  const native = status.native ?? {};
-  return Boolean(status.ready && native.supported && !native.paused && !native.loaded);
+export function canBeginLogin(status) {
+  return Boolean(status.ready && ["idle", "error"].includes(status.qq?.phase));
 }
-
+export function canSendGroupText(status) {
+  return Boolean(status.ready && status.qq?.phase === "online");
+}
 export function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }

@@ -20,3 +20,7 @@
 *.log
 .env
 .env.*
+**/qq/config.json
+**/qq/device.json
+**/qq/sig.bin
+**/qq/qrcode.png

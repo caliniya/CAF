@@ -1,70 +1,56 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createClient, statusRows, canLoadNative, errorMessage } from "../frontend/bridge.mjs";
+import { createClient, statusRows, canBeginLogin, canSendGroupText, errorMessage } from "../frontend/bridge.mjs";
 
-test("requires an actual Wails backend instead of pretending browser preview works", () => {
+function fakeBindings(overrides = {}) {
+  return { core: { Core: {
+    GetStatus: async () => ({ name: "CAF" }), BeginLogin: async () => ({}),
+    CancelLogin: async () => ({}), SendGroupText: async () => ({}), ...overrides,
+  } } };
+}
+test("仅接受核心的实际 Wails 绑定", () => {
   assert.throws(() => createClient(undefined), /Wails/);
   assert.throws(() => createClient({ core: { Core: { GetStatus() {} } } }), /Wails/);
-  assert.throws(() => createClient({ main: { App: { GetStatus() {}, LoadNativeLibrary() {}, BeginLogin() {} } } }), /Wails/);
+  assert.throws(() => createClient({ desktop: { App: fakeBindings().core.Core } }), /Wails/);
 });
-
-test("forwards methods without automatically loading native code", async () => {
-  let loads = 0;
-  const client = createClient({
-    core: {
-      Core: {
-        GetStatus: async () => ({ name: "CAF" }),
-        LoadNativeLibrary: async () => { loads++; return { native: { loaded: true } }; },
-        BeginLogin: async () => ({ name: "CAF" }),
-      },
-    },
-  });
-  assert.equal(loads, 0);
-  assert.deepEqual(await client.status(), { name: "CAF" });
-  assert.equal(loads, 0);
-  assert.equal((await client.loadNative()).native.loaded, true);
-  assert.equal(loads, 1);
+test("构造和状态查询不会自动登录或发消息", async () => {
+  let login = 0, sends = 0;
+  const client = createClient(fakeBindings({ BeginLogin: async () => { login++; }, SendGroupText: async () => { sends++; } }));
+  await client.status();
+  assert.equal(login, 0); assert.equal(sends, 0);
+  await client.beginLogin(); assert.equal(login, 1); assert.equal(sends, 0);
 });
-
-test("forwards login and preserves an explicit not-implemented error", async () => {
-  let calls = 0;
-  const backend = {
-    GetStatus: async () => ({}),
-    LoadNativeLibrary: async () => ({}),
-    BeginLogin: async () => { calls++; throw new Error("QQ login is not implemented"); },
-  };
-  const client = createClient({ core: { Core: backend } });
-  assert.throws(() => createClient({ desktop: { App: backend } }), /Wails/);
-  assert.equal(calls, 0);
-  await assert.rejects(() => client.beginLogin(), /not implemented/);
-  assert.equal(calls, 1);
+test("发送和取消只转发显式调用", async () => {
+  const calls = [];
+  const client = createClient(fakeBindings({ CancelLogin: async () => { calls.push("cancel"); }, SendGroupText: async (group, text) => { calls.push([group, text]); } }));
+  await client.sendGroupText(123, "测试消息"); await client.cancelLogin();
+  assert.deepEqual(calls, [[123, "测试消息"], "cancel"]);
 });
-
-test("renders native availability, paths and count as data", () => {
-  const rows = statusRows({ name: "CAF", version: "0.1.0", platform: "windows/amd64", dataDir: "D:/CAF/data", native: { loaded: true, exports: 6, path: "native.dll" } });
-  assert.deepEqual(rows[0], ["应用", "CAF 0.1.0"]);
-  assert.equal(rows.find(([key]) => key === "原生库")[1], "已加载 · 6 个导出");
-  assert.deepEqual(rows.at(-1), ["库缓存", "native.dll"]);
-  assert.match(statusRows({}).find(([key]) => key === "原生库")[1], /尚未实现/);
+test("后端错误原样交给调用方，不伪造登录成功", async () => {
+  const client = createClient(fakeBindings({ BeginLogin: async () => { throw new Error("请配置签名服务"); } }));
+  await assert.rejects(() => client.beginLogin(), /配置/);
 });
-
-test("handles both Error objects and string rejections from Go", () => {
-  assert.equal(errorMessage(new Error("failed")), "failed");
-  assert.equal(errorMessage("native load failed"), "native load failed");
+test("显示 Go SDK 与独立的 QQ 状态，不显示旧 DLL 已加载", () => {
+  const rows = statusRows({ name: "CAF", qq: { provider: "LagrangeGo", phase: "online", account: 123 } });
+  assert.deepEqual(rows.find(([key]) => key === "QQ 后端"), ["QQ 后端", "LagrangeGo"]);
+  assert.deepEqual(rows.find(([key]) => key === "QQ 状态"), ["QQ 状态", "已上线"]);
+  assert.deepEqual(rows.at(-1), ["登录账号", "123"]);
+  assert.equal(rows.some(([key]) => key === "原生库"), false);
 });
-
-test("暂停优先于平台支持状态，Windows 与 Linux 都不显示待加载", () => {
-  for (const supported of [true, false]) {
-    const status = { ready: true, native: { supported, paused: true, loaded: false } };
-    assert.equal(statusRows(status).find(([key]) => key === "原生库")[1], "QQ 集成已暂停 · 不加载");
-    assert.equal(canLoadNative(status), false);
+test("登录按钮仅在就绪且未登录或失败时允许使用", () => {
+  for (const phase of ["starting", "waiting", "scanned", "logging_in", "online", "closed", "unavailable"]) {
+    assert.equal(canBeginLogin({ ready: true, qq: { phase } }), false);
   }
+  assert.equal(canBeginLogin({ ready: true, qq: { phase: "idle" } }), true);
+  assert.equal(canBeginLogin({ ready: true, qq: { phase: "error" } }), true);
+  assert.equal(canBeginLogin({ ready: false, qq: { phase: "idle" } }), false);
 });
-
-test("加载按钮同时检查就绪、支持、暂停及加载状态", () => {
-  assert.equal(canLoadNative({}), false);
-  assert.equal(canLoadNative({ ready: false, native: { supported: true } }), false);
-  assert.equal(canLoadNative({ ready: true, native: { supported: false } }), false);
-  assert.equal(canLoadNative({ ready: true, native: { supported: true, loaded: true } }), false);
-  assert.equal(canLoadNative({ ready: true, native: { supported: true, paused: false, loaded: false } }), true);
+test("只有已上线才允许群文本发送", () => {
+  assert.equal(canSendGroupText({ ready: true, qq: { phase: "online" } }), true);
+  assert.equal(canSendGroupText({ ready: true, qq: { phase: "waiting" } }), false);
+  assert.equal(canSendGroupText({}), false);
+});
+test("支持 Error 和 Go 字符串错误", () => {
+  assert.equal(errorMessage(new Error("失败")), "失败");
+  assert.equal(errorMessage("失败"), "失败");
 });

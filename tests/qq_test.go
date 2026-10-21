@@ -67,7 +67,7 @@ func TestCoreTreatsTypedNilQQAsUnavailable(t *testing.T) {
 	}
 }
 
-func TestDesktopProvidesOneSeparateQQPlaceholder(t *testing.T) {
+func TestDesktopProvidesOneSeparateGoQQBackend(t *testing.T) {
 	b := desktop.New()
 	qq := b.QQ()
 	if qq == nil || b.QQ() != qq {

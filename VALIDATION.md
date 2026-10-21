@@ -1,35 +1,41 @@
-# 结构变更验证记录
+# LagrangeGo 试验后端验证
 
-2026-10-21，基于最新 CAF 提交 bc845bf；Linux x64 环境，Go 1.27.3、Wails CLI v2.17.0、PowerShell 7.6.7、Node v18.20.4。
+2026-10-21，基于 CAF dd4f542，Go 1.27.3 / Wails v2.17.0 / PowerShell 7.6.7 / Node v18.20.4，Linux x64 宿主。
+固定 SDK 版本为 v0.1.5-0.20260718062712-f7f8abfaa7f1。
 
-## 已通过
+## 已完成与通过
 
-- test.ps1：42 个 Go 测试、整个工程 bindings 标签 vet、7 次开发脚本模拟与 VS Code 配置检查、7 个前端测试。
-- go test -race -count=1 ./tests：通过。
-- go test -tags bindings -count=1 ./...：全部新包与无窗口工程编译、测试通过。
-- Windows x64 的 bindings 交叉编译、测试程序编译，以及 production/dev 标签 vet。
-- build.ps1 的 Windows 发布构建，以及按 VS Code 任务参数执行的 Windows debug 构建通过。
-- 实际生成的 JS 仍调用 window.go.core.Core；模型包含 native.paused，不暴露 DesktopQQ 或 QQPlatform。
-- 构建生成绑定时使用全新 CAF_DATA_DIR，没有创建数据目录、提取库或初始化 QQ。
-- 发布和 debug EXE 中都能逐字节找到原样 DLL 资源；保留资源不等于装载 DLL。
-- 核心、platform、client 与 pre 的依赖检查：不依赖具体 backend、Wails 或 goinvoke。
-- 显式注入的 QQ 实现得到调用；未提供或带类型 nil 的 QQ 明确不可用，不隐式借用基础后端。
-- DesktopQQ 是单独的稳定占位引用；初始化、上下文与关闭检查仍有效，暂停不影响核心 ready。
-- nativecheck 返回 status=paused，指定的全新目录没有创建，说明没有提取或装载本地库。
-- Go 模块完整性、gofmt、前端语法与补丁空白检查通过。
-- 在 bc845bf 的全新源码副本上应用补丁后，重跑 test.ps1、无窗口全工程测试及 Windows 包构建均通过；DLL 重命名后哈希不变。
+- test.ps1：50 个 Go 测试、整个工程 bindings 标签 vet、7 次开发脚本模拟和 VS Code 配置检查、8 个前端测试。
+- 全部集中 Go 测试的 race 检查，以及 SDK 异步登录/取消测试连续 10 轮 race 检查。
+- go test -tags bindings -count=1 ./...、Windows x64 的包构建、production vet 与测试程序交叉编译。
+- Wails Windows x64 production 和 debug 构建均通过，页面绑定仍为同一个 core.Core。
+- 实际生成 BeginLogin、CancelLogin、SendGroupText 和 GetStatus 的 JS；模型包含 QQStatus，但不包含签名配置、令牌或 SDK 会话对象。
+- 绑定生成过程没有创建指定的全新 CAF_DATA_DIR，不初始化 QQ、不联网登录。
+- production/debug EXE 中均不再包含原 C# DLL 资源；归档 DLL 本身与来源记录未改动。
+- Linux 命令行 qqcheck 在 CGO_ENABLED=0 下编译通过；无签名配置时只创建空白模板并明确退出，没有创建 device.json 或 sig.bin。
+- nativecheck 兼容入口只报告 not_required，不创建目录或加载任何库。
+- 核心依赖图不包含 LagrangeGo、后端、Wails 或 goinvoke；Go 模块图已无 goinvoke。
+- Go 模块校验、tidy -diff、gofmt、前端语法和 diff 空白检查通过。
+- 在 dd4f542 的全新 Git 副本上按文档 deinit 并使用 --index 应用补丁，确认 gitlink/登记已删除；重新运行 test.ps1、全工程无窗口测试、race 和 Windows 包构建均通过。
 
-## 资源与范围
+## 测试覆盖的行为
 
-- Lagrange 子模块仍为 20c2ba079b5ee67156bd71419ed54ea61a24e91f，未改动。
-- DLL 仅迁移到 backend/desktop/natives/win-x64，大小 16261632 字节，SHA-256 仍为 2cb457a82c6a002d606502ea322887626bca6cf673ef07c71c76b2bf5b26492c。
-- 没有新增或升级依赖；没有改动第三方来源记录的内容，没有重编 DLL，也没有删除数据或缓存。
-- client、pre 与 Android 仍只占位，不假称已实现反向 WS、协议解析、工具执行或 Android 后端。
-- QQ 只保留占位；默认测试不会装载真实 Windows DLL，提取测试仅使用测试临时目录。
+- 构造和初始化不创建真实登录会话；缺少签名配置不影响核心 ready。
+- 假会话验证：扫码确认、SDK 上线确认、凭据保存、缓存登录跳过二维码、重复登录保护、取消及关闭释放。
+- 未上线不能发送群消息；登录后不自动发送，只有显式调用才发送一次，不自动重试。
+- 假 SDK 的 nil 错误不等于已上线；未确认 online 时不保存凭据或假报成功。
+- 签名配置和底层错误中的测试敏感标记不会进入页面状态；二维码结束后清除。
+- 真实 SDK 仅验证离线对象构造、稳定设备标识、Linux 文件权限、非法版本和损坏设备文件不被覆盖。
 
-## 未验证的边界
+成功状态来自假会话，只证明 CAF 编排可执行，不代表任何真实账号已经登录。
 
-- 实际 Linux production 构建因环境缺少 pkg-config 而停止；GTK/WebKit 与 WSLg 窗口未实测。
-- Windows GUI、Delve 断点及 Windows DLL 未在宿主运行；构建和 vet 属于交叉检查。
-- NativeAOT 重编脚本只同步路径并做语法与目标路径检查，没有实际执行重编。
-- 没有验证或恢复真实 QQ 登录、消息收发和签名服务，也没有实现完整 Agent 业务。
+## 未验证与限制
+
+- 没有配置真实签名服务、扫码登录或向真实群发送消息；没有取得或使用用户的认证令牌。
+- 签名接口格式、协议版本、账号风控和当前 QQ 服务端兼容性必须由本机后续验证。
+- SDK 方法本身不带 context，取消通过断开 TCP 实现，签名 HTTP/部分网络等待仍可能等到 SDK 超时。
+- Windows GUI、Delve 断点未在 Windows 实机运行；本次是交叉构建。
+- Linux production 图形编译仍因缺少 pkg-config 停止，GTK/WebKit/WSLg 窗口未验证；不影响无窗口 qqcheck。
+- 不包含消息事件转发、OneBot、Agent 调度、Android 或生产级多账号管理。
+
+Lagrange.Core 子模块登记和 gitlink 已移除；Git 对象缓存与旧 DLL/来源/历史补丁保留，不强制清理历史或用户数据。

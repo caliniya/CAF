@@ -1,41 +1,33 @@
-# 本次结构变更
+# 本次迁移：LagrangeGo 桌面 QQ 试验后端
 
-基于 CAF 最新提交 `bc845bf`，补丁名 `CAF-structure.patch`。
-本补丁已经包含之前尚未合入仓库的“暂停 QQ 加载”改动，不需要先应用旧补丁。
+基于 `dd4f542`，补丁名 `CAF-lagrangego.patch`。包含依赖、源码、测试和许可，不包含任何账号配置。
+需要 Go 1.26+。
 
-在干净的项目根目录执行（补丁先放到根目录）：
+本次会删除 Git 子模块登记和 gitlink。请在没有未保存改动的项目根目录执行，
+先确保 lagrange 子模块自身没有改动，再解除工作目录初始化：
 
 ```powershell
-git apply --check .\CAF-structure.patch
-git apply .\CAF-structure.patch
+git -C lagrange status --short
+git submodule deinit lagrange
+git apply --check --index .\CAF-lagrangego.patch
+git apply --index .\CAF-lagrangego.patch
 .\test.ps1
-.\build.ps1
 ```
 
-本地有其他改动时先保存；如果 --check 报错，不要强行应用。
-如果已经应用旧的暂停补丁，也先检查，不要重复叠加；需要先保存现有工作再整理到上述基线。
+这里使用 --index，使子模块 gitlink 的删除也正确写入 Git 索引；源码改动也会一并暂存，但不会提交或推送。
+如果从未初始化过 lagrange，可以跳过 deinit；未初始化目录的清理警告不影响后续补丁检查。
+如果 --check 报错，不要强行覆盖，也不要运行 git clean 或 reset --hard；先保存现有工作。
+旧子模块的 Git 对象缓存和历史提交没有强制删除，便于回溯。
 
-## 路径变更
+主要变化：
 
-- core/platform → platform。
-- platforms/desktop → backend/desktop，原 window、native 和 natives 子目录一起迁移。
-- platforms/android → backend/android，仍为占位。
-- 新建 client、pre 的包说明，暂不实现网络、解析或工具执行。
-- 原生 DLL 只移动路径，Git 补丁按重命名记录，不重编、不替换内容。
-- main、命令行、测试、原生重编脚本和来源文档同步新路径。
+- LagrangeGo 通过 Go modules 固定到 f7f8abfaa7f1；升级 Go 声明到 1.26，间接依赖按模块选择规则更新。
+- 删除 Lagrange.Core 子模块、旧 native FFI 源码、goinvoke 与 NativeAOT 构建入口。
+- 原 DLL、来源记录和历史补丁原样保留归档，但应用不再引用 natives 包，不会把 DLL 打进 EXE。
+- DesktopQQ 换成实际 Go SDK 适配；登录在后台执行，不阻塞状态查询。
+- QQPlatform 的 BeginLogin 保留；状态、取消和群文本是独立的可选接口，不破坏最小假平台测试。
+- 页面改为本机扫码登录和手动发送群文本，增加 cmd/qqcheck 供 WSL 无窗口试验。
+- 没有恢复 OneBot、消息事件转发或 Agent 业务；没有替用户填写签名服务或自动发测试消息。
 
-## QQ 引用单独注入
-
-桌面基础能力由 DesktopBackend 提供，QQ 占位由 DesktopQQ.go 中的 DesktopQQ 提供。
-入口从 backend.QQ() 取得同一个占位引用，显式交给核心：
-
-```go
-core.Platform, err = core.NewCore(paths, backend, backend.QQ())
-```
-
-独立调用 NewCore 的代码需要补上第三个参数；没有 QQ 能力时传 nil。
-不再由核心通过类型断言猜测基础后端是否兼任 QQ；调用方仍走 core.Platform.BeginLogin()。
-QQ 占位与后端共用生命周期，暂停、缺失或关闭都返回明确错误，不阻止普通核心启动。
-
-Wails 仍绑定 core.Core；前端命名空间、数据位置和 Windows F5 配置不变。
-本次不创建 desktop.App、不改 Lagrange 子模块或 DLL 内容、不删除或迁移用户数据，也不提交或推送代码。
+首次运行后在数据目录 qq/config.json 本地配置签名服务。具体步骤见 README，不要将令牌或二维码发到群里。
+旧数据不删除、不迁移；新的敏感文件加入 Git 忽略规则。

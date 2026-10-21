@@ -16,11 +16,21 @@
         <dl id="status"><dt>应用</dt><dd>正在连接 Go 后端…</dd></dl>
         <div class="actions">
           <button id="refresh" type="button">刷新状态</button>
-          <button id="load" type="button" disabled>QQ 集成已暂停</button>
+          <button id="login" type="button" disabled>登录 QQ</button>
+          <button id="cancel" type="button" disabled>取消 / 断开 QQ</button>
         </div>
+        <img id="qr" hidden alt="本机 QQ 登录二维码，请勿分享" />
         <p id="message" role="status" aria-live="polite"></p>
       </section>
-      <aside>我还啥都没做</aside>
+      <section>
+        <h2>手动发送群文本</h2>
+        <form id="send-form">
+          <label>群号 <input id="group" type="number" min="1" max="4294967295" step="1" required /></label>
+          <label>文本 <textarea id="text" maxlength="4096" required></textarea></label>
+          <button id="send" type="submit" disabled>发送一条消息</button>
+        </form>
+      </section>
+      <aside>试验版 QQ 后端：先在数据目录 qq/config.json 配置签名服务；不会自动登录或发送消息。</aside>
     </main>
     <script type="module" src="/main.mjs"></script>
   </body>

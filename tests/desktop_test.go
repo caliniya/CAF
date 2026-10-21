@@ -54,15 +54,15 @@ func TestCoreStartupInitializesDesktopWithoutLoadingNative(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, "natives")); !os.IsNotExist(err) {
 		t.Fatal("启动时不应提取本地库", err)
 	}
-	if err := engine.LoadNative(); !errors.Is(err, platform.ErrQQIntegrationPaused) {
+	if err := engine.LoadNative(); !errors.Is(err, platform.ErrNativeRetired) {
 		t.Fatal("无界面加载入口也应返回暂停", err)
 	}
 	status, err = engine.LoadNativeLibrary()
-	if !errors.Is(err, platform.ErrQQIntegrationPaused) || !status.Ready || !status.Native.Paused || status.Native.Loaded {
+	if !errors.Is(err, platform.ErrNativeRetired) || !status.Ready || !status.Native.Paused || status.Native.Loaded {
 		t.Fatal("暂停加载不能影响核心就绪状态", status, err)
 	}
 	status, err = engine.BeginLogin()
-	if !errors.Is(err, platform.ErrQQIntegrationPaused) || !status.Ready || status.Native.Loaded || status.LastError != err.Error() {
+	if !errors.Is(err, platform.ErrQQConfigRequired) || !status.Ready || status.Native.Loaded || status.LastError != err.Error() {
 		t.Fatal("暂停登录不能影响核心就绪状态", status, err)
 	}
 	if _, err := os.Stat(filepath.Join(data, "natives")); !os.IsNotExist(err) {

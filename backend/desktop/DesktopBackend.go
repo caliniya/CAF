@@ -5,14 +5,12 @@ import (
 	"os"
 	"sync"
 
-	"github.com/caliniya/caf/backend/desktop/native"
 	"github.com/caliniya/caf/core/platform"
 )
 
 type DesktopBackend struct {
 	mu          sync.Mutex
 	paths       platform.Paths
-	loader      *native.Loader
 	qq          *DesktopQQ
 	initialized bool
 	closed      bool
@@ -20,10 +18,18 @@ type DesktopBackend struct {
 
 var _ platform.Backend = (*DesktopBackend)(nil)
 
-// New 只创建后端对象，不创建目录、不加载 DLL，也不尝试登录。
+// New 只创建后端对象，不创建目录、不联网，也不尝试登录。
 func New() *DesktopBackend {
-	b := &DesktopBackend{loader: native.NewLoader()}
-	b.qq = &DesktopQQ{backend: b}
+	return NewWithQQFactory(NewLagrangeSession)
+}
+
+// NewWithQQFactory 允许集中测试注入假会话；应用入口直接使用 New。
+func NewWithQQFactory(factory QQSessionFactory) *DesktopBackend {
+	if factory == nil {
+		factory = NewLagrangeSession
+	}
+	b := &DesktopBackend{}
+	b.qq = &DesktopQQ{backend: b, factory: factory, state: platform.QQStatus{Provider: "LagrangeGo", Phase: "idle"}}
 	return b
 }
 
@@ -48,6 +54,9 @@ func (b *DesktopBackend) Init(paths platform.Paths) error {
 	if err := os.MkdirAll(paths.Logs, 0700); err != nil {
 		return err
 	}
+	if err := prepareQQDirectory(paths.Data); err != nil {
+		return err
+	}
 
 	b.paths, b.initialized = paths, true
 	return nil
@@ -60,10 +69,8 @@ func (b *DesktopBackend) NativeStatus() platform.NativeStatus {
 }
 
 func (b *DesktopBackend) nativeStatusLocked() platform.NativeStatus {
-	status := b.loader.Status()
-	// 保留加载器、绑定和二进制资源；当前阶段所有桌面系统都暂停 QQ 集成。
-	status.Paused = true
-	return status
+	// 旧接口暂留兼容；QQ 改用 Go SDK，归档 DLL 不进入运行流程。
+	return platform.NativeStatus{Paused: true}
 }
 
 func (b *DesktopBackend) readyError() error {
@@ -83,13 +90,15 @@ func (b *DesktopBackend) LoadNative() (platform.NativeStatus, error) {
 		return b.nativeStatusLocked(), err
 	}
 	// 即使调用方显式请求，也不提取或加载 DLL；Linux/WSL 无需准备 .so。
-	return b.nativeStatusLocked(), platform.ErrQQIntegrationPaused
+	return b.nativeStatusLocked(), platform.ErrNativeRetired
 }
 
 func (b *DesktopBackend) Close() error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.closed = true
-	// 暂无已创建的 QQ 会话；NativeAOT 映射保留到进程退出，不执行卸载。
+	b.mu.Unlock()
+	if b.qq != nil {
+		b.qq.close()
+	}
 	return nil
 }

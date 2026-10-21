@@ -8,11 +8,12 @@ import (
 
 const Version = "0.1.0"
 
-// State 是核心生命周期与原生库状态的快照。
+// State 是核心生命周期与 QQ 状态的快照，Native 字段仅兼容旧接口。
 type State struct {
 	Ready     bool                  `json:"ready"`
 	Closed    bool                  `json:"closed"`
 	Native    platform.NativeStatus `json:"native"`
+	QQ        platform.QQStatus     `json:"qq"`
 	LastError string                `json:"lastError,omitempty"`
 }
 
@@ -25,6 +26,7 @@ type Status struct {
 	Closed    bool                  `json:"closed"`
 	DataDir   string                `json:"dataDir"`
 	Native    platform.NativeStatus `json:"native"`
+	QQ        platform.QQStatus     `json:"qq"`
 	LastError string                `json:"lastError,omitempty"`
 }
 
@@ -33,7 +35,11 @@ func (c *Core) stateLocked() State {
 	if c.backend != nil {
 		native = c.backend.NativeStatus()
 	}
-	return State{Ready: c.initialized && !c.closed, Closed: c.closed, Native: native, LastError: c.lastError}
+	qq := platform.QQStatus{Phase: "unavailable"}
+	if reporter, ok := c.qq.(platform.QQStatusProvider); ok {
+		qq = reporter.QQStatus()
+	}
+	return State{Ready: c.initialized && !c.closed, Closed: c.closed, Native: native, QQ: qq, LastError: c.lastError}
 }
 
 // State 只查询状态，不初始化或加载平台资源。
@@ -48,7 +54,7 @@ func (c *Core) statusLocked() Status {
 	return Status{
 		Name: "CAF", Version: Version, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Ready: state.Ready, Closed: state.Closed, DataDir: c.paths.Data,
-		Native: state.Native, LastError: state.LastError,
+		Native: state.Native, QQ: state.QQ, LastError: state.LastError,
 	}
 }
 

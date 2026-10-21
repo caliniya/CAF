@@ -1,13 +1,10 @@
 # 项目说明
 
-CAF 是一个 Go 桌面 Agent 框架，计划支持 AI 对话与工具调用。
+CAF 是一个 Go/Wails 桌面 Agent 框架，计划支持 AI 对话与工具调用。
+业务放 core，接口放 core/platform，具体实现放 backend，client 和 pre 目前占位。
+全局入口是 core.Platform，不另设 desktop.App。
 
-- core：保存全局核心、状态和平台引用，统一调度业务。
-- client：负责 HTTP/WS 通信，目前占位。
-- pre：解析外部数据并转换格式，目前占位，不直接执行工具。
-- platform：只定义平台接口和公共数据。
-- backend：提供各平台实现，包含窗口壳和原生库细节。
-
-QQ 只保留 QQPlatform 接口和 DesktopQQ 占位实现，由启动入口注入 core。
-Lagrange 子模块及 DLL 保留但不加载，WSL 暂不需要 Linux .so。
-桌面优先，Android 占位，数据目录保持便携。
+桌面 QQ 改用 LagrangeGo，直接通过 Go 方法实现平台接口，不再使用 C# 子模块或本地 FFI。
+当前只试验扫码登录、凭据复用和手动群文本；真实签名服务与账号尚未实测。
+启动不会自动登录或发消息，令牌与凭据只保存在本机数据目录。
+Android 仍占位；旧 DLL 仅归档，不进入运行流程。

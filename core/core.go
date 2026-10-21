@@ -142,7 +142,7 @@ func (c *Core) loadNativeLocked() error {
 	return c.record(err)
 }
 
-// LoadNative 只加载和解析本地库，不创建 QQ 会话，便于无界面的装载检查。
+// LoadNative 暂留旧接口兼容；桌面后端已改用 Go SDK，返回 ErrNativeRetired。
 func (c *Core) LoadNative() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -180,7 +180,7 @@ func (c *Core) BeginLogin() (Status, error) {
 }
 
 // Close 先取消核心的任务上下文，再关闭平台；重复调用只返回第一次的结果。
-// 关闭平台不是卸载 NativeAOT DLL，映射仍需保留到进程结束。
+// 桌面后端会取消 QQ 登录任务并关闭 Go SDK 会话。
 func (c *Core) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
