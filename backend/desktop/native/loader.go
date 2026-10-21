@@ -1,4 +1,5 @@
-// Package native implements desktop native loading; it is not a core dependency.
+// Package native 保留桌面后端的原生库加载和绑定，不是核心或平台接口的依赖。
+// QQ 集成暂停期间，桌面后端不会调用这里的 Load。
 package native
 
 import (
@@ -6,8 +7,8 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/caliniya/caf/backend/desktop/natives"
 	"github.com/caliniya/caf/core/platform"
-	"github.com/caliniya/caf/platforms/desktop/natives"
 )
 
 type Loader struct {

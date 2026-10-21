@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/caliniya/caf/platforms/desktop/native"
+	"github.com/caliniya/caf/backend/desktop/native"
 )
 
 func TestUnsupportedPlatformIsExplicitAndDoesNotExtract(t *testing.T) {

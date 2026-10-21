@@ -2,27 +2,30 @@
 package desktop
 
 import (
-	"context"
 	"os"
 	"sync"
 
+	"github.com/caliniya/caf/backend/desktop/native"
 	"github.com/caliniya/caf/core/platform"
-	"github.com/caliniya/caf/platforms/desktop/native"
 )
 
 type DesktopBackend struct {
 	mu          sync.Mutex
 	paths       platform.Paths
 	loader      *native.Loader
+	qq          *DesktopQQ
 	initialized bool
 	closed      bool
 }
 
 var _ platform.Backend = (*DesktopBackend)(nil)
-var _ platform.QQPlatform = (*DesktopBackend)(nil)
 
 // New 只创建后端对象，不创建目录、不加载 DLL，也不尝试登录。
-func New() *DesktopBackend { return &DesktopBackend{loader: native.NewLoader()} }
+func New() *DesktopBackend {
+	b := &DesktopBackend{loader: native.NewLoader()}
+	b.qq = &DesktopQQ{backend: b}
+	return b
+}
 
 func (b *DesktopBackend) Init(paths platform.Paths) error {
 	b.mu.Lock()
@@ -53,7 +56,14 @@ func (b *DesktopBackend) Init(paths platform.Paths) error {
 func (b *DesktopBackend) NativeStatus() platform.NativeStatus {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.loader.Status()
+	return b.nativeStatusLocked()
+}
+
+func (b *DesktopBackend) nativeStatusLocked() platform.NativeStatus {
+	status := b.loader.Status()
+	// 保留加载器、绑定和二进制资源；当前阶段所有桌面系统都暂停 QQ 集成。
+	status.Paused = true
+	return status
 }
 
 func (b *DesktopBackend) readyError() error {
@@ -70,25 +80,10 @@ func (b *DesktopBackend) LoadNative() (platform.NativeStatus, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.readyError(); err != nil {
-		return b.loader.Status(), err
+		return b.nativeStatusLocked(), err
 	}
-	return b.loader.Load(b.paths.Data)
-}
-
-func (b *DesktopBackend) BeginLogin(ctx context.Context) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if err := b.readyError(); err != nil {
-		return err
-	}
-	if ctx == nil {
-		return platform.ErrContextRequired
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	// DLL 参数封送、会话及事件处理尚未实现，不用猜测的参数调用 Initialize/Start。
-	return platform.ErrLoginNotImplemented
+	// 即使调用方显式请求，也不提取或加载 DLL；Linux/WSL 无需准备 .so。
+	return b.nativeStatusLocked(), platform.ErrQQIntegrationPaused
 }
 
 func (b *DesktopBackend) Close() error {

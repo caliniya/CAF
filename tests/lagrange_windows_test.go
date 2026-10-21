@@ -7,14 +7,16 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/caliniya/caf/platforms/desktop/native"
+	"github.com/caliniya/caf/backend/desktop/native"
 )
 
-// This test runs only on Windows x64. It resolves symbols but never calls Initialize/Start.
+// 仅在 Windows x64 显式启用诊断时加载库，不调用 Initialize/Start。
 func TestLoadsWindowsNativeExportsWithoutLogin(t *testing.T) {
+	if os.Getenv("CAF_TEST_LAGRANGE_NATIVE") != "1" {
+		t.Skip("QQ 集成已暂停；仅设置 CAF_TEST_LAGRANGE_NATIVE=1 时运行原生加载诊断")
+	}
 	if os.Getenv("CAF_NATIVE_TEST_CHILD") != "1" {
-		// Native AOT cannot unload. A child process releases the Windows file lock
-		// on exit, before the parent's TempDir cleanup attempts to delete the DLL.
+		// NativeAOT 不能卸载；子进程退出后释放文件锁，再由父进程清理临时目录。
 		child := exec.Command(os.Args[0], "-test.run=^TestLoadsWindowsNativeExportsWithoutLogin$", "-test.v")
 		child.Env = append(os.Environ(), "CAF_NATIVE_TEST_CHILD=1", "CAF_NATIVE_TEST_DATA="+t.TempDir())
 		if output, err := child.CombinedOutput(); err != nil {

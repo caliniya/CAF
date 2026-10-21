@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core/platform"
-	"github.com/caliniya/caf/platforms/desktop"
 )
 
 func TestPortableDefaults(t *testing.T) {

@@ -14,16 +14,18 @@ var (
 	ErrUnsupportedPlatform = errors.New("当前平台尚未实现本地库加载")
 	ErrLoginNotImplemented = errors.New("QQ 登录尚未实现；目前只支持加载本地库并解析导出")
 	ErrQQUnavailable       = errors.New("当前平台未提供 QQ 接口")
+	ErrQQIntegrationPaused = errors.New("QQ 集成已暂停，当前不加载 Lagrange.Core 本地库")
 )
 
 type NativeStatus struct {
 	Supported bool   `json:"supported"`
+	Paused    bool   `json:"paused"` // 暂停与平台是否支持分开；暂停不影响核心正常启动。
 	Loaded    bool   `json:"loaded"`
 	Path      string `json:"path,omitempty"`
 	Exports   int    `json:"exports"`
 }
 
-// Backend 只负责基础平台能力；需要 QQ 功能时，后端另外实现 QQPlatform。
+// Backend 只负责基础平台能力；QQPlatform 是单独注入核心的可选能力。
 // 核心负责生命周期与业务编排，后端不应再次创建核心或卸载 NativeAOT 库。
 type Backend interface {
 	Init(Paths) error

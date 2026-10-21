@@ -1,142 +1,144 @@
 # CAF
 
-CAF 是 Go 编写的 Agent 框架骨架，界面使用 Wails v2.17.0，现阶段优先 Windows x64。
-模型、工具执行和真实 QQ 登录尚未实现。
+CAF 是 Go 编写的 Agent 框架骨架，桌面界面使用 Wails v2.17.0。
+当前先整理结构，模型请求、工具执行和真实消息收发尚未实现。
 
 仓库：`caliniya/CAF`；原 Java/Arc 项目：`caliniya/CAFOrigin`。
-Go module：`github.com/caliniya/caf`。
+Go module：`github.com/caliniya/caf`，所有自有包仍属于同一个 module。
 
-## 开始使用
-
-准备 Go 1.25+、Windows WebView2 Runtime；本次使用 Go 1.27.3 验证：
-
-```powershell
-git submodule update --init --recursive
-.\dev.ps1       # 开发运行，数据默认放在 build/dev-data/
-.\build.ps1     # 发布输出 build/bin/CAF.exe
-.\test.ps1      # 核心、平台、脚本和前端测试
-```
-
-脚本调用固定版本 Wails CLI，无需全局安装。前端是纯 HTML/CSS/JS，没有 npm 构建依赖；
-Node 仅用于可选前端测试。程序不需要 JRE；内置 NativeAOT DLL 不要求另装 .NET 运行时。
-
-## 核心在哪里，怎么调用
-
-**全局入口就是 `core.Platform`，类型为 `*core.Core`，定义在 `core/core.go`。**
-它统一持有路径、状态、上下文和平台接口引用。没有额外的 desktop.App 或 Service。
+## 目录与职责
 
 ```text
-main 选择桌面实现 → 创建一个 Core → 赋给 core.Platform
-                                  ↓
-Wails 直接绑定同一个 *core.Core ← 其他 Go 包访问 core.Platform
-                                  ↓
-                       Backend / QQPlatform 接口
-                                  ↓
-                            桌面平台实现
+main.go                         装配后端、创建核心、启动窗口
+core/                           核心状态、生命周期和业务总调度
+  agent/                        Agent 业务占位
+client/                         HTTP/WS 通信占位
+platform/                       平台接口、路径和状态类型
+backend/                        具体平台实现，不放核心业务
+  desktop/
+    DesktopBackend.go           桌面基础后端、路径初始化和关闭
+    DesktopQQ.go                单独的 QQ 占位实现
+    window/                     Wails 窗口壳，直接绑定核心
+    native/                     保留的加载器、goinvoke 绑定及内存布局
+    natives/                    内嵌 DLL、来源记录及提取缓存
+  android/                      Android 占位
+pre/                            协议解析和格式转换占位
+frontend/                       HTML/CSS/JS 页面
+cmd/nativecheck/                无窗口本地库状态检查
+lagrange/                       Lagrange.Core Git 子模块
+scripts/build-native.ps1         可选 Windows NativeAOT 重编脚本
+tests/                          全部自有 Go、前端和脚本测试
 ```
 
-`main.go` 是唯一的应用装配位置：
+- `client` 以后只处理网络收发、连接、超时和重连；目前不会监听端口或连接任何 API。
+- `pre` 以后解析模型响应、工具调用描述和 OneBot 数据；目前没有协议解析实现。
+- `core` 决定流程、查找已注册工具并校验参数和权限；不会把任意文本直接作为方法执行。
+- `platform` 只定义契约和普通数据，不导入 `core` 或具体后端。
+- `backend` 实现平台契约；原生库属于桌面后端细节，不再单设顶层 native 模块。
+
+以后数据流是：网络数据 → pre 解析 → core 决策和执行 → client 发送结果。
+这只是职责边界，本次没有提前实现 Agent 循环、工具执行或 OneBot 接入。
+
+## 启动和平台注入
+
+**全局核心入口仍然是 `core.Platform`，类型为 `*core.Core`。**
+main 显式提供基础后端和 QQ 实现，核心不猜测后端是否兼任 QQ：
 
 ```go
-// 由入口决定平台，核心不导入 desktop，也不自己猜测平台。
 backend := desktop.New()
 paths, err := desktop.DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 if err != nil {
     log.Fatal(err)
 }
-core.Platform, err = core.NewCore(paths, backend)
+// QQ() 只取得同一个 DesktopQQ 引用，不加载库、不登录。
+core.Platform, err = core.NewCore(paths, backend, backend.QQ())
 if err != nil {
     log.Fatal(err)
 }
-// 窗口直接绑定这一个指针，不创建第二份核心。
+// 窗口绑定同一个核心，不另建 desktop.App 或 Service。
 if err := window.Run(assets, core.Platform); err != nil {
     log.Fatal(err)
 }
 ```
 
-应用启动完成后，其他 Go 包可直接调用：
+示例中的 desktop、window 分别来自 `backend/desktop` 和 `backend/desktop/window`。
+接口改从 `github.com/caliniya/caf/platform` 导入；原来的 `core/platform`、`platforms/` 目录已迁移。
 
-```go
-// 这些调用都作用于同一个核心，不需要重新 NewCore。
-paths := core.Platform.Paths()
-status := core.Platform.GetStatus()
-status, err := core.Platform.LoadNativeLibrary()
-status, err = core.Platform.BeginLogin()
-```
+- `NewCore(paths, backend, qq)` 只保存引用；传 nil QQ 可以正常启动，登录时明确返回 ErrQQUnavailable。
+- 带类型 nil 的 QQ 也按未提供处理，避免调用时崩溃；基础后端不能为 nil。
+- Wails Startup 初始化同一个核心并保存生命周期上下文；Shutdown 取消上下文并关闭后端一次。
+- 路径和平台引用由核心保存；应用启动后通过 `core.Platform.Paths()`、`GetStatus()`、`BeginLogin()` 调用。
+- 全局指针只在 main 装配时赋值，不要复制带互斥锁的 Core，也不要在运行时反复替换全局引用。
+- 页面仍使用 `window.go.core.Core`，不直接访问平台接口或原生函数指针。
 
-以上为分别调用的示例；实际代码按需接收返回值并处理 error。
-全局入口只在 main 启动阶段赋值，不能在运行时反复替换，也不要把 `*core.Core` 解引用后按值复制。
-测试或命令行检查可用 NewCore 创建独立实例，但不会自动覆盖全局入口。
+测试和无窗口程序可以创建独立 Core，不会自动覆盖全局入口。
 
-## 核心与平台的职责
+## QQ 暂停，不影响 WSL 测试
 
-- `core/core.go`：核心实例、全局入口、初始化、关闭、加载与登录请求编排。
-- `core/status.go`：核心状态和页面数据，不另设转发服务。
-- `core/platform.Backend`：平台基础能力，只定义 Init、NativeStatus、LoadNative、Close。
-- `core/platform.QQPlatform`：独立的 QQ 能力，目前定义 BeginLogin(context.Context) error。
-- `platforms/desktop`：目录解析、本地库装载等具体实现；同一桌面对象实现上面两个接口。
-- `platforms/desktop/window`：只负责 Wails 窗口配置，把核心的 Startup/Shutdown 接到窗口生命周期并直接 Bind 核心。
+`platform.QQPlatform` 只保留 `BeginLogin(context.Context) error`。
+桌面端由 `DesktopQQ.go` 中的 DesktopQQ 实现，与基础后端共用初始化和关闭状态。
 
-核心通过接口调用后端，不 import desktop、Wails、goinvoke 或 Windows DLL 资源。
-QQPlatform 是跨平台业务能力，不照抄裸 DLL 的 Start(index) 整数签名；
-原生索引、结构体封送、事件内存与状态码仍由后端处理。基础后端可以不提供 QQ 能力，此时核心明确返回 ErrQQUnavailable。
+当前加载和登录请求都返回 ErrQQIntegrationPaused；页面显示暂停并禁用加载按钮。
+暂停不是启动失败，核心仍正常 ready；不会创建 QQ 会话、假报上线或加载本地库。
 
-## 生命周期与页面绑定
+Windows DLL 移到 `backend/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll`。
+二进制内容、来源记录和 Lagrange 子模块提交不变，继续作为资源保留，不含 PDB。
+正常启动和显式平台请求都不提取或装载它；旧数据与缓存不删除。
+底层加载器和绑定仍保留，但不在当前应用流程中使用。WSL/Linux 测试无需准备 Lagrange `.so`。
 
-1. `NewCore(paths, backend)` 只校验与保存引用；构造时不创建目录、不加载库、不登录。
-2. Wails 的 `Startup(ctx)` 直接通知核心；核心保存生命周期上下文并初始化一次后端。
-3. 页面用 `GetStatus`、`LoadNativeLibrary`、`BeginLogin` 调用核心，不传 Go 的 context 对象。
-4. `Shutdown(ctx)` 直接关闭同一核心，取消其子上下文，只关闭后端一次；NativeAOT 库不会卸载。
-
-初始化失败会保留原始错误，允许重试。关闭后不能再次初始化或启动登录。
-无界面程序也可使用 `Init()` / `LoadNative()` / `Close()`。
-
-前端命名空间已改为 **`window.go.core.Core`**；`frontend/bridge.mjs` 统一处理它。
-Startup/Shutdown 已接为 Wails 生命周期回调，不作为 JS 调用方法；其余公开、参数可序列化的核心方法会生成绑定。
-平台接口和原生函数指针都保留在核心私有字段，不直接暴露给页面。
-
-**BeginLogin 的链路已接通，不等于真实登录已实现。**
-当前桌面实现明确返回“QQ 登录尚未实现”，不会猜测参数调用 Initialize/Start，也不会假报上线。
-没有新增二维码解码、登录凭据持久化、消息收发或 Agent 执行功能。
-
-## 目录与开发调试
-
-- 发布版默认使用 EXE 旁的 `data/`；开发脚本和 F5 使用 `build/dev-data/`。
-- dev.ps1 的优先级是 `-DataDir` 参数 → 已有 CAF_DATA_DIR → 默认目录。
-- 开发脚本将相对覆盖路径按项目根目录转成绝对路径；程序自身接收相对 CAF_DATA_DIR 时仍按 EXE 目录解析。
-- 旧 data/ 不自动删除或迁移。开发数据可能包含凭据，不能当作可随意删除的构建产物。
-
-```powershell
-.\dev.ps1 -DataDir 'build/my-data'
-```
-
-VS Code 打开项目目录或 CAF.code-workspace，安装官方 Go 扩展：
-
-- F5 选择 `CAF: Debug (Windows x64)`：先由 Wails 构建 CAF-debug.exe，再由 Delve 启动；首次调试用 `Go: Install/Update Tools` 安装 dlv。
-- 自动重建/刷新用终端执行 dev.ps1，或运行任务 `CAF: Wails dev`。它不是断点调试。
-- 不用“运行当前文件”或普通 Launch Package 代替 Wails 构建。
-- F5 的目录由 `.vscode/launch.json` 中 CAF_DATA_DIR 配置；修改源码后需停止并重新 F5。
-
-## 原生库与后续平台
-
-DLL 位于 `platforms/desktop/natives/win-x64/Lagrange.Core.NativeAPI.dll`，原样嵌入 EXE，不含 PDB。
-显式加载时提取到数据目录的 `natives/win-x64/<SHA-256>/`，按内容复用缓存，不覆盖正在加载的 DLL。
-映射保留到进程退出，不调用 Release/FreeLibrary。本次没有修改二进制或 Lagrange 子模块。
-
-```powershell
+```bash
 go run ./cmd/nativecheck -data-dir "$PWD/build/dev-data"
 ```
 
-Android 只保留占位目录；后续提供自己的平台接口实现与窗口壳，不复用 Windows DLL。
-可选重编 NativeAPI 仍使用 `scripts/build-native.ps1`，在源码副本上应用补丁，需要 .NET 10 和 Windows C++ 工具链。
+检查程序当前只输出 status=paused，不创建指定的数据目录。
+Windows 实际 DLL 装载测试默认跳过，仅在显式设置 CAF_TEST_LAGRANGE_NATIVE=1 时运行诊断。
 
-## 验证
+## 构建和开发
+
+准备 Go 1.25+；Windows 窗口需要 WebView2 Runtime。
+脚本固定使用 Wails CLI v2.17.0；纯 HTML/CSS/JS 前端没有 npm 构建依赖。
+Node 仅用于可选前端测试；程序不需要 JRE，也不因保留的 NativeAOT DLL 而要求另装 .NET 运行时。
 
 ```powershell
+git submodule update --init --recursive
+.\dev.ps1       # 数据默认在 build/dev-data/
+.\build.ps1     # Windows x64 发布输出 build/bin/CAF.exe
 .\test.ps1
-go test -race -count=1 ./tests
+```
+
+VS Code F5 继续使用 Windows x64 的 Wails debug 构建和 Delve，不用“运行当前 Go 文件”代替。
+需要首次安装调试器时使用官方 Go 扩展的 Go: Install/Update Tools 安装 dlv。
+
+发布版数据默认位于程序旁的 data/；开发脚本优先级为 -DataDir → CAF_DATA_DIR → build/dev-data。
+脚本把相对覆盖路径按项目目录转为绝对路径；程序直接接收相对 CAF_DATA_DIR 时按可执行文件目录解析。
+开发目录可能包含凭据，不会因这次重构被删除或迁移。
+
+### WSL/Linux
+
+无窗口检查无需 GTK、WebKit 或 Lagrange `.so`：
+
+```bash
+go test -count=1 ./tests
 go test -tags bindings -count=1 ./...
 ```
 
-全部自有测试集中在 tests/。检查分工见 [tests/README.md](tests/README.md)，
-结果与尚未实测的边界见 [VALIDATION.md](VALIDATION.md)，应用本次补丁见 [MIGRATION.md](MIGRATION.md)。
+实际窗口仍需 Wails 的 Linux 编译依赖（含 pkg-config、GTK/WebKit）及 WSLg 或其他显示环境。
+准备好后在项目根目录运行：
+
+```bash
+CAF_DATA_DIR="$PWD/build/dev-data" go run github.com/wailsapp/wails/v2/cmd/wails@v2.17.0 dev
+```
+
+bindings 标签仅用于无窗口检查，不是运行窗口的方法。
+build.ps1 与现有 F5 配置仍针对 Windows x64；Android 仍只占位。
+可选 NativeAPI 重编脚本已同步新资源路径，但本次不重编或恢复 QQ。
+
+## 验证与应用
+
+```bash
+go test -race -count=1 ./tests
+node --test tests/frontend.test.mjs
+```
+
+测试说明见 [tests/README.md](tests/README.md)，真实验证结果与限制见 [VALIDATION.md](VALIDATION.md)。
+结构迁移和补丁应用步骤见 [MIGRATION.md](MIGRATION.md)。

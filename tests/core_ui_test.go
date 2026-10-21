@@ -89,7 +89,7 @@ func TestGlobalPlatformIsTheSameCoreUsedByCallers(t *testing.T) {
 
 func TestCoreRejectsTypedNilBackend(t *testing.T) {
 	var backend *fakeBackend
-	if _, err := core.NewCore(testPaths(t), backend); !errors.Is(err, platform.ErrBackendRequired) {
+	if _, err := core.NewCore(testPaths(t), backend, nil); !errors.Is(err, platform.ErrBackendRequired) {
 		t.Fatal("接口里的带类型 nil 没有被拒绝", err)
 	}
 }

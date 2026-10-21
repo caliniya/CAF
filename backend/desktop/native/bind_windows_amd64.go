@@ -10,7 +10,7 @@ import (
 	"github.com/jamesits/goinvoke"
 )
 
-// These are raw addresses, NOT typed wrappers or a complete login API.
+// 这里只保存原始函数地址，不是完整的类型化封装或可直接使用的登录接口。
 type nativeExports struct {
 	Initialize           goinvoke.FunctionPointer
 	Start                goinvoke.FunctionPointer

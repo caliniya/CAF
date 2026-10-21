@@ -1,4 +1,4 @@
-import { createClient, statusRows, errorMessage } from "./bridge.mjs";
+import { createClient, statusRows, canLoadNative, errorMessage } from "./bridge.mjs";
 
 const list = document.querySelector("#status");
 const message = document.querySelector("#message");
@@ -15,7 +15,8 @@ function render(status) {
     description.textContent = value;
     list.append(term, description);
   }
-  load.disabled = !status.ready || !status.native?.supported || status.native?.loaded;
+  load.disabled = !canLoadNative(status);
+  load.textContent = status.native?.paused ? "QQ 集成已暂停" : "加载二进制本地库";
   message.textContent = status.lastError || (status.ready ? "就绪" : "正在初始化");
 }
 

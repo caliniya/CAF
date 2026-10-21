@@ -1,29 +1,41 @@
-# 本次迁移：统一核心
+# 本次结构变更
 
-补丁基于 `830e209`，文件名 `CAF-unified-core.patch`。
-只应用本次补丁；之前的 core/platform、开发目录和 VS Code 补丁已在基线中，不要重复应用。
+基于 CAF 最新提交 `bc845bf`，补丁名 `CAF-structure.patch`。
+本补丁已经包含之前尚未合入仓库的“暂停 QQ 加载”改动，不需要先应用旧补丁。
+
+在干净的项目根目录执行（补丁先放到根目录）：
 
 ```powershell
-git apply --check .\CAF-unified-core.patch
-git apply .\CAF-unified-core.patch
+git apply --check .\CAF-structure.patch
+git apply .\CAF-structure.patch
 .\test.ps1
 .\build.ps1
 ```
 
-有其他本地改动时先保存，检查报错就不要继续强行应用。
-本次没有提交或推送代码，没有修改 Lagrange 子模块或 DLL。
+本地有其他改动时先保存；如果 --check 报错，不要强行应用。
+如果已经应用旧的暂停补丁，也先检查，不要重复叠加；需要先保存现有工作再整理到上述基线。
 
-主要变化：
+## 路径变更
 
-- 全局 `core.Platform` 改为 `*core.Core`，main 创建一次并赋值；窗口绑定同一实例，不复制互斥锁。
-- 删除 `platforms/desktop/ui.go` 中的 App 和 `core/app/service.go` 中的 Service；业务、状态与生命周期直接在 core 中。
-- 窗口函数接收 *core.Core。核心自行处理 Startup/Shutdown 和页面调用。
-- 前端由 window.go.desktop.App 改为 window.go.core.Core；已同步修改 bridge 和测试，生成文件由 Wails 重新生成。
-- QQ 接口从拼写有误的 QQPlatfrom 整理为 QQPlatform，与 Backend 分开；使用普通 Go 上下文和 error，不把裸 DLL 索引当作可直接使用的登录接口。
-- 启动和登录错误正常记录、传递；桌面登录继续明确返回尚未实现，不新增任何实际 QQ 登录。
-- 所有自有测试仍在 tests，原 Runtime/Service 测试更新为 Core 与全局同一实例的测试，没有删掉错误、并发和生命周期覆盖。
+- core/platform → platform。
+- platforms/desktop → backend/desktop，原 window、native 和 natives 子目录一起迁移。
+- platforms/android → backend/android，仍为占位。
+- 新建 client、pre 的包说明，暂不实现网络、解析或工具执行。
+- 原生 DLL 只移动路径，Git 补丁按重命名记录，不重编、不替换内容。
+- main、命令行、测试、原生重编脚本和来源文档同步新路径。
 
-原先 Go 调用 BeginLogin(ctx) 的位置，改为核心 Startup(ctx) 保存上下文后调用 BeginLogin()，返回 (core.Status,error)。
-命令行可先 Init，再调用核心方法；程序入口与命令行检查都已更新。
+## QQ 引用单独注入
 
-数据位置、F5 配置和原生库重编脚本不变；开发数据仍在 build/dev-data，旧数据不会被删除。
+桌面基础能力由 DesktopBackend 提供，QQ 占位由 DesktopQQ.go 中的 DesktopQQ 提供。
+入口从 backend.QQ() 取得同一个占位引用，显式交给核心：
+
+```go
+core.Platform, err = core.NewCore(paths, backend, backend.QQ())
+```
+
+独立调用 NewCore 的代码需要补上第三个参数；没有 QQ 能力时传 nil。
+不再由核心通过类型断言猜测基础后端是否兼任 QQ；调用方仍走 core.Platform.BeginLogin()。
+QQ 占位与后端共用生命周期，暂停、缺失或关闭都返回明确错误，不阻止普通核心启动。
+
+Wails 仍绑定 core.Core；前端命名空间、数据位置和 Windows F5 配置不变。
+本次不创建 desktop.App、不改 Lagrange 子模块或 DLL 内容、不删除或迁移用户数据，也不提交或推送代码。

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createClient, statusRows, errorMessage } from "../frontend/bridge.mjs";
+import { createClient, statusRows, canLoadNative, errorMessage } from "../frontend/bridge.mjs";
 
 test("requires an actual Wails backend instead of pretending browser preview works", () => {
   assert.throws(() => createClient(undefined), /Wails/);
@@ -51,4 +51,20 @@ test("renders native availability, paths and count as data", () => {
 test("handles both Error objects and string rejections from Go", () => {
   assert.equal(errorMessage(new Error("failed")), "failed");
   assert.equal(errorMessage("native load failed"), "native load failed");
+});
+
+test("暂停优先于平台支持状态，Windows 与 Linux 都不显示待加载", () => {
+  for (const supported of [true, false]) {
+    const status = { ready: true, native: { supported, paused: true, loaded: false } };
+    assert.equal(statusRows(status).find(([key]) => key === "原生库")[1], "QQ 集成已暂停 · 不加载");
+    assert.equal(canLoadNative(status), false);
+  }
+});
+
+test("加载按钮同时检查就绪、支持、暂停及加载状态", () => {
+  assert.equal(canLoadNative({}), false);
+  assert.equal(canLoadNative({ ready: false, native: { supported: true } }), false);
+  assert.equal(canLoadNative({ ready: true, native: { supported: false } }), false);
+  assert.equal(canLoadNative({ ready: true, native: { supported: true, loaded: true } }), false);
+  assert.equal(canLoadNative({ ready: true, native: { supported: true, paused: false, loaded: false } }), true);
 });

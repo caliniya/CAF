@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caliniya/caf/platforms/desktop/natives"
+	"github.com/caliniya/caf/backend/desktop/natives"
 )
 
 func TestBundledDllIsARealWindowsBinary(t *testing.T) {
@@ -41,8 +41,8 @@ type nativeMetadata struct {
 
 func nativeProvenance(t *testing.T) nativeMetadata {
 	t.Helper()
-	// go test runs this package in tests/. Read the tracked fixture, not package internals.
-	metadata, err := os.ReadFile(filepath.Join("..", "platforms", "desktop", "natives", "PROVENANCE.json"))
+	// go test 在 tests/ 下运行；读取受版本管理的来源记录，不访问资源包内部变量。
+	metadata, err := os.ReadFile(filepath.Join("..", "backend", "desktop", "natives", "PROVENANCE.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,9 +6,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/caliniya/caf/backend/desktop"
+	"github.com/caliniya/caf/backend/desktop/window"
 	"github.com/caliniya/caf/core"
-	"github.com/caliniya/caf/platforms/desktop"
-	"github.com/caliniya/caf/platforms/desktop/window"
 )
 
 //go:embed frontend
@@ -26,7 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 	// 全局入口保存指针，窗口绑定同一实例，不能复制包含互斥锁的 Core 值。
-	core.Platform, err = core.NewCore(paths, backend)
+	core.Platform, err = core.NewCore(paths, backend, backend.QQ())
 	if err != nil {
 		log.Fatal(err)
 	}

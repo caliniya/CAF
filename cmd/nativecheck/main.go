@@ -1,4 +1,4 @@
-// nativecheck 只检查本地库装载与导出解析，不创建 QQ 会话或发起登录。
+// nativecheck 检查本地库状态；QQ 集成暂停期间只报告暂停，不提取或加载库。
 package main
 
 import (
@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/core/platform"
-	"github.com/caliniya/caf/platforms/desktop"
 )
 
 func main() {
@@ -23,6 +23,11 @@ func main() {
 
 func run(data string) error {
 	backend := desktop.New()
+	if backend.NativeStatus().Paused {
+		return json.NewEncoder(os.Stdout).Encode(map[string]string{
+			"status": "paused", "message": platform.ErrQQIntegrationPaused.Error(),
+		})
+	}
 	if !backend.NativeStatus().Supported {
 		return platform.ErrUnsupportedPlatform
 	}
@@ -30,7 +35,7 @@ func run(data string) error {
 	if err != nil {
 		return err
 	}
-	rt, err := core.NewCore(directories, backend)
+	rt, err := core.NewCore(directories, backend, backend.QQ())
 	if err != nil {
 		return err
 	}

@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/core/platform"
-	"github.com/caliniya/caf/platforms/desktop"
 )
 
 type fakeBackend struct {
@@ -43,7 +43,9 @@ func testPaths(t *testing.T) platform.Paths {
 
 func testCore(t *testing.T, b platform.Backend) *core.Core {
 	t.Helper()
-	rt, err := core.NewCore(testPaths(t), b)
+	// 测试假后端可以同时实现两个接口；生产入口显式传入 backend.QQ()。
+	qq, _ := b.(platform.QQPlatform)
+	rt, err := core.NewCore(testPaths(t), b, qq)
 	if err != nil {
 		t.Fatal(err)
 	}

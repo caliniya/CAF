@@ -3,7 +3,7 @@
 - Wails v2.17.0：https://github.com/wailsapp/wails （MIT）
 - goinvoke v1.3.3：https://github.com/jamesits/goinvoke （MIT）
 - Lagrange.Core：Git 子模块 `lagrange/`，固定提交 `20c2ba079b5ee67156bd71419ed54ea61a24e91f`。
-- 内置 NativeAPI DLL 来自用户现有 CAF 仓库，哈希与来源见 `platforms/desktop/natives/PROVENANCE.json`；本次未重新编译 Windows DLL。
+- 内置 NativeAPI DLL 来自用户现有 CAF 仓库，哈希与来源见 `backend/desktop/natives/PROVENANCE.json`；本次未重新编译 Windows DLL。
 
 Wails 和 goinvoke 的原始 MIT 许可文本保留在 `LICENSES/`。间接 Go 依赖的具体版本见 `go.mod/go.sum`，其许可随各自上游模块提供。
 

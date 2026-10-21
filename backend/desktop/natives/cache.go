@@ -1,4 +1,4 @@
-// Package natives embeds and extracts the user's existing Windows x64 NativeAPI binary.
+// Package natives 保留并提取现有的 Windows x64 NativeAPI 二进制资源。
 package natives
 
 import (
@@ -16,7 +16,7 @@ var binary []byte
 
 const fileName = "Lagrange.Core.NativeAPI.dll"
 
-// Extract uses a content-addressed path so upgrading never replaces a loaded DLL.
+// Extract 按内容哈希选择缓存路径，避免升级时覆盖已经加载的 DLL。
 func Extract(dataDirectory string) (string, error) {
 	if !filepath.IsAbs(dataDirectory) {
 		return "", fmt.Errorf("native cache data directory must be absolute")
@@ -47,7 +47,7 @@ func Extract(dataDirectory string) (string, error) {
 		return "", err
 	}
 	if err = os.Rename(temporary.Name(), target); err != nil {
-		// Another process may have installed and loaded the same DLL in the meantime.
+		// 其他进程可能已经写入并加载相同的 DLL，此时只检查内容是否一致。
 		if !matches(target) {
 			return "", fmt.Errorf("install native cache (a running process may lock it): %w", err)
 		}

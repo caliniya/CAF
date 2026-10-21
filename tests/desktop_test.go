@@ -2,17 +2,20 @@ package tests
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
-	"github.com/caliniya/caf/platforms/desktop"
+	"github.com/caliniya/caf/core/platform"
 )
 
 func TestBindingConstructionHasNoStartupSideEffects(t *testing.T) {
 	p := testPaths(t)
-	engine, err := core.NewCore(p, desktop.New())
+	backend := desktop.New()
+	engine, err := core.NewCore(p, backend, backend.QQ())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,14 +37,15 @@ func TestCoreStartupInitializesDesktopWithoutLoadingNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := core.NewCore(paths, desktop.New())
+	backend := desktop.New()
+	engine, err := core.NewCore(paths, backend, backend.QQ())
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine.Startup(context.Background())
 	defer engine.Shutdown(context.Background())
 	status := engine.GetStatus()
-	if !status.Ready || status.DataDir != data || status.LastError != "" || status.Native.Loaded {
+	if !status.Ready || status.DataDir != data || status.LastError != "" || !status.Native.Paused || status.Native.Loaded {
 		t.Fatal("核心启动状态异常", status)
 	}
 	if info, err := os.Stat(filepath.Join(data, "logs")); err != nil || !info.IsDir() {
@@ -50,11 +54,19 @@ func TestCoreStartupInitializesDesktopWithoutLoadingNative(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(data, "natives")); !os.IsNotExist(err) {
 		t.Fatal("启动时不应提取本地库", err)
 	}
-	if _, err := engine.BeginLogin(); err == nil {
-		t.Fatal("尚未实现的桌面登录不能返回成功")
+	if err := engine.LoadNative(); !errors.Is(err, platform.ErrQQIntegrationPaused) {
+		t.Fatal("无界面加载入口也应返回暂停", err)
+	}
+	status, err = engine.LoadNativeLibrary()
+	if !errors.Is(err, platform.ErrQQIntegrationPaused) || !status.Ready || !status.Native.Paused || status.Native.Loaded {
+		t.Fatal("暂停加载不能影响核心就绪状态", status, err)
+	}
+	status, err = engine.BeginLogin()
+	if !errors.Is(err, platform.ErrQQIntegrationPaused) || !status.Ready || status.Native.Loaded || status.LastError != err.Error() {
+		t.Fatal("暂停登录不能影响核心就绪状态", status, err)
 	}
 	if _, err := os.Stat(filepath.Join(data, "natives")); !os.IsNotExist(err) {
-		t.Fatal("未实现的登录不能偷偷提取本地库", err)
+		t.Fatal("暂停的加载和登录不能偷偷提取本地库", err)
 	}
 }
 
@@ -67,7 +79,8 @@ func TestCoreStartupReportsInvalidDataDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := core.NewCore(paths, desktop.New())
+	backend := desktop.New()
+	engine, err := core.NewCore(paths, backend, backend.QQ())
 	if err != nil {
 		t.Fatal(err)
 	}

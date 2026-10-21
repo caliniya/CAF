@@ -28,25 +28,28 @@ type Core struct {
 	closeErr    error
 }
 
-// NewCore 只校验和保存引用，不初始化平台、不创建目录、不加载 DLL。
+// NewCore 显式接收基础后端与 QQ 实现，不猜测两种能力是否来自同一个对象。
+// qq 可以为 nil；构造只保存引用，不初始化平台、不创建目录、不加载 DLL。
 // 测试可创建独立实例；仅 main 将应用使用的实例赋给全局 Platform。
-func NewCore(paths platform.Paths, backend platform.Backend) (*Core, error) {
-	if nilBackend(backend) {
+func NewCore(paths platform.Paths, backend platform.Backend, qq platform.QQPlatform) (*Core, error) {
+	if nilImplementation(backend) {
 		return nil, platform.ErrBackendRequired
 	}
 	if err := paths.Validate(); err != nil {
 		return nil, err
 	}
-	qq, _ := backend.(platform.QQPlatform)
+	if nilImplementation(qq) {
+		qq = nil
+	}
 	return &Core{paths: paths, backend: backend, qq: qq}, nil
 }
 
-// nilBackend 同时拒绝普通 nil 和装进接口后的带类型 nil，避免稍后调用时崩溃。
-func nilBackend(backend platform.Backend) bool {
-	if backend == nil {
+// nilImplementation 识别普通 nil 与装进接口后的带类型 nil，避免调用时崩溃。
+func nilImplementation(implementation any) bool {
+	if implementation == nil {
 		return true
 	}
-	value := reflect.ValueOf(backend)
+	value := reflect.ValueOf(implementation)
 	switch value.Kind() {
 	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 		return value.IsNil()
