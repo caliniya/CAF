@@ -5,8 +5,8 @@ import "github.com/caliniya/caf/platform"
 var Platform *Core
 
 type Core struct {
-	QQ    *platform.QQ
-	Paths *platform.Paths
+	QQPlatform platform.QQPlatform
+	Paths      *platform.Paths
 }
 
 func Init() {

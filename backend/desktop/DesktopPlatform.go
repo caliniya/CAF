@@ -23,7 +23,7 @@ func Run(assets fs.FS) error {
 	}
 	return wails.Run(&options.App{
 		Title: "CAF", Width: 980, Height: 680, MinWidth: 680, MinHeight: 500,
-		BackgroundColour: &options.RGBA{R: 15, G: 23, B: 42, A: 255},
+		BackgroundColour: &options.RGBA{R: 245, G: 246, B: 250, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 	})
 }

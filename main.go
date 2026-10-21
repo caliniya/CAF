@@ -18,10 +18,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	core.Init()
+
 	if err := desktopBackend.Run(assets); err != nil {
 		log.Fatal(err)
 	}
-
-	core.Init()
 
 }

@@ -1,7 +1,13 @@
 package platform
 
-//qq平台接口
+import "github.com/LagrangeDev/LagrangeGo/client"
 
-type QQ interface {
+//qq平台接口
+//qq平台就是一个接口,确保实现了必须的方法
+type QQPlatform interface {
+	GetQQClient() *client.QQClient
+
+	CreateQQPlatform()
+
 	StartLogin() int
 }
