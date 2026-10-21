@@ -21,7 +21,8 @@ CAF 是 Go/Wails Agent 框架工程。
 ```
 
 Go 版本要求仍为 1.26+；Wails 固定 v2.17.0，LagrangeGo 固定到 go.mod 中的原版本。
-LagrangeGo 声明刻意保留，当前业务源码不导入它；不在本轮自动 tidy 删除后续要使用的依赖。
+LagrangeGo 通过 backend/desktop/dependencies.go 中的 caf_deps 构建标签暂时保留，避免 Wails 自动执行 go mod tidy 时删除尚未使用的依赖。
+普通构建不会编译或初始化该占位文件中的 SDK；正式的桌面 QQ 后端开始导入 SDK 后，即可删除这个占位文件。
 Linux 图形构建仍需要宿主的 GTK/WebKit 等环境，Windows 窗口需要 WebView2。
 
 本轮没有删除或迁移 data/、build/dev-data/ 中的配置、设备、二维码或凭据，空窗口也不会读取它们。

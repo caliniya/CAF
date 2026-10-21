@@ -5,5 +5,10 @@ import "github.com/caliniya/caf/platform"
 var Platform *Core
 
 type Core struct {
-	qq *platform.QQ
+	QQ    *platform.QQ
+	Paths *platform.Paths
+}
+
+func Init() {
+	Platform = &Core{}
 }
