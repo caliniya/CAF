@@ -14,6 +14,7 @@
 | natives_test.go | 历史 DLL 归档的来源、缓存代码和哈希，应用不依赖这个资源包 |
 | lagrangego_test.go | 离线 SDK 对象、稳定私有设备、假会话扫码/缓存登录、取消、发送、错误脱敏及不假报上线 |
 | qq_diagnostic_test.go | 本机 httptest 假签名服务、实际 SDK 请求格式、HTTP/code/空签名错误、分阶段诊断与脱敏 |
+| qq_account_test.go | 配置 qq 的范围、扫码前签名 uin、账号一致性、不匹配缓存离线拒绝及不伪造上线身份 |
 | frontend.test.mjs | core.Core 命名空间、转发、暂停状态及禁用加载、登录错误；拒绝旧 desktop.App 命名空间 |
 | development.test.ps1 | 7 次模拟开发脚本运行和 VS Code 配置，无窗口、不依赖 Pester |
 

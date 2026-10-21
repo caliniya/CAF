@@ -13,6 +13,8 @@ import (
 // QQConfig 只从本地文件读取，不绑定给 Wails，也不写入日志。
 // Protocol 指模拟的 QQ 协议平台，不是运行 CAF 的操作系统。
 type QQConfig struct {
+	// QQ 是签名服务绑定的账号；0 或未填写时保持 SDK 原有的自动识别行为。
+	QQ         uint32 `json:"qq"`
 	SignServer string `json:"signServer"`
 	SignToken  string `json:"signToken"`
 	Protocol   string `json:"protocol"`
@@ -46,7 +48,11 @@ func loadQQConfig(directory string) (QQConfig, error) {
 	if err != nil {
 		return cfg, platform.ErrQQConfigRequired
 	}
-	if json.Unmarshal(data, &cfg) != nil {
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		var field *json.UnmarshalTypeError
+		if errors.As(err, &field) && field.Field == "qq" {
+			return cfg, errors.New("qq 必须是不加引号的 0 到 4294967295 的整数；0 表示不预设账号")
+		}
 		return cfg, errors.New("QQ 配置不是有效 JSON，请检查 qq/config.json")
 	}
 	if cfg.SignServer == "" {
@@ -57,6 +63,14 @@ func loadQQConfig(directory string) (QQConfig, error) {
 		return cfg, errors.New("签名地址必须是有效的 HTTP/HTTPS 地址；认证令牌请填写 signToken")
 	}
 	return cfg, nil
+}
+
+// validateQQAccount 只校验真实返回的账号，不用配置值冒充扫码身份或上线状态。
+func validateQQAccount(configured, actual uint32) error {
+	if configured != 0 && configured != actual {
+		return qqDiagnostic("QQ_ACCOUNT_MISMATCH", "当前 QQ 账号与配置 qq 不一致；请使用签名服务绑定的同一账号")
+	}
+	return nil
 }
 
 // writeQQFile 用临时文件替换凭据，避免进程中断留下半份 JSON 或 sig.bin。

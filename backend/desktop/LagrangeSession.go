@@ -76,6 +76,10 @@ func NewLagrangeSession(ctx context.Context, cfg QQConfig, directory string) (QQ
 			client.Release()
 			return nil, qqDiagnostic("QQ_SIG_FORMAT", "qq/sig.bin 无法解析；请在本机备份后移走再扫码，未自动删除原文件")
 		}
+		if cfg.QQ != 0 && sig.Uin != 0 && cfg.QQ != sig.Uin {
+			client.Release()
+			return nil, qqDiagnostic("QQ_CACHE_ACCOUNT_MISMATCH", "qq/sig.bin 属于其他账号；请在本机备份并移走后重新扫码，原文件未修改")
+		}
 		client.UseSig(sig)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		client.Release()

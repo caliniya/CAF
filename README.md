@@ -31,6 +31,7 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
 
 ```json
 {
+  "qq": 0,
   "signServer": "",
   "signToken": "",
   "protocol": "linux",
@@ -38,7 +39,7 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
 }
 ```
 
-1. 在本机文件中填完整的签名接口地址；需要认证时再填 signToken。远程服务优先使用 HTTPS。
+1. 在本机文件中填完整的签名接口地址；需要认证时再填 signToken。远程服务优先使用 HTTPS。若服务绑定了 QQ，在 qq 中填绑定号码（数字，不加引号）。
 2. protocol/version 必须和签名服务对应；这里是 QQ 协议版本，不是 CAF 宿主操作系统。
 3. 回到界面点击“登录 QQ”，等待本机二维码出现，用手机扫码确认。
 4. 界面必须显示“已上线”才能手动发送群文本；登录本身不会自动发送任何测试消息。
@@ -47,6 +48,15 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
 默认版本只是 SDK 已知版本，不保证签名服务支持它。SDK 的签名 Provider 是 HTTP POST JSON，
 请求字段含 command/seq/body/uin/guid/qua，响应含 value.sec_sign/sec_token/sec_extra，认证使用 Bearer token。
 不能把任意“签名服务器”地址直接当成兼容服务；示例不提供公共服务或令牌。
+
+`qq` 默认为 0，旧配置没有此项时仍保持自动识别行为。已有 config.json 不会被覆盖，需手动增加这一项。
+例如把 `"qq": 123456789,` 加进现有 JSON 对象，并将示例数字替换为签名服务绑定的账号；保留原有接口、令牌和协议版本。
+保存后重新发起登录；如果会话尚在运行，先取消/断开。
+
+扫码确认前，SDK 的账号为 0 时，签名 Provider 会把配置 qq 作为签名请求的 `uin`；不会强改 QQ 客户端的登录身份或报文。
+确认扫码账号后必须与配置一致，否则停止登录，不保存凭据；缓存属于其他账号也会在联网前拒绝，不自动删除文件。
+这里仅适配 SDK 已有 JSON `uin` 字段；如果服务另要求查询参数或请求头，仍需按服务文档适配。
+填号码不能替代有效令牌、绑定授权和协议兼容性，也不保证单凭此项即可消除 403。
 
 二维码、signToken、device.json 和 sig.bin 都只应保存在本机，不能发到群里、提交到 Git 或附在日志中。
 核心状态不返回签名配置和凭据；原始 SDK 日志与报文转储暂不输出，界面显示经过白名单处理的失败阶段、错误码和中文原因。
@@ -64,7 +74,9 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
 | --- | --- |
 | `QQ_CONFIG` | 按界面显示的数据目录修改 qq/config.json，不要改错发布版/开发版目录 |
 | `QQ_VERSION` | protocol/version 是否为当前 SDK 支持的成对值 |
-| `SIGN_HTTP_401` / `SIGN_HTTP_403` | 签名服务认证和权限；只在本机核对令牌 |
+| `SIGN_HTTP_401` / `SIGN_HTTP_403` | 签名服务认证和权限；在本机核对令牌、qq 绑定及接口规则 |
+| `QQ_ACCOUNT_MISMATCH` | 实际扫码/登录账号与配置 qq 不一致，必须使用同一绑定账号 |
+| `QQ_CACHE_ACCOUNT_MISMATCH` | 旧 sig.bin 属于其他账号；在本机备份并移走后重新扫码，程序不会自动删除 |
 | `SIGN_HTTP_404` / `SIGN_HTTP_405` | 完整 POST 接口路径，不是服务首页 |
 | `SIGN_REJECTED_<code>` | 服务已返回非零 code；核对版本、授权和服务接口 |
 | `SIGN_RESPONSE_FORMAT` / `SIGN_EMPTY_SIGNATURE` | 签名协议是否兼容，响应需要 value.sec_sign；HTTP 200 不等于签名成功 |

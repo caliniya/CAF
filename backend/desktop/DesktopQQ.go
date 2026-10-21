@@ -180,6 +180,10 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 				return
 			}
 			if phase == "confirmed" {
+				if err := validateQQAccount(cfg.QQ, session.Account()); err != nil {
+					q.fail(ctx, "query_qr", "扫码账号不匹配，已停止登录", err)
+					return
+				}
 				break
 			}
 			if phase != "waiting" && phase != "scanned" {
@@ -200,6 +204,10 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 		}
 	}
 	if ctx.Err() != nil {
+		return
+	}
+	if err := validateQQAccount(cfg.QQ, session.Account()); err != nil {
+		q.fail(ctx, "login", "登录账号不匹配，已关闭会话", err)
 		return
 	}
 	if !session.Online() {

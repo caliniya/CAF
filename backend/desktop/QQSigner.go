@@ -11,10 +11,13 @@ import (
 	"github.com/LagrangeDev/LagrangeGo/client/sign"
 )
 
-type checkedQQSigner struct{ provider sign.Provider }
+type checkedQQSigner struct {
+	provider sign.Provider
+	account  uint32
+}
 
 func NewQQSigner(cfg QQConfig) sign.Provider {
-	return &checkedQQSigner{provider: sign.NewSigner(nil, cfg.SignToken, cfg.SignServer)}
+	return &checkedQQSigner{provider: sign.NewSigner(nil, cfg.SignToken, cfg.SignServer), account: cfg.QQ}
 }
 
 func (s *checkedQQSigner) AddRequestHeader(header map[string]string) {
@@ -26,13 +29,22 @@ func (s *checkedQQSigner) Release()                     { s.provider.Release() }
 var signHTTPStatus = regexp.MustCompile(`^unexpected status code: ([1-5][0-9]{2})$`)
 
 func (s *checkedQQSigner) Sign(command string, seq uint32, body []byte, uin uint32, guid, qua string) (*sign.Response, error) {
+	if s.account != 0 && sign.ContainSignPKG(command) {
+		// 扫码确认前 SDK 的 uin 是 0；仅向签名接口补充绑定账号，不修改 QQ 客户端身份。
+		if uin == 0 {
+			uin = s.account
+		} else if err := validateQQAccount(s.account, uin); err != nil {
+			// 实际账号已经明确时不能继续拿另一个绑定账号为其签名。
+			return nil, err
+		}
+	}
 	response, err := s.provider.Sign(command, seq, body, uin, guid, qua)
 	if err != nil {
 		if match := signHTTPStatus.FindStringSubmatch(err.Error()); match != nil {
 			hint := "核对服务状态与完整接口地址"
 			switch match[1] {
 			case "401", "403":
-				hint = "认证或权限失败；在本机检查 signToken 和服务授权"
+				hint = "认证或权限失败；在本机检查 signToken、qq 绑定和服务授权"
 			case "404", "405":
 				hint = "接口路径或 POST 方法不匹配；不要只填写服务首页"
 			case "429":
