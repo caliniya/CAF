@@ -21,7 +21,7 @@ func StartLogin(index int32) error {
 		return fmt.Errorf("请先加载本地库")
 	}
 
-	// 此函数用返回状态码报告结果，不使用 Windows 的 LastError。
+	// 此函数用返回状态码报告结果
 	result, _, _ := exports.Start.Call(uintptr(index))
 
 	code := int32(result)
