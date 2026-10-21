@@ -6,6 +6,7 @@ import (
 	"log"
 
 	desktopBackend "github.com/caliniya/caf/backend/desktop"
+	"github.com/caliniya/caf/core"
 )
 
 //go:embed frontend
@@ -20,4 +21,7 @@ func main() {
 	if err := desktopBackend.Run(assets); err != nil {
 		log.Fatal(err)
 	}
+
+	core.Init()
+
 }
