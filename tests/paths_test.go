@@ -5,33 +5,25 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/caliniya/caf/backend/desktop"
+	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core/platform"
 )
 
 func TestPortableDefaults(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "CAF 测试")
-	p, err := desktop.PathsFromExecutable(filepath.Join(root, "CAF.exe"), "")
+	p, err := desktopBackend.PathsFromExecutable(filepath.Join(root, "CAF.exe"), "")
 	if err != nil || p.Root != root || p.Data != filepath.Join(root, "data") || p.Logs != filepath.Join(p.Data, "logs") {
 		t.Fatalf("unexpected paths: %+v, %v", p, err)
 	}
 	if _, err := os.Stat(p.Data); !os.IsNotExist(err) {
 		t.Fatal("path discovery created files", err)
 	}
-	b := desktop.New()
-	defer b.Close()
-	if err := b.Init(p); err != nil {
-		t.Fatal(err)
-	}
-	if info, err := os.Stat(p.Logs); err != nil || !info.IsDir() {
-		t.Fatal("logs not created", err)
-	}
 }
 
 func TestOverridesAreRelativeToExecutableNotWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	for _, override := range []string{"portable-data", filepath.Join(t.TempDir(), "external-data")} {
-		p, err := desktop.PathsFromExecutable(filepath.Join(root, "CAF.exe"), override)
+		p, err := desktopBackend.PathsFromExecutable(filepath.Join(root, "CAF.exe"), override)
 		want := override
 		if !filepath.IsAbs(want) {
 			want = filepath.Join(root, want)
@@ -43,7 +35,7 @@ func TestOverridesAreRelativeToExecutableNotWorkingDirectory(t *testing.T) {
 }
 
 func TestPathsRejectRelativeFields(t *testing.T) {
-	if _, err := desktop.PathsFromExecutable("CAF.exe", ""); err == nil {
+	if _, err := desktopBackend.PathsFromExecutable("CAF.exe", ""); err == nil {
 		t.Fatal("relative executable accepted")
 	}
 	valid := testPaths(t)
@@ -55,19 +47,5 @@ func TestPathsRejectRelativeFields(t *testing.T) {
 		if err := p.Validate(); err == nil {
 			t.Fatal("relative path accepted", p)
 		}
-	}
-}
-
-func TestDataDirectoryCannotBeAFile(t *testing.T) {
-	p := testPaths(t)
-	if err := os.WriteFile(p.Data, []byte("keep intact"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	b := desktop.New()
-	if err := b.Init(p); err == nil {
-		t.Fatal("file accepted as data directory")
-	}
-	if content, err := os.ReadFile(p.Data); err != nil || string(content) != "keep intact" {
-		t.Fatal("file modified", err)
 	}
 }

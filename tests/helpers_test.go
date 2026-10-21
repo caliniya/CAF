@@ -1,53 +1,18 @@
 package tests
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
-	"github.com/caliniya/caf/backend/desktop"
-	"github.com/caliniya/caf/core"
+	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core/platform"
 )
 
-type fakeBackend struct {
-	state                                        platform.NativeStatus
-	paths                                        platform.Paths
-	initCalls, loadCalls, loginCalls, closeCalls int
-	initErr, loadErr, loginErr, closeErr         error
-}
-
-func (b *fakeBackend) Init(p platform.Paths) error         { b.initCalls++; b.paths = p; return b.initErr }
-func (b *fakeBackend) NativeStatus() platform.NativeStatus { return b.state }
-func (b *fakeBackend) LoadNative() (platform.NativeStatus, error) {
-	b.loadCalls++
-	if b.loadErr == nil {
-		b.state.Loaded = true
-	}
-	return b.state, b.loadErr
-}
-func (b *fakeBackend) BeginLogin(context.Context) error { b.loginCalls++; return b.loginErr }
-func (b *fakeBackend) Close() error                     { b.closeCalls++; return b.closeErr }
-
-var _ platform.Backend = (*fakeBackend)(nil)
-var _ platform.QQPlatform = (*fakeBackend)(nil)
-
 func testPaths(t *testing.T) platform.Paths {
 	t.Helper()
-	p, err := desktop.PathsFromExecutable(filepath.Join(t.TempDir(), "CAF.exe"), "")
+	p, err := desktopBackend.PathsFromExecutable(filepath.Join(t.TempDir(), "CAF.exe"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return p
-}
-
-func testCore(t *testing.T, b platform.Backend) *core.Core {
-	t.Helper()
-	// 测试假后端可以同时实现两个接口；生产入口显式传入 backend.QQ()。
-	qq, _ := b.(platform.QQPlatform)
-	rt, err := core.NewCore(testPaths(t), b, qq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rt
 }

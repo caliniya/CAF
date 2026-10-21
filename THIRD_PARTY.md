@@ -5,6 +5,8 @@
   使用 AGPL-3.0，原始许可文本保留在 LICENSES/LagrangeGo-AGPL-3.0.txt。
 - 间接 Go 依赖的版本和校验值见 go.mod/go.sum，其许可随对应模块提供。
 
+本轮保留 LagrangeGo 的模块声明和许可，但 QQ 适配代码已删除，当前空窗口入口不导入该 SDK。
+
 Lagrange.Core Git 子模块已移除，不再参与当前构建；旧 goinvoke 也不再是 Go 模块依赖。
 保留的 goinvoke MIT 文本仅用于历史来源记录。
 原 Windows NativeAPI DLL 继续归档于 backend/desktop/natives，内容与 PROVENANCE.json 未变，应用不引用它。
