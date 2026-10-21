@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	desktopBackend "github.com/caliniya/caf/backend/desktop"
-	"github.com/caliniya/caf/core/platform"
+	"github.com/caliniya/caf/platform"
 )
 
 func TestPortableDefaults(t *testing.T) {

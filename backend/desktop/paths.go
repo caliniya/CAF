@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/caliniya/caf/core/platform"
+	"github.com/caliniya/caf/platform"
 )
 
 func DiscoverPaths(dataOverride string) (platform.Paths, error) {
