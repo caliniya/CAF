@@ -3,6 +3,7 @@ package desktopBackend
 import (
 	"errors"
 	"io/fs"
+	"os"
 
 	"github.com/caliniya/caf/core"
 	"github.com/wailsapp/wails/v2"
@@ -14,7 +15,7 @@ func Run(assets fs.FS) error {
 	if assets == nil {
 		return errors.New("必须提供前端")
 	}
-	path, err := DiscoverPaths("")
+	path, err := DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 	if err == nil {
 		core.Platform.Paths = &path
 	} else {
