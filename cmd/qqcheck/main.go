@@ -14,6 +14,7 @@ import (
 
 	"github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
+	"github.com/caliniya/caf/core/platform"
 )
 
 func main() {
@@ -47,7 +48,10 @@ func run(data string, group uint64, text string) error {
 	defer cancel()
 	engine.Startup(ctx)
 	defer engine.Close()
-	if _, err := engine.BeginLogin(); err != nil {
+	if status, err := engine.BeginLogin(); err != nil {
+		if status.QQ.ErrorCode != "" {
+			return qqFailure(status.QQ)
+		}
 		return err
 	}
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -64,7 +68,8 @@ func run(data string, group uint64, text string) error {
 				shown = true
 			}
 			if qq.Phase == "error" {
-				return errors.New(qq.Error)
+				// 这里只打印经过白名单处理的阶段与错误码，不打印 SDK 原始异常。
+				return qqFailure(qq)
 			}
 			if qq.Phase == "online" && !sent {
 				fmt.Println("QQ 已上线；按 Ctrl+C 关闭会话。")
@@ -78,4 +83,8 @@ func run(data string, group uint64, text string) error {
 			}
 		}
 	}
+}
+
+func qqFailure(qq platform.QQStatus) error {
+	return fmt.Errorf("QQ 失败阶段=%s，错误码=%s：%s", qq.Stage, qq.ErrorCode, qq.Error)
 }

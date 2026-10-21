@@ -1,4 +1,29 @@
-# LagrangeGo 试验后端验证
+# 当前验证：QQ 失败诊断
+
+2026-10-21，已将 CAF 快进更新到 `01587d4`。拉取前的本地改动保留在 stash，没有强制覆盖或重复应用已合并的旧补丁。
+
+确认的问题：“登录或连接失败”是前端统一状态名；底层原因被通用提示替代，且 SDK Provider 不会拒绝 HTTP 200 中的非零业务 code 或缺失签名字段。
+已增加阶段/错误码/中文原因，并在后端包装签名响应校验，不修改上游 SDK 源码。
+
+## 本次通过
+
+- test.ps1：55 个 Go 测试、bindings vet、7 次开发脚本模拟与 VS Code 配置检查、9 个前端测试。
+- 全部集中测试的 race 检查，以及新增签名/诊断测试连续 10 轮 race 检查。
+- go test -tags bindings ./...、Windows x64 无窗口包构建与 production vet。
+- Wails Windows x64 production 构建；生成的 QQStatus 模型包含 stage/errorCode，不包含签名配置；绑定生成不创建测试指定的数据目录。
+- Linux 无 CGO 的 qqcheck 编译；缺配置和不支持的协议版本均输出对应阶段/错误码，未创建设备或凭据。
+- 本机 httptest 验证真实 SDK Provider 的 POST 字段、Bearer 认证与 User-Agent；只使用虚构数据，未连接外部签名服务。
+- HTTP 401/403/404/405/429/502、非零 code、HTML/错误十六进制、旧字段格式/空签名均被拒绝，响应正文、令牌和 URL 不进入页面状态。
+- Go 模块校验、tidy -diff、gofmt、前端语法与 diff 空白检查。
+
+## 仍未验证
+
+没有用真实签名服务和账号扫码，也没有向真实群发消息；仅凭统一状态名仍无法确定用户本机失败的根因。
+需应用补丁重试并查看具体阶段和错误码，不宣称真实登录已修复。Windows 窗口未在实机运行；Linux GUI 仍受当前宿主缺少 pkg-config/GTK/WebKit 限制。
+
+---
+
+# 历史：LagrangeGo 试验后端验证
 
 2026-10-21，基于 CAF dd4f542，Go 1.27.3 / Wails v2.17.0 / PowerShell 7.6.7 / Node v18.20.4，Linux x64 宿主。
 固定 SDK 版本为 v0.1.5-0.20260718062712-f7f8abfaa7f1。

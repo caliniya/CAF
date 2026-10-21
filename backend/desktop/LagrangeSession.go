@@ -14,7 +14,6 @@ import (
 	qqclient "github.com/LagrangeDev/LagrangeGo/client"
 	"github.com/LagrangeDev/LagrangeGo/client/auth"
 	"github.com/LagrangeDev/LagrangeGo/client/packets/wtlogin/qrcodestate"
-	"github.com/LagrangeDev/LagrangeGo/client/sign"
 	"github.com/LagrangeDev/LagrangeGo/message"
 )
 
@@ -36,7 +35,7 @@ func NewLagrangeSession(ctx context.Context, cfg QQConfig, directory string) (QQ
 	}
 	app := auth.AppList[cfg.Protocol][cfg.Version]
 	if app == nil {
-		return nil, errors.New("不支持的 QQ 协议版本")
+		return nil, qqDiagnostic("QQ_VERSION", "SDK 不支持配置的 protocol/version；在本机核对签名服务对应的 QQ 版本")
 	}
 	devicePath := filepath.Join(directory, "device.json")
 	data, err := os.ReadFile(devicePath)
@@ -57,11 +56,11 @@ func NewLagrangeSession(ctx context.Context, cfg QQConfig, directory string) (QQ
 	} else if err != nil {
 		return nil, err
 	} else if err := json.Unmarshal(data, device); err != nil {
-		return nil, err
+		return nil, qqDiagnostic("QQ_DEVICE_FORMAT", "qq/device.json 不是有效设备 JSON；未覆盖或重置原文件")
 	}
 	id, err := hex.DecodeString(device.GUID)
 	if err != nil || len(id) != 16 || device.DeviceName == "" {
-		return nil, errors.New("设备文件无效")
+		return nil, qqDiagnostic("QQ_DEVICE_FORMAT", "qq/device.json 的 GUID 或设备名无效；未覆盖或重置原文件")
 	}
 
 	client := qqclient.NewClientEmpty()
@@ -69,13 +68,13 @@ func NewLagrangeSession(ctx context.Context, cfg QQConfig, directory string) (QQ
 	client.SetLogger(quietQQLogger{})
 	client.UseVersion(app)
 	client.UseDevice(device)
-	client.UseSignProvider(sign.NewSigner(nil, cfg.SignToken, cfg.SignServer))
+	client.UseSignProvider(NewQQSigner(cfg))
 	data, err = os.ReadFile(filepath.Join(directory, "sig.bin"))
 	if err == nil {
 		sig, err := auth.UnmarshalSigInfo(data, true)
 		if err != nil {
 			client.Release()
-			return nil, err
+			return nil, qqDiagnostic("QQ_SIG_FORMAT", "qq/sig.bin 无法解析；请在本机备份后移走再扫码，未自动删除原文件")
 		}
 		client.UseSig(sig)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -129,7 +128,7 @@ func (s *lagrangeSession) QRCodeLogin() error {
 		return err
 	}
 	if result == nil || !result.Success {
-		return errors.New("QQ 没有确认登录成功")
+		return qqDiagnostic("QQ_LOGIN_REJECTED", "QQ 没有确认登录成功；检查协议版本及账号验证状态，不能视为已上线")
 	}
 	return nil
 }

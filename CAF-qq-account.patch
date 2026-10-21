@@ -1,0 +1,455 @@
+diff --git a/MIGRATION.md b/MIGRATION.md
+index c7013fa..903318b 100644
+--- a/MIGRATION.md
++++ b/MIGRATION.md
+@@ -1,4 +1,31 @@
+-# 当前补丁：QQ 失败诊断
++# 当前补丁：签名服务绑定 QQ 号
++
++提供两份补丁，**只选一份**：
++
++- 已应用上一份 `CAF-qq-diagnostics.patch`：用 `CAF-qq-account.patch`（增量）。
++- 仍是原始 `01587d4`、未应用诊断补丁：用 `CAF-qq-account-full.patch`（包含诊断和账号配置）。
++
++先保存本地工作，在项目根目录执行；下面以增量补丁为例，另一份只替换文件名：
++
++```powershell
++git apply --check .\CAF-qq-account.patch
++git apply .\CAF-qq-account.patch
++.\test.ps1
++```
++
++在界面显示的数据目录里编辑 `qq/config.json`，给现有 JSON 对象增加一项：
++
++```json
++"qq": 123456789
++```
++
++数字仅为示例，替换为签名服务绑定的号码，不加引号；注意与其他字段间的逗号。
++不要删除原有签名地址、令牌和版本，不要把完整配置发到群里。程序不覆盖已有配置，改完再发起登录。
++0 或缺省保留自动识别；配置非零时，必须使用同一 QQ 扫码，且缓存不能属于别的账号。
++如遇 `QQ_CACHE_ACCOUNT_MISMATCH`，先在本机备份并移走旧 sig.bin，再扫码；程序不会替你删除。
++此补丁只把配置号码用于 SDK 签名请求的 uin，不绕过服务鉴权，也没有验证真实服务的 403 已解除。
++
++## 上一份补丁：QQ 失败诊断
+ 
+ 基于 `01587d4`，补丁名 `CAF-qq-diagnostics.patch`。先保存自己的本地改动，在项目根目录执行：
+ 
+diff --git a/README.md b/README.md
+index cc5a9ff..c5fe25d 100644
+--- a/README.md
++++ b/README.md
+@@ -31,6 +31,7 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
+ 
+ ```json
+ {
++  "qq": 0,
+   "signServer": "",
+   "signToken": "",
+   "protocol": "linux",
+@@ -38,7 +39,7 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
+ }
+ ```
+ 
+-1. 在本机文件中填完整的签名接口地址；需要认证时再填 signToken。远程服务优先使用 HTTPS。
++1. 在本机文件中填完整的签名接口地址；需要认证时再填 signToken。远程服务优先使用 HTTPS。若服务绑定了 QQ，在 qq 中填绑定号码（数字，不加引号）。
+ 2. protocol/version 必须和签名服务对应；这里是 QQ 协议版本，不是 CAF 宿主操作系统。
+ 3. 回到界面点击“登录 QQ”，等待本机二维码出现，用手机扫码确认。
+ 4. 界面必须显示“已上线”才能手动发送群文本；登录本身不会自动发送任何测试消息。
+@@ -48,6 +49,15 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
+ 请求字段含 command/seq/body/uin/guid/qua，响应含 value.sec_sign/sec_token/sec_extra，认证使用 Bearer token。
+ 不能把任意“签名服务器”地址直接当成兼容服务；示例不提供公共服务或令牌。
+ 
++`qq` 默认为 0，旧配置没有此项时仍保持自动识别行为。已有 config.json 不会被覆盖，需手动增加这一项。
++例如把 `"qq": 123456789,` 加进现有 JSON 对象，并将示例数字替换为签名服务绑定的账号；保留原有接口、令牌和协议版本。
++保存后重新发起登录；如果会话尚在运行，先取消/断开。
++
++扫码确认前，SDK 的账号为 0 时，签名 Provider 会把配置 qq 作为签名请求的 `uin`；不会强改 QQ 客户端的登录身份或报文。
++确认扫码账号后必须与配置一致，否则停止登录，不保存凭据；缓存属于其他账号也会在联网前拒绝，不自动删除文件。
++这里仅适配 SDK 已有 JSON `uin` 字段；如果服务另要求查询参数或请求头，仍需按服务文档适配。
++填号码不能替代有效令牌、绑定授权和协议兼容性，也不保证单凭此项即可消除 403。
++
+ 二维码、signToken、device.json 和 sig.bin 都只应保存在本机，不能发到群里、提交到 Git 或附在日志中。
+ 核心状态不返回签名配置和凭据；原始 SDK 日志与报文转储暂不输出，界面显示经过白名单处理的失败阶段、错误码和中文原因。
+ 未分类的底层异常仍不直接输出；需要时结合服务端的安全诊断排查，不要贴完整认证报文。
+@@ -64,7 +74,9 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
+ | --- | --- |
+ | `QQ_CONFIG` | 按界面显示的数据目录修改 qq/config.json，不要改错发布版/开发版目录 |
+ | `QQ_VERSION` | protocol/version 是否为当前 SDK 支持的成对值 |
+-| `SIGN_HTTP_401` / `SIGN_HTTP_403` | 签名服务认证和权限；只在本机核对令牌 |
++| `SIGN_HTTP_401` / `SIGN_HTTP_403` | 签名服务认证和权限；在本机核对令牌、qq 绑定及接口规则 |
++| `QQ_ACCOUNT_MISMATCH` | 实际扫码/登录账号与配置 qq 不一致，必须使用同一绑定账号 |
++| `QQ_CACHE_ACCOUNT_MISMATCH` | 旧 sig.bin 属于其他账号；在本机备份并移走后重新扫码，程序不会自动删除 |
+ | `SIGN_HTTP_404` / `SIGN_HTTP_405` | 完整 POST 接口路径，不是服务首页 |
+ | `SIGN_REJECTED_<code>` | 服务已返回非零 code；核对版本、授权和服务接口 |
+ | `SIGN_RESPONSE_FORMAT` / `SIGN_EMPTY_SIGNATURE` | 签名协议是否兼容，响应需要 value.sec_sign；HTTP 200 不等于签名成功 |
+diff --git a/VALIDATION.md b/VALIDATION.md
+index d1c67dd..1df4e9c 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -1,4 +1,23 @@
+-# 当前验证：QQ 失败诊断
++# 当前验证：签名服务绑定 QQ 号
++
++2026-10-21，基于 `01587d4` 及上一份诊断改动；本轮不升级依赖、不修改上游 SDK。
++
++- 新模板增加 qq: 0；旧配置缺省仍兼容，原有文件不覆盖。负数、越界、小数、字符串和布尔值在配置阶段拒绝。
++- 非零 qq 只用于 SDK 签名请求的 uin 提示；客户端身份仍由真实扫码/缓存决定，不能据此假报上线。
++- 本机模拟绑定校验的 HTTP 服务验证：扫码前补配置账号，扫码后保持相同实际账号，其他账号在发出签名请求前拒绝。
++- 扫码账号不匹配时，在调用 QRCodeLogin 前终止；上线/保存前再次校验。其他账号的缓存在真实 SDK 联网前拒绝，旧 sig.bin 不删除或覆盖。
++- test.ps1：62 个 Go 测试、bindings vet、7 次脚本模拟与 VS Code 检查、9 个前端测试通过。
++- 全部 Go 测试 race、新增账号绑定测试连续 10 轮 race、全工程 bindings 测试、Windows x64 包构建与 production vet 通过。
++- Wails Windows x64 production 交叉构建通过；生成模型不含 QQConfig 或签名配置，生成绑定不初始化数据目录。
++- Linux 无 CGO 的 qqcheck 编译及模板/非法 qq/协议版本错误冒烟检查通过；未输出配置号码、令牌或地址。
++- 模块校验、tidy -diff、gofmt、diff 空白检查通过。
++
++仍未用真实签名服务鉴权、扫码或发消息；403 是否由 uin=0 引起、服务是否接受现有 JSON uin 字段，仍须用户本机复测。
++没有将填号码等同于绕过鉴权或成功登录；Windows GUI 实机及 Linux GTK/WebKit 窗口运行未验证。
++
++---
++
++# 上一轮验证：QQ 失败诊断
+ 
+ 2026-10-21，已将 CAF 快进更新到 `01587d4`。拉取前的本地改动保留在 stash，没有强制覆盖或重复应用已合并的旧补丁。
+ 
+diff --git a/backend/desktop/DesktopQQ.go b/backend/desktop/DesktopQQ.go
+index 455a88d..fa8fd01 100644
+--- a/backend/desktop/DesktopQQ.go
++++ b/backend/desktop/DesktopQQ.go
+@@ -180,6 +180,10 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
+ 				return
+ 			}
+ 			if phase == "confirmed" {
++				if err := validateQQAccount(cfg.QQ, session.Account()); err != nil {
++					q.fail(ctx, "query_qr", "扫码账号不匹配，已停止登录", err)
++					return
++				}
+ 				break
+ 			}
+ 			if phase != "waiting" && phase != "scanned" {
+@@ -202,6 +206,10 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
+ 	if ctx.Err() != nil {
+ 		return
+ 	}
++	if err := validateQQAccount(cfg.QQ, session.Account()); err != nil {
++		q.fail(ctx, "login", "登录账号不匹配，已关闭会话", err)
++		return
++	}
+ 	if !session.Online() {
+ 		q.fail(ctx, "login", "QQ 登录失败", qqDiagnostic("QQ_NOT_ONLINE", "SDK 未确认 QQ 上线，不能视为登录成功"))
+ 		return
+diff --git a/backend/desktop/LagrangeSession.go b/backend/desktop/LagrangeSession.go
+index 32daeed..c9ee3f5 100644
+--- a/backend/desktop/LagrangeSession.go
++++ b/backend/desktop/LagrangeSession.go
+@@ -76,6 +76,10 @@ func NewLagrangeSession(ctx context.Context, cfg QQConfig, directory string) (QQ
+ 			client.Release()
+ 			return nil, qqDiagnostic("QQ_SIG_FORMAT", "qq/sig.bin 无法解析；请在本机备份后移走再扫码，未自动删除原文件")
+ 		}
++		if cfg.QQ != 0 && sig.Uin != 0 && cfg.QQ != sig.Uin {
++			client.Release()
++			return nil, qqDiagnostic("QQ_CACHE_ACCOUNT_MISMATCH", "qq/sig.bin 属于其他账号；请在本机备份并移走后重新扫码，原文件未修改")
++		}
+ 		client.UseSig(sig)
+ 	} else if !errors.Is(err, os.ErrNotExist) {
+ 		client.Release()
+diff --git a/backend/desktop/QQConfig.go b/backend/desktop/QQConfig.go
+index 56b1ba1..5f6c31e 100644
+--- a/backend/desktop/QQConfig.go
++++ b/backend/desktop/QQConfig.go
+@@ -13,6 +13,8 @@ import (
+ // QQConfig 只从本地文件读取，不绑定给 Wails，也不写入日志。
+ // Protocol 指模拟的 QQ 协议平台，不是运行 CAF 的操作系统。
+ type QQConfig struct {
++	// QQ 是签名服务绑定的账号；0 或未填写时保持 SDK 原有的自动识别行为。
++	QQ         uint32 `json:"qq"`
+ 	SignServer string `json:"signServer"`
+ 	SignToken  string `json:"signToken"`
+ 	Protocol   string `json:"protocol"`
+@@ -46,7 +48,11 @@ func loadQQConfig(directory string) (QQConfig, error) {
+ 	if err != nil {
+ 		return cfg, platform.ErrQQConfigRequired
+ 	}
+-	if json.Unmarshal(data, &cfg) != nil {
++	if err := json.Unmarshal(data, &cfg); err != nil {
++		var field *json.UnmarshalTypeError
++		if errors.As(err, &field) && field.Field == "qq" {
++			return cfg, errors.New("qq 必须是不加引号的 0 到 4294967295 的整数；0 表示不预设账号")
++		}
+ 		return cfg, errors.New("QQ 配置不是有效 JSON，请检查 qq/config.json")
+ 	}
+ 	if cfg.SignServer == "" {
+@@ -59,6 +65,14 @@ func loadQQConfig(directory string) (QQConfig, error) {
+ 	return cfg, nil
+ }
+ 
++// validateQQAccount 只校验真实返回的账号，不用配置值冒充扫码身份或上线状态。
++func validateQQAccount(configured, actual uint32) error {
++	if configured != 0 && configured != actual {
++		return qqDiagnostic("QQ_ACCOUNT_MISMATCH", "当前 QQ 账号与配置 qq 不一致；请使用签名服务绑定的同一账号")
++	}
++	return nil
++}
++
+ // writeQQFile 用临时文件替换凭据，避免进程中断留下半份 JSON 或 sig.bin。
+ func writeQQFile(path string, data []byte) error {
+ 	file, err := os.CreateTemp(filepath.Dir(path), ".qq-*")
+diff --git a/backend/desktop/QQSigner.go b/backend/desktop/QQSigner.go
+index d9e18b7..f801dda 100644
+--- a/backend/desktop/QQSigner.go
++++ b/backend/desktop/QQSigner.go
+@@ -11,12 +11,15 @@ import (
+ 	"github.com/LagrangeDev/LagrangeGo/client/sign"
+ )
+ 
+-type checkedQQSigner struct{ provider sign.Provider }
++type checkedQQSigner struct {
++	provider sign.Provider
++	account  uint32
++}
+ 
+ // NewQQSigner 包装 SDK 的签名 Provider；构造不联网，也不执行试签名。
+ // 只在真正需要签名的请求中检查响应，不能把 HTTP 200 当作签名成功。
+ func NewQQSigner(cfg QQConfig) sign.Provider {
+-	return &checkedQQSigner{provider: sign.NewSigner(nil, cfg.SignToken, cfg.SignServer)}
++	return &checkedQQSigner{provider: sign.NewSigner(nil, cfg.SignToken, cfg.SignServer), account: cfg.QQ}
+ }
+ 
+ func (s *checkedQQSigner) AddRequestHeader(header map[string]string) {
+@@ -28,13 +31,22 @@ func (s *checkedQQSigner) Release()                     { s.provider.Release() }
+ var signHTTPStatus = regexp.MustCompile(`^unexpected status code: ([1-5][0-9]{2})$`)
+ 
+ func (s *checkedQQSigner) Sign(command string, seq uint32, body []byte, uin uint32, guid, qua string) (*sign.Response, error) {
++	if s.account != 0 && sign.ContainSignPKG(command) {
++		// 扫码确认前 SDK 的 uin 是 0；仅向签名接口补充绑定账号，不修改 QQ 客户端身份。
++		if uin == 0 {
++			uin = s.account
++		} else if err := validateQQAccount(s.account, uin); err != nil {
++			// 实际账号已经明确时不能继续拿另一个绑定账号为其签名。
++			return nil, err
++		}
++	}
+ 	response, err := s.provider.Sign(command, seq, body, uin, guid, qua)
+ 	if err != nil {
+ 		if match := signHTTPStatus.FindStringSubmatch(err.Error()); match != nil {
+ 			hint := "核对服务状态与完整接口地址"
+ 			switch match[1] {
+ 			case "401", "403":
+-				hint = "认证或权限失败；在本机检查 signToken 和服务授权"
++				hint = "认证或权限失败；在本机检查 signToken、qq 绑定和服务授权"
+ 			case "404", "405":
+ 				hint = "接口路径或 POST 方法不匹配；不要只填写服务首页"
+ 			case "429":
+diff --git a/tests/README.md b/tests/README.md
+index ebb88bc..a799bae 100644
+--- a/tests/README.md
++++ b/tests/README.md
+@@ -14,6 +14,7 @@
+ | natives_test.go | 历史 DLL 归档的来源、缓存代码和哈希，应用不依赖这个资源包 |
+ | lagrangego_test.go | 离线 SDK 对象、稳定私有设备、假会话扫码/缓存登录、取消、发送、错误脱敏及不假报上线 |
+ | qq_diagnostic_test.go | 本机 httptest 假签名服务、实际 SDK 请求格式、HTTP/code/空签名错误、分阶段诊断与脱敏 |
++| qq_account_test.go | 配置 qq 的范围、扫码前签名 uin、账号一致性、不匹配缓存离线拒绝及不伪造上线身份 |
+ | frontend.test.mjs | core.Core 命名空间、转发、暂停状态及禁用加载、登录错误；拒绝旧 desktop.App 命名空间 |
+ | development.test.ps1 | 7 次模拟开发脚本运行和 VS Code 配置，无窗口、不依赖 Pester |
+ 
+diff --git a/tests/qq_account_test.go b/tests/qq_account_test.go
+new file mode 100644
+index 0000000..78fe9fa
+--- /dev/null
++++ b/tests/qq_account_test.go
+@@ -0,0 +1,195 @@
++package tests
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"testing"
++
++	"github.com/LagrangeDev/LagrangeGo/client/auth"
++	"github.com/caliniya/caf/backend/desktop"
++)
++
++func TestQQSignerUsesBoundAccountBeforeConfirmation(t *testing.T) {
++	for _, tc := range []struct {
++		name                     string
++		configured, actual, want uint32
++		mismatch                 bool
++	}{
++		{"automatic-before-scan", 0, 0, 0, false},
++		{"automatic-after-scan", 0, 987654, 987654, false},
++		{"bound-before-scan", 123456, 0, 123456, false},
++		{"bound-matching-scan", 123456, 123456, 123456, false},
++		{"bound-wrong-scan", 123456, 987654, 0, true},
++		{"sdk-upper-bound", 4294967295, 0, 4294967295, false},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			var requests atomic.Int32
++			var received atomic.Uint32
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				requests.Add(1)
++				var body struct {
++					Uin uint32 `json:"uin"`
++				}
++				if json.NewDecoder(r.Body).Decode(&body) != nil {
++					w.WriteHeader(400)
++					return
++				}
++				received.Store(body.Uin)
++				// 模拟必须携带已绑定账号的服务；不正确的请求会被拒绝为 403。
++				if tc.configured != 0 && body.Uin != tc.configured {
++					w.WriteHeader(403)
++					return
++				}
++				_, _ = io.WriteString(w, `{"code":0,"value":{"sec_sign":"01"}}`)
++			}))
++			defer server.Close()
++			signer := desktop.NewQQSigner(desktop.QQConfig{QQ: tc.configured, SignServer: server.URL})
++			defer signer.Release()
++			response, err := signer.Sign("wtlogin.trans_emp", 1, []byte{0}, tc.actual, "", "")
++			if tc.mismatch {
++				if err == nil || !strings.Contains(err.Error(), "QQ_ACCOUNT_MISMATCH") || response != nil || requests.Load() != 0 {
++					t.Fatal("真实账号不匹配时必须在请求签名前拒绝，不能伪装成绑定账号")
++				}
++				return
++			}
++			if err != nil || response == nil || requests.Load() != 1 || received.Load() != tc.want {
++				t.Fatal("签名请求未使用预期账号（不输出请求内容）")
++			}
++		})
++	}
++}
++
++// setQQAccountTest 只修改测试临时目录里的虚构配置，不读取用户的本机配置。
++func setQQAccountTest(t *testing.T, directory string, account any) {
++	t.Helper()
++	data, _ := json.Marshal(map[string]any{
++		"qq": account, "signServer": "http://127.0.0.1:1", "signToken": "SYNTHETIC_PRIVATE_TEST",
++		"protocol": "linux", "version": "3.2.19-39038",
++	})
++	if err := os.WriteFile(filepath.Join(directory, "config.json"), data, 0600); err != nil {
++		t.Fatal("无法写入测试配置")
++	}
++}
++
++func TestQQConfigIncludesAccountAndRejectsInvalidNumbers(t *testing.T) {
++	e, dir, count := sdkCore(t, &testQQSession{})
++	data, _ := os.ReadFile(filepath.Join(dir, "config.json"))
++	var template map[string]any
++	if json.Unmarshal(data, &template) != nil || template["qq"] != float64(0) {
++		t.Fatal("新配置模板必须包含 qq: 0")
++	}
++	for _, value := range []any{-1, uint64(4294967296), 1.5, "123456", true} {
++		setQQAccountTest(t, dir, value)
++		if _, err := e.BeginLogin(); err == nil || !strings.Contains(err.Error(), "qq 必须是") {
++			t.Fatal("非法 qq 必须在配置阶段明确拒绝")
++		}
++		if count.Load() != 0 || e.GetStatus().QQ.Stage != "config" {
++			t.Fatal("非法账号不能启动 SDK 会话")
++		}
++	}
++}
++
++func TestQQConfiguredAccountCanCompleteMatchingFakeLogin(t *testing.T) {
++	s := &testQQSession{}
++	e, dir, _ := sdkCore(t, s)
++	setQQAccountTest(t, dir, uint32(123456))
++	if _, err := e.BeginLogin(); err != nil {
++		t.Fatal("匹配的虚构账号未受理")
++	}
++	state := waitQQ(t, e, "online")
++	if state.Account != 123456 || s.logins.Load() != 1 || s.saves.Load() != 1 || s.sends.Load() != 0 {
++		t.Fatal("匹配账号的登录流程异常或自动发送了消息")
++	}
++}
++
++func TestQQOldConfigWithoutAccountRemainsUsableAndUnmodified(t *testing.T) {
++	e, dir, _ := sdkCore(t, &testQQSession{})
++	data := []byte(`{"signServer":"http://127.0.0.1:1","protocol":"linux","version":"3.2.19-39038"}`)
++	path := filepath.Join(dir, "config.json")
++	if os.WriteFile(path, data, 0600) != nil {
++		t.Fatal("无法写入旧格式测试配置")
++	}
++	if _, err := e.BeginLogin(); err != nil {
++		t.Fatal("未填写 qq 的旧配置仍应受理")
++	}
++	waitQQ(t, e, "online")
++	after, _ := os.ReadFile(path)
++	if !bytes.Equal(after, data) {
++		t.Fatal("不能自动覆盖用户已有的签名配置")
++	}
++}
++
++func TestQQRejectsOtherAccountBeforeLoginOrCredentialSave(t *testing.T) {
++	for _, fast := range []bool{false, true} {
++		s := &testQQSession{fast: fast}
++		e, dir, _ := sdkCore(t, s)
++		setQQAccountTest(t, dir, uint32(654321))
++		if _, err := e.BeginLogin(); err != nil {
++			t.Fatal("未受理虚构登录")
++		}
++		state := waitQQ(t, e, "error")
++		if state.ErrorCode != "QQ_ACCOUNT_MISMATCH" || state.Account != 0 || state.QRCode != "" {
++			t.Fatal("不能把错误账号或配置账号报告为已上线")
++		}
++		if err := e.Close(); err != nil {
++			t.Fatal("无法关闭测试核心")
++		}
++		if s.logins.Load() != 0 || s.saves.Load() != 0 || s.sends.Load() != 0 || s.closes.Load() != 1 {
++			t.Fatal("不匹配账号不应继续扫码登录、保存凭据或发送消息")
++		}
++	}
++}
++
++func TestRealSDKRejectsOtherAccountCacheOfflineAndPreservesIt(t *testing.T) {
++	dir := t.TempDir()
++	sig := auth.SigInfo{Uin: 123456, D2: []byte("SYNTHETIC_NOT_A_REAL_TICKET")}
++	data, err := sig.Marshal()
++	if err != nil {
++		t.Fatal("无法构造虚构缓存")
++	}
++	path := filepath.Join(dir, "sig.bin")
++	if os.WriteFile(path, data, 0600) != nil {
++		t.Fatal("无法写入虚构缓存")
++	}
++	cfg := desktop.QQConfig{QQ: 654321, Protocol: "linux", Version: "3.2.19-39038", SignServer: "http://127.0.0.1:1"}
++	session, err := desktop.NewLagrangeSession(context.Background(), cfg, dir)
++	if err == nil || !strings.Contains(err.Error(), "QQ_CACHE_ACCOUNT_MISMATCH") || session != nil {
++		if session != nil {
++			session.Close()
++		}
++		t.Fatal("其他账号的缓存必须在联网前拒绝")
++	}
++	after, _ := os.ReadFile(path)
++	if !bytes.Equal(after, data) {
++		t.Fatal("不匹配的旧凭据不能被删除或覆盖")
++	}
++	cfg.QQ = 123456
++	session, err = desktop.NewLagrangeSession(context.Background(), cfg, dir)
++	if err != nil || session == nil {
++		t.Fatal("相同账号的缓存应该可以离线加载")
++	}
++	defer session.Close()
++	if session.Online() {
++		t.Fatal("加载缓存不能自动联网或报告上线")
++	}
++}
++
++func TestRealSDKConfiguredQQDoesNotSetAuthenticatedIdentity(t *testing.T) {
++	cfg := desktop.QQConfig{QQ: 123456, Protocol: "linux", Version: "3.2.19-39038", SignServer: "http://127.0.0.1:1"}
++	session, err := desktop.NewLagrangeSession(context.Background(), cfg, t.TempDir())
++	if err != nil {
++		t.Fatal("无法创建离线 SDK 会话")
++	}
++	defer session.Close()
++	if session.Account() != 0 || session.Online() {
++		t.Fatal("预设签名账号不能修改 QQ 客户端身份或假报上线")
++	}
++}

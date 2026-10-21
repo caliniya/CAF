@@ -12,11 +12,13 @@ type QQPlatform interface {
 // QQStatus 只包含可显示的运行状态；不包含签名地址、令牌、设备信息或登录凭据。
 // QRCode 是短期有效的本机登录二维码，仅供本地界面显示，不应记录到日志或发送到群。
 type QQStatus struct {
-	Provider string `json:"provider"`
-	Phase    string `json:"phase"`
-	QRCode   string `json:"qrCode,omitempty"`
-	Account  uint32 `json:"account,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Provider  string `json:"provider"`
+	Phase     string `json:"phase"`
+	Stage     string `json:"stage,omitempty"`
+	ErrorCode string `json:"errorCode,omitempty"`
+	QRCode    string `json:"qrCode,omitempty"`
+	Account   uint32 `json:"account,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // 以下是独立的可选能力，旧的最小 QQ 实现仍可只提供 BeginLogin。

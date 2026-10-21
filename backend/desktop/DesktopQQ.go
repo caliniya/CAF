@@ -78,7 +78,7 @@ func (q *DesktopQQ) BeginLogin(ctx context.Context) error {
 	}
 	cfg, err := loadQQConfig(directory)
 	if err != nil {
-		q.state.Error = err.Error()
+		q.state = platform.QQStatus{Provider: "LagrangeGo", Phase: "error", Stage: "config", ErrorCode: "QQ_CONFIG", Error: err.Error()}
 		return err
 	}
 	worker, cancel := context.WithCancel(ctx)
@@ -103,12 +103,23 @@ func (q *DesktopQQ) publish(ctx context.Context, phase, qr, message string, acco
 	q.state = platform.QQStatus{Provider: "LagrangeGo", Phase: phase, QRCode: qr, Error: message, Account: account}
 }
 
+// fail 保留具体失败阶段及脱敏错误码，不再只报告“登录或连接失败”。
+func (q *DesktopQQ) fail(ctx context.Context, stage, message string, err error) {
+	code, detail := describeQQError(err)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed || ctx.Err() != nil {
+		return
+	}
+	q.state = platform.QQStatus{Provider: "LagrangeGo", Phase: "error", Stage: stage, ErrorCode: code, Error: message + "：" + detail}
+}
+
 func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, done chan struct{}) {
 	qrPath := filepath.Join(directory, "qrcode.png")
 	defer func() {
 		// 本工作协程的异常只转换为通用错误，不把凭据或请求详情带到页面。
 		if recover() != nil {
-			q.publish(ctx, "error", "", "QQ SDK 发生异常，请检查配置后重试", 0)
+			q.fail(ctx, "sdk", "QQ SDK 发生异常", qqDiagnostic("QQ_SDK_PANIC", "请检查配置后重试；未输出可能含票据的异常详情"))
 		}
 		_ = os.Remove(qrPath)
 		q.mu.Lock()
@@ -120,6 +131,8 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 			q.state.Phase = "idle"
 			q.state.Account = 0
 			q.state.Error = ""
+			q.state.Stage = ""
+			q.state.ErrorCode = ""
 		}
 		q.mu.Unlock()
 		close(done)
@@ -129,7 +142,7 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 		if session != nil {
 			session.Close()
 		}
-		q.publish(ctx, "error", "", "无法创建 QQ 会话，请检查协议版本、设备与凭据文件", 0)
+		q.fail(ctx, "prepare", "无法创建 QQ 会话", err)
 		return
 	}
 	defer session.Close()
@@ -145,11 +158,14 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 		}
 		png, err := session.FetchQRCode()
 		if err != nil || len(png) == 0 || len(png) > 2*1024*1024 {
-			q.publish(ctx, "error", "", "获取二维码失败，请检查网络、协议版本和签名服务", 0)
+			if err == nil {
+				err = qqDiagnostic("QQ_QR_RESPONSE", "二维码结果为空或超过大小限制")
+			}
+			q.fail(ctx, "fetch_qr", "获取二维码失败", err)
 			return
 		}
 		if err := writeQQFile(qrPath, png); err != nil {
-			q.publish(ctx, "error", "", "无法保存本机二维码文件", 0)
+			q.fail(ctx, "save_qr", "无法保存本机二维码文件", err)
 			return
 		}
 		qr := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
@@ -160,14 +176,14 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 			}
 			phase, err := session.QueryQRCode()
 			if err != nil {
-				q.publish(ctx, "error", "", "查询扫码状态失败，请重新发起登录", 0)
+				q.fail(ctx, "query_qr", "查询扫码状态失败", err)
 				return
 			}
 			if phase == "confirmed" {
 				break
 			}
 			if phase != "waiting" && phase != "scanned" {
-				q.publish(ctx, "error", "", "二维码已过期或被取消，请重新发起登录", 0)
+				q.fail(ctx, "query_qr", "二维码已失效", qqDiagnostic("QQ_QR_EXPIRED", "二维码已过期或被取消，请重新发起登录"))
 				return
 			}
 			q.publish(ctx, phase, qr, "", 0)
@@ -179,7 +195,7 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 		}
 		q.publish(ctx, "logging_in", "", "", 0)
 		if err := session.QRCodeLogin(); err != nil {
-			q.publish(ctx, "error", "", "QQ 登录失败，请检查签名服务与协议版本", 0)
+			q.fail(ctx, "login", "QQ 登录失败", err)
 			return
 		}
 	}
@@ -187,11 +203,11 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 		return
 	}
 	if !session.Online() {
-		q.publish(ctx, "error", "", "SDK 未确认 QQ 上线，不能视为登录成功", 0)
+		q.fail(ctx, "login", "QQ 登录失败", qqDiagnostic("QQ_NOT_ONLINE", "SDK 未确认 QQ 上线，不能视为登录成功"))
 		return
 	}
 	if err := session.Save(); err != nil {
-		q.publish(ctx, "error", "", "无法保存登录凭据，本次会话已关闭", 0)
+		q.fail(ctx, "save_session", "无法保存登录凭据，本次会话已关闭", err)
 		return
 	}
 	_ = os.Remove(qrPath)
@@ -204,7 +220,7 @@ func (q *DesktopQQ) login(ctx context.Context, cfg QQConfig, directory string, d
 			return
 		case <-ticker.C:
 			if !session.Online() {
-				q.publish(ctx, "error", "", "QQ 连接已断开，请重新登录", 0)
+				q.fail(ctx, "connection", "QQ 连接已断开", qqDiagnostic("QQ_DISCONNECTED", "SDK 已离线，请手动重新登录"))
 				return
 			}
 		}
@@ -232,6 +248,9 @@ func (q *DesktopQQ) close() {
 	q.state.Phase = "closed"
 	q.state.QRCode = ""
 	q.state.Account = 0
+	q.state.Stage = ""
+	q.state.ErrorCode = ""
+	q.state.Error = ""
 	cancel, done := q.cancel, q.done
 	q.mu.Unlock()
 	if cancel != nil {

@@ -13,6 +13,7 @@
 | paths_test.go | 桌面便携路径、相对覆盖和非法路径 |
 | natives_test.go | 历史 DLL 归档的来源、缓存代码和哈希，应用不依赖这个资源包 |
 | lagrangego_test.go | 离线 SDK 对象、稳定私有设备、假会话扫码/缓存登录、取消、发送、错误脱敏及不假报上线 |
+| qq_diagnostic_test.go | 本机 httptest 假签名服务、实际 SDK 请求格式、HTTP/code/空签名错误、分阶段诊断与脱敏 |
 | frontend.test.mjs | core.Core 命名空间、转发、暂停状态及禁用加载、登录错误；拒绝旧 desktop.App 命名空间 |
 | development.test.ps1 | 7 次模拟开发脚本运行和 VS Code 配置，无窗口、不依赖 Pester |
 
@@ -31,7 +32,7 @@ node --test tests/frontend.test.mjs
 全局入口测试只在单个顺序测试里模拟 main 装配，并在结束后恢复全局变量；其他测试使用独立 Core，不修改全局状态。
 测试助手可将同一个假对象显式传入基础后端与 QQ 两个参数；生产入口传入独立的 backend.QQ()。
 假平台登录返回成功只验证调用路由；真实桌面在缺少签名配置时明确报错，但核心仍正常就绪；旧加载入口返回 ErrNativeRetired。
-旧 FFI 装载测试已移除；QQ 流程使用假会话，绝不访问 QQ 或签名服务器。真实 SDK 只测试未登录的离线对象构造。
+旧 FFI 装载测试已移除；QQ 流程使用假会话，绝不访问真实 QQ 或外部签名服务。真实 SDK 的对象构造测试不登录；签名 Provider 只请求测试创建的本机模拟 HTTP 服务，使用虚构数据。
 资源提取测试仍只写测试临时目录，验证保留的 DLL 和缓存代码，不调用系统加载器。
 
 覆盖率可用：

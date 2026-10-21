@@ -1,4 +1,19 @@
-# 本次迁移：LagrangeGo 桌面 QQ 试验后端
+# 当前补丁：QQ 失败诊断
+
+基于 `01587d4`，补丁名 `CAF-qq-diagnostics.patch`。先保存自己的本地改动，在项目根目录执行：
+
+```powershell
+git apply --check .\CAF-qq-diagnostics.patch
+git apply .\CAF-qq-diagnostics.patch
+.\test.ps1
+.\dev.ps1
+```
+
+状态面板会显示“失败阶段、错误码、具体原因”，不再只有笼统的“登录或连接失败”。
+此补丁不修改签名配置、设备或登录凭据，不启用原始 SDK 认证日志，不替代真实登录测试。
+如果检查报冲突，不要强制覆盖；保留现有工作后再对照合并。
+
+## 历史迁移：LagrangeGo 桌面 QQ 试验后端（已由 01587d4 包含）
 
 基于 `dd4f542`，补丁名 `CAF-lagrangego.patch`。包含依赖、源码、测试和许可，不包含任何账号配置。
 需要 Go 1.26+。

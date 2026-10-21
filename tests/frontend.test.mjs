@@ -37,6 +37,13 @@ test("显示 Go SDK 与独立的 QQ 状态，不显示旧 DLL 已加载", () => 
   assert.deepEqual(rows.at(-1), ["登录账号", "123"]);
   assert.equal(rows.some(([key]) => key === "原生库"), false);
 });
+test("失败时直接显示阶段、错误码和脱敏原因，不只显示笼统状态", () => {
+  const rows = statusRows({ qq: { phase: "error", stage: "fetch_qr", errorCode: "SIGN_HTTP_401", error: "获取二维码失败：签名认证失败" } });
+  assert.deepEqual(rows.find(([key]) => key === "失败阶段"), ["失败阶段", "获取二维码"]);
+  assert.deepEqual(rows.find(([key]) => key === "错误码"), ["错误码", "SIGN_HTTP_401"]);
+  assert.deepEqual(rows.find(([key]) => key === "具体原因"), ["具体原因", "获取二维码失败：签名认证失败"]);
+  assert.equal(statusRows({ qq: { phase: "online" } }).some(([key]) => key === "失败阶段" || key === "错误码"), false);
+});
 test("登录按钮仅在就绪且未登录或失败时允许使用", () => {
   for (const phase of ["starting", "waiting", "scanned", "logging_in", "online", "closed", "unavailable"]) {
     assert.equal(canBeginLogin({ ready: true, qq: { phase } }), false);

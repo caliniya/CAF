@@ -18,6 +18,12 @@ export const phaseNames = {
   error: "登录或连接失败", closed: "已关闭", unavailable: "当前后端未提供 QQ",
 };
 
+export const stageNames = {
+  config: "读取配置", prepare: "创建会话", fetch_qr: "获取二维码", save_qr: "保存二维码",
+  query_qr: "查询扫码状态", login: "登录 / 注册会话", save_session: "保存登录凭据",
+  connection: "维持连接", sdk: "SDK 内部",
+};
+
 export function statusRows(status) {
   const qq = status.qq ?? {};
   return [
@@ -26,6 +32,9 @@ export function statusRows(status) {
     ["数据目录", status.dataDir || "尚未初始化"],
     ["QQ 后端", qq.provider || "尚未提供"],
     ["QQ 状态", phaseNames[qq.phase] || "未知状态"],
+    ...(qq.stage ? [["失败阶段", stageNames[qq.stage] || "未知阶段"]] : []),
+    ...(qq.errorCode ? [["错误码", qq.errorCode]] : []),
+    ...(qq.error ? [["具体原因", qq.error]] : []),
     ...(qq.account ? [["登录账号", String(qq.account)]] : []),
   ];
 }

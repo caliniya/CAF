@@ -49,12 +49,31 @@ SDK 带来的间接依赖更新记录在 go.mod/go.sum，不跟随 master 自动
 不能把任意“签名服务器”地址直接当成兼容服务；示例不提供公共服务或令牌。
 
 二维码、signToken、device.json 和 sig.bin 都只应保存在本机，不能发到群里、提交到 Git 或附在日志中。
-核心状态不返回签名配置和凭据；原始 SDK 日志与报文转储暂不输出，界面只显示经过简化的错误。
-因此发生 SDK 登录失败时，需要结合服务端的安全诊断进一步排查，而不是把完整认证报文贴出来。
+核心状态不返回签名配置和凭据；原始 SDK 日志与报文转储暂不输出，界面显示经过白名单处理的失败阶段、错误码和中文原因。
+未分类的底层异常仍不直接输出；需要时结合服务端的安全诊断排查，不要贴完整认证报文。
 
 登录设备标识保存在 qq/device.json，成功登录时的凭据保存在 qq/sig.bin。
 下一次优先 FastLogin，失败才重新取二维码。损坏的设备/凭据文件会明确报错，不会偷偷重置或删除。
 二维码文件 qq/qrcode.png 在登录完成、失败或取消后清除；Linux 新建敏感文件权限为 0600，Windows 仍需正确设置目录访问权限。
+
+### 显示“登录或连接失败”时
+
+这只是通用状态名，不是根因。查看同一状态面板的“失败阶段 / 错误码 / 具体原因”；命令行 qqcheck 也会输出相同的脱敏诊断。
+
+| 错误码 | 先检查什么 |
+| --- | --- |
+| `QQ_CONFIG` | 按界面显示的数据目录修改 qq/config.json，不要改错发布版/开发版目录 |
+| `QQ_VERSION` | protocol/version 是否为当前 SDK 支持的成对值 |
+| `SIGN_HTTP_401` / `SIGN_HTTP_403` | 签名服务认证和权限；只在本机核对令牌 |
+| `SIGN_HTTP_404` / `SIGN_HTTP_405` | 完整 POST 接口路径，不是服务首页 |
+| `SIGN_REJECTED_<code>` | 服务已返回非零 code；核对版本、授权和服务接口 |
+| `SIGN_RESPONSE_FORMAT` / `SIGN_EMPTY_SIGNATURE` | 签名协议是否兼容，响应需要 value.sec_sign；HTTP 200 不等于签名成功 |
+| `SIGN_NETWORK_*` | 签名服务的网络连接、DNS 或超时 |
+| `QQ_PACKET_TIMEOUT` | 等待 QQ 服务器回包超时，不能直接归因于签名服务 |
+| `QQ_QR_REJECTED_<code>` / `QQ_LOGIN_REJECTED` | QQ 服务端拒绝；继续核对协议版本、签名兼容性和账号验证状态 |
+
+可以提供阶段名和错误码帮助排查，不要附上配置、二维码、sig.bin 或认证报文。
+签名检查只包装 SDK Provider，不实现签名算法、不自动试接口、不自动跳过签名，也不宣称修复了真实账号的登录。
 
 ### WSL 无窗口试验
 
@@ -93,6 +112,7 @@ backend/desktop/
   QQConfig.go                     本地配置模板及私有文件写入
   QQSession.go                    后端内的可测试会话边界
   LagrangeSession.go               调用真实 LagrangeGo API
+  QQSigner.go / QQDiagnostic.go    签名响应检查和脱敏错误分类
   window/                         Wails 窗口壳，直接绑定 core.Core
   natives/                        旧 DLL 与来源记录，仅归档，不加载或打包
 backend/android/                  占位
@@ -110,7 +130,7 @@ core.Platform, err = core.NewCore(paths, backend, backend.QQ())
 ```
 
 - `BeginLogin()`：受理后台登录任务，不代表已经上线。
-- `GetStatus().QQ`：查询 phase、二维码、上线账号与简化错误。
+- `GetStatus().QQ`：查询 phase、二维码、上线账号、脱敏错误，以及失败时的 stage/errorCode。
 - `CancelLogin()`：取消登录或断开当前会话，不关闭整个核心。
 - `SendGroupText(group, text)`：明确请求发送一条群文本，要求已上线。
 - 旧 LoadNative/LoadNativeLibrary 暂留兼容，始终返回 ErrNativeRetired，不能用它启动 QQ。
