@@ -5,6 +5,20 @@ import (
 	//"github.com/LagrangeDev/LagrangeGo/client/auth"
 )
 
+type QQConfig struct {
+	GUID          string `json:"guid"`
+	DeviceName    string `json:"device_name"`
+	SystemKernel  string `json:"system_kernel"`
+	KernelVersion string `json:"kernel_version"`
+
+	OS      string `json:"os"`
+	Version string `json:"version"`
+
+	SignSever string `json:"signServer"`
+
+	QQ uint32 `json:"qq"`
+}
+
 // qq平台接口
 // qq平台就是一个接口,确保实现了必须的方法
 type QQPlatform interface {
@@ -16,5 +30,6 @@ type QQPlatform interface {
 
 	StartLogin() int
 
-	LoadQQConfigFromFile(fi string)
+	//if return id not 0 ,then it is error
+	LoadQQConfigFromFile(fi string) int
 }
