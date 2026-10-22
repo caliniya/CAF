@@ -15,6 +15,25 @@ import (
 // qq平台在桌面的实现
 var DesktopQQPlatform *DesktopQQ
 
+type DesktopQQProvider struct {
+}
+
+func (pro *DesktopQQProvider) Sign(cmd string, seq uint32, data []byte, uin uint32, guid, qua string) (*Response, error) {
+
+}
+
+func (pro *DesktopQQProvider) AddRequestHeader(header map[string]string) {
+
+}
+
+func (pro *DesktopQQProvider) SetAppInfo(app *auth.AppInfo) {
+
+}
+
+func (pro *DesktopQQProvider) Release() {
+
+}
+
 type DesktopQQ struct {
 	qqClient     *client.QQClient
 	QQConfigFile string
@@ -42,9 +61,11 @@ func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
 		return 1
 	}
 
+	qq.QQCfg = &platform.QQConfig{}
+
 	josnErr := json.Unmarshal(data, qq.QQCfg)
 
-	qq.qqClient.UseVersion(auth.AppList[qq.QQCfg.DeviceName][qq.QQCfg.Version])
+	qq.qqClient.UseVersion(auth.AppList[qq.QQCfg.OS][qq.QQCfg.Version])
 
 	qq.qqClient.UseDevice(&auth.DeviceInfo{
 		GUID:          qq.QQCfg.GUID,
@@ -54,6 +75,8 @@ func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
 	})
 
 	qq.qqClient.Uin = qq.QQCfg.QQ
+
+	//qq.qqClient.
 
 	if josnErr == nil {
 		return 0

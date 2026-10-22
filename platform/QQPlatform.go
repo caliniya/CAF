@@ -2,7 +2,6 @@ package platform
 
 import (
 	"github.com/LagrangeDev/LagrangeGo/client"
-	//"github.com/LagrangeDev/LagrangeGo/client/auth"
 )
 
 type QQConfig struct {
