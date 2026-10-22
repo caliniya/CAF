@@ -8,31 +8,13 @@ import (
 
 	"github.com/LagrangeDev/LagrangeGo/client"
 	"github.com/LagrangeDev/LagrangeGo/client/auth"
+	"github.com/LagrangeDev/LagrangeGo/client/sign"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/platform"
 )
 
 // qq平台在桌面的实现
 var DesktopQQPlatform *DesktopQQ
-
-type DesktopQQProvider struct {
-}
-
-func (pro *DesktopQQProvider) Sign(cmd string, seq uint32, data []byte, uin uint32, guid, qua string) (*Response, error) {
-
-}
-
-func (pro *DesktopQQProvider) AddRequestHeader(header map[string]string) {
-
-}
-
-func (pro *DesktopQQProvider) SetAppInfo(app *auth.AppInfo) {
-
-}
-
-func (pro *DesktopQQProvider) Release() {
-
-}
 
 type DesktopQQ struct {
 	qqClient     *client.QQClient
@@ -76,7 +58,7 @@ func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
 
 	qq.qqClient.Uin = qq.QQCfg.QQ
 
-	//qq.qqClient.
+	qq.qqClient.UseSignProvider(sign.NewSigner(log.Printf, qq.QQCfg.Token, qq.QQCfg.SignSever))
 
 	if josnErr == nil {
 		return 0

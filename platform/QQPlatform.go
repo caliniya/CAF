@@ -15,7 +15,8 @@ type QQConfig struct {
 
 	SignSever string `json:"signServer"`
 
-	QQ uint32 `json:"qq"`
+	QQ    uint32 `json:"qq"`
+	Token string `json:"signToken"`
 }
 
 // qq平台接口
