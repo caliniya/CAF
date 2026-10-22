@@ -21,6 +21,9 @@ func Run(assets fs.FS) error {
 	} else {
 		return err
 	}
+
+	DesktopQQPlatform.CreateQQPlatform()
+
 	return wails.Run(&options.App{
 		Title: "CAF", Width: 980, Height: 680, MinWidth: 680, MinHeight: 500,
 		BackgroundColour: &options.RGBA{R: 245, G: 246, B: 250, A: 255},

@@ -24,4 +24,10 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Printf(core.Platform.Paths.Data)
+
+	if core.Platform != nil {
+		log.Printf("QQ 后端类型：%T", core.Platform.QQPlatform)
+	}
+
 }

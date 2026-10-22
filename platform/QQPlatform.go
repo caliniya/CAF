@@ -15,4 +15,6 @@ type QQPlatform interface {
 	CreateQQPlatform()
 
 	StartLogin() int
+
+	LoadQQConfigFromFile(fi string)
 }

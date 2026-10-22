@@ -2,6 +2,7 @@ package desktopBackend
 
 import (
 	"github.com/LagrangeDev/LagrangeGo/client"
+	//"github.com/LagrangeDev/LagrangeGo/client/auth"
 	"github.com/caliniya/caf/core"
 )
 
@@ -22,4 +23,8 @@ func (qq *DesktopQQ) CreateQQPlatform() {
 
 func (qq *DesktopQQ) GetQQClient() *client.QQClient {
 	return qq.qqClient
+}
+
+func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) {
+
 }
