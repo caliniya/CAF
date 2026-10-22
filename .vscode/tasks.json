@@ -18,7 +18,8 @@
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
-          "CGO_ENABLED": "0"
+          "CGO_ENABLED": "0",
+          "CAF_DATA_DIR": "${workspaceFolder}/build/dev-data"
         }
       },
       "problemMatcher": "$go",

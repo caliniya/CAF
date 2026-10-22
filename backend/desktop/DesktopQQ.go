@@ -7,10 +7,11 @@ import (
 )
 
 // qq平台在桌面的实现
-var DesktopQQPlatform DesktopQQ
+var DesktopQQPlatform *DesktopQQ
 
 type DesktopQQ struct {
-	qqClient *client.QQClient
+	qqClient     *client.QQClient
+	QQConfigFile string
 }
 
 func (qq *DesktopQQ) StartLogin() int {
@@ -18,7 +19,7 @@ func (qq *DesktopQQ) StartLogin() int {
 }
 
 func (qq *DesktopQQ) CreateQQPlatform() {
-	core.Platform.QQPlatform = &DesktopQQ{}
+	core.Platform.QQPlatform = qq
 }
 
 func (qq *DesktopQQ) GetQQClient() *client.QQClient {

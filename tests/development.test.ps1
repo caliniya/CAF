@@ -93,6 +93,7 @@ try {
     Assert-Equal $Config.mode 'exec' 'debugger uses Wails-built executable'
     Assert-Equal $Config.program '${workspaceFolder}/build/bin/CAF-debug.exe' 'debug executable path'
     Assert-Equal $Config.env.CAF_DATA_DIR '${workspaceFolder}/build/dev-data' 'debugger data path'
+    Assert-Equal $BuildTask[0].options.env.CAF_DATA_DIR $Config.env.CAF_DATA_DIR 'pre-launch bindings share debugger data path'
     Assert-Equal ($BuildTask[0].args -join '|') 'run|github.com/wailsapp/wails/v2/cmd/wails@v2.17.0|build|-debug|-platform|windows/amd64|-o|CAF-debug.exe' 'debug build command'
     $Workspace = Get-Content (Join-Path $ProjectRoot 'CAF.code-workspace') -Raw | ConvertFrom-Json
     Assert-Equal ([bool]($Workspace.PSObject.Properties.Name -contains 'launch')) $false 'no conflicting workspace launch settings'

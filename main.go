@@ -20,11 +20,11 @@ func main() {
 
 	core.Init()
 
-	if err := desktopBackend.Run(assets); err != nil {
+	if err := desktopBackend.Init(assets); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf(core.Platform.Paths.Data)
+	log.Printf("数据目录：%s", core.Platform.Paths.Data)
 
 	if core.Platform != nil {
 		log.Printf("QQ 后端类型：%T", core.Platform.QQPlatform)

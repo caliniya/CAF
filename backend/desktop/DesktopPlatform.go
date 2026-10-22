@@ -11,7 +11,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-func Run(assets fs.FS) error {
+func Init(assets fs.FS) error {
 	if assets == nil {
 		return errors.New("必须提供前端")
 	}
@@ -21,6 +21,8 @@ func Run(assets fs.FS) error {
 	} else {
 		return err
 	}
+
+	DesktopQQPlatform = &DesktopQQ{}
 
 	DesktopQQPlatform.CreateQQPlatform()
 
