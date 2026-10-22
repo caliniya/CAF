@@ -23,6 +23,7 @@ type DesktopQQ struct {
 }
 
 func (qq *DesktopQQ) StartLogin() int {
+	qq.LoadQQConfigFromFile(qq.QQConfigFile)
 	return 0
 }
 

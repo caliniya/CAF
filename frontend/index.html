@@ -5,5 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CAF</title>
   </head>
-  <body></body>
+<body>
+  <button id="login">发起登录</button>
+  <p id="status"></p>
+
+  <script>
+    const button = document.getElementById("login");
+    const status = document.getElementById("status");
+
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      status.textContent = "正在调用……";
+
+      try {
+        // 等待 Go 方法返回结果。
+        const code = await window.go.core.Core.StartLogin();
+        status.textContent = `返回码：${code}`;
+      } catch (err) {
+        // Go 返回非空 error 时，会进入这里。
+        status.textContent = `调用失败：${String(err)}`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
 </html>
