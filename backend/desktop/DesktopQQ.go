@@ -23,7 +23,7 @@ type DesktopQQ struct {
 }
 
 func (qq *DesktopQQ) StartLogin() int {
-	qq.LoadQQConfigFromFile(qq.QQConfigFile)
+	qq.LoadQQConfigFromFile()
 	return 0
 }
 
@@ -37,7 +37,7 @@ func (qq *DesktopQQ) GetQQClient() *client.QQClient {
 	return qq.qqClient
 }
 
-func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
+func (qq *DesktopQQ) LoadQQConfigFromFile() int {
 	data, err := os.ReadFile(qq.QQConfigFile)
 	if err != nil {
 		log.Printf("读取配置失败：%v", err)
@@ -46,7 +46,11 @@ func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
 
 	qq.QQCfg = &platform.QQConfig{}
 
-	josnErr := json.Unmarshal(data, qq.QQCfg)
+	jsonErr := json.Unmarshal(data, qq.QQCfg)
+	if jsonErr != nil {
+		log.Println(jsonErr)
+		return 4
+	}
 
 	qq.qqClient.UseVersion(auth.AppList[qq.QQCfg.OS][qq.QQCfg.Version])
 
@@ -61,9 +65,5 @@ func (qq *DesktopQQ) LoadQQConfigFromFile(fi string) int {
 
 	qq.qqClient.UseSignProvider(sign.NewSigner(log.Printf, qq.QQCfg.Token, qq.QQCfg.SignSever))
 
-	if josnErr == nil {
-		return 0
-	}
-
-	return 4
+	return 1
 }

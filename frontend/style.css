@@ -1,0 +1,277 @@
+:root {
+  color-scheme: light;
+  --page: #F5F6FA;
+  --surface: #FFFFFF;
+  --ink: #202637;
+  --muted: #71798D;
+  --accent: #4561DC;
+  --on-accent: #FFFFFF;
+  --tonal: #EDF0FF;
+  --outline: #E3E7F1;
+  --radius: 14px;
+  --radius-small: 9px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 32px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+h1, h2, h3, p {
+  margin: 0;
+}
+
+h1 { font-size: 28px; line-height: 1.35; }
+h2 { font-size: 20px; line-height: 1.4; }
+h3 { font-size: 16px; line-height: 1.5; }
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+::selection {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* 键盘操作时保留明显的焦点提示，不要直接去掉轮廓。 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.muted, .description, #status {
+  color: var(--muted);
+}
+
+#status {
+  margin-top: 14px;
+  white-space: pre-wrap;
+}
+
+.page {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.row > *, .grid > * {
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
+}
+
+/* 卡片里有多个区域时，可以同时使用 class="card stack"。 */
+.card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.divider {
+  height: 1px;
+  margin-block: 20px;
+  border: 0;
+  background: var(--outline);
+}
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* 次要按钮：class="btn-secondary"。 */
+.btn-secondary {
+  border-color: var(--outline);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* 浅色强调按钮：class="btn-tonal"。 */
+.btn-tonal {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+@media (hover: hover) {
+  button:not(:disabled):hover, .btn:not(:disabled):hover {
+    box-shadow: 0 0 0 3px var(--tonal);
+  }
+
+  .btn-secondary:not(:disabled):hover {
+    border-color: var(--accent);
+    background: var(--tonal);
+  }
+}
+
+button:disabled, .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ===== 表单：label、输入框、下拉菜单、多行文本 ===== */
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+label {
+  font-weight: 600;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+input:disabled, select:disabled, textarea:disabled {
+  background: var(--page);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+input[type="checkbox"], input[type="radio"], input[type="range"] {
+  accent-color: var(--accent);
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ===== 提示框、标签与二维码区域 ===== */
+.notice {
+  padding: 12px 16px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-small);
+  background: var(--tonal);
+  color: var(--ink);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--tonal);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qr-panel {
+  display: grid;
+  place-items: center;
+  width: 224px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin-inline: auto;
+  padding: 16px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* 不给二维码加滤镜或圆角，保留图像本身的辨识度。 */
+.qr-panel img {
+  width: 100%;
+  object-fit: contain;
+}
+
+/* ===== 小窗口和系统无动画偏好 ===== */
+@media (max-width: 600px) {
+  body { padding: 16px; }
+  .card { padding: 20px; }
+  h1 { font-size: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button, .btn { transition: none; }
+}
+
+/* 隐藏元素不能因为上面的 display 布局规则重新显示。 */
+[hidden] {
+  display: none !important;
+}

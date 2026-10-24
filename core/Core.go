@@ -21,9 +21,9 @@ type Configs struct {
 }
 
 type Config struct {
-	ServerAddress string    `json:"ServerAddress"`
-	APIKey        string    `json:"APIKey"`
-	Modlel        *[]string `json:"Model"`
+	ServerAddress string   `json:"ServerAddress"`
+	APIKey        string   `json:"APIKey"`
+	Model         []string `json:"Model"`
 }
 
 func Init() {

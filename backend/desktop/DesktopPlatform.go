@@ -21,7 +21,7 @@ func Init(assets fs.FS) error {
 		core.Platform.Paths = &path
 
 		core.Platform.Paths.ConfigFile = filepath.Join(
-			core.Platform.Paths.Data, "config", "MainConfig")
+			core.Platform.Paths.Data, "config", "MainConfig.json")
 	} else {
 		return err
 	}

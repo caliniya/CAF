@@ -29,5 +29,5 @@ type QQPlatform interface {
 	StartLogin() int
 
 	//if return id not 0 ,then it is error
-	LoadQQConfigFromFile(fi string) int
+	LoadQQConfigFromFile() int
 }
