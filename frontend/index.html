@@ -11,7 +11,7 @@
     <main class="page stack">
       <header class="stack">
         <h1>CAF</h1>
-        <p class="muted">Agent 框架控制台</p>
+        <p class="muted">模型服务配置管理</p>
       </header>
 
       <section class="card stack" aria-labelledby="config-heading">
@@ -20,30 +20,23 @@
           <span id="config-count" class="badge" hidden></span>
         </div>
         <p class="description">
-          读取数据目录下 config/MainConfig.json 中的模型服务配置。
+          读取数据目录下 config/MainConfig.json 中的模型服务配置；点击「启用」选择提供商，点击模型徽章选定要使用的模型。
         </p>
+        <div id="current-panel" class="notice" hidden></div>
         <div class="row">
-          <button id="load-configs" type="button">加载配置</button>
+          <button id="load-configs" type="button">重新加载</button>
         </div>
         <p id="config-status" class="muted"></p>
         <div id="config-error" class="notice" hidden></div>
         <div id="config-list" class="grid" hidden></div>
-      </section>
-
-      <section class="card stack" aria-labelledby="login-heading">
-        <h2 id="login-heading">QQ 登录</h2>
-        <div class="row">
-          <button id="login" type="button">发起登录</button>
-        </div>
-        <p id="status"></p>
       </section>
     </main>
 
     <script>
       const byId = (id) => document.getElementById(id);
 
-      // 当前展示的配置数组，APIKey 的显示/隐藏切换要靠它取完整值。
-      let modelConfigs = [];
+      // 当前展示的完整配置状态（含启用配置和启用模型），判断卡片/徽章状态全靠它。
+      let configState = null;
       const revealedKeys = new Set();
 
       function maskKey(key) {
@@ -52,18 +45,49 @@
         return `${key.slice(0, 6)}…${key.slice(-4)}`;
       }
 
+      function enabledAddress() {
+        return configState && configState.EnablesConfig
+          ? configState.EnablesConfig.ServerAddress
+          : null;
+      }
+
+      function isEnabledCard(item) {
+        return enabledAddress() !== null && enabledAddress() === item.ServerAddress;
+      }
+
+      function enabledModelOf(item) {
+        return isEnabledCard(item) && configState.EnabledModel
+          ? configState.EnabledModel
+          : null;
+      }
+
       function configCard(item, index) {
         const card = document.createElement("article");
         card.className = "card stack";
 
+        const enabledCard = isEnabledCard(item);
+
         const titleRow = document.createElement("div");
         titleRow.className = "row";
         const title = document.createElement("h3");
-        title.textContent = item.ServerAddress || "（未设置地址）";
+        title.textContent = item.Name || item.ServerAddress || "（未设置地址）";
+        titleRow.append(title);
+        if (item.Name && item.ServerAddress) {
+          const address = document.createElement("span");
+          address.className = "muted";
+          address.textContent = item.ServerAddress;
+          titleRow.append(address);
+        }
         const badge = document.createElement("span");
         badge.className = "badge";
         badge.textContent = `#${index + 1}`;
-        titleRow.append(title, badge);
+        titleRow.append(badge);
+        if (enabledCard) {
+          const activeBadge = document.createElement("span");
+          activeBadge.className = "badge badge-active";
+          activeBadge.textContent = "已启用";
+          titleRow.append(activeBadge);
+        }
 
         const keyField = document.createElement("div");
         keyField.className = "field";
@@ -72,10 +96,10 @@
         const keyRow = document.createElement("div");
         keyRow.className = "row";
         const keyValue = document.createElement("span");
-        keyValue.className = "notice";
+        keyValue.className = "notice mono";
         keyValue.textContent = maskKey(item.APIKey);
         const keyToggle = document.createElement("button");
-        keyToggle.className = "btn-tonal";
+        keyToggle.className = "btn-tonal btn-small";
         keyToggle.type = "button";
         keyToggle.textContent = "显示";
         keyToggle.addEventListener("click", () => {
@@ -100,11 +124,32 @@
         modelRow.className = "row";
         const models = item.Model || [];
         if (models.length) {
+          const activeModel = enabledModelOf(item);
           for (const model of models) {
-            const modelBadge = document.createElement("span");
-            modelBadge.className = "badge";
-            modelBadge.textContent = model;
-            modelRow.append(modelBadge);
+            const chip = document.createElement("span");
+            chip.className = "badge badge-clickable";
+            chip.setAttribute("role", "button");
+            chip.tabIndex = 0;
+            chip.textContent = model;
+            if (model === activeModel) {
+              chip.classList.add("badge-active");
+              chip.title = "当前启用的模型";
+            }
+            const activate = () => selectModel(index, model);
+            chip.addEventListener("click", activate);
+            chip.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                activate();
+              }
+            });
+            modelRow.append(chip);
+          }
+          if (enabledCard && !configState.EnabledModel) {
+            const hint = document.createElement("span");
+            hint.className = "field-hint";
+            hint.textContent = "尚未选择模型，点击模型即可启用。";
+            modelRow.append(hint);
           }
         } else {
           const empty = document.createElement("span");
@@ -114,8 +159,108 @@
         }
         modelField.append(modelLabel, modelRow);
 
-        card.append(titleRow, keyField, modelField);
+        const actions = document.createElement("div");
+        actions.className = "row";
+        if (!enabledCard) {
+          const enableButton = document.createElement("button");
+          enableButton.className = "btn-tonal btn-small";
+          enableButton.type = "button";
+          enableButton.textContent = "启用此配置";
+          enableButton.addEventListener("click", () => selectConfig(index));
+          actions.append(enableButton);
+        }
+        const renameButton = document.createElement("button");
+        renameButton.className = "btn-secondary btn-small";
+        renameButton.type = "button";
+        renameButton.textContent = "重命名";
+        renameButton.addEventListener("click", () =>
+          beginRename(titleRow, title, item, index)
+        );
+        actions.append(renameButton);
+
+        card.append(titleRow, keyField, modelField, actions);
         return card;
+      }
+
+      // 行内重命名：把标题换成输入框，保存/取消后还原；结果由 runSelection 重渲染。
+      function beginRename(titleRow, title, item, index) {
+        title.hidden = true;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = item.Name || "";
+        input.placeholder = "配置名称";
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.className = "btn-small";
+        saveButton.textContent = "保存";
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "btn-secondary btn-small";
+        cancelButton.textContent = "取消";
+        titleRow.append(input, saveButton, cancelButton);
+        input.focus();
+        input.select();
+
+        const finish = () => {
+          input.remove();
+          saveButton.remove();
+          cancelButton.remove();
+          title.hidden = false;
+        };
+
+        cancelButton.addEventListener("click", finish);
+        const submit = () => {
+          const value = input.value.trim();
+          if (value === (item.Name || "")) {
+            finish();
+            return;
+          }
+          finish();
+          renameConfig(index, value);
+        };
+        saveButton.addEventListener("click", submit);
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            submit();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            finish();
+          }
+        });
+      }
+
+      // 顶部概览：一眼看到当前启用的提供商和模型。
+      function renderCurrentSelection() {
+        const panel = byId("current-panel");
+        const enabled = configState && configState.EnablesConfig;
+        panel.replaceChildren();
+
+        if (!enabled) {
+          panel.append("尚未启用配置：点击「启用此配置」，或直接点击某个模型徽章。");
+          panel.hidden = false;
+          return;
+        }
+
+        const lead = document.createElement("strong");
+        lead.textContent = "当前使用：";
+        const name = document.createElement("span");
+        name.textContent = `${enabled.Name || enabled.ServerAddress} · 模型 `;
+        panel.append(lead, name);
+        if (configState.EnabledModel) {
+          const modelBadge = document.createElement("span");
+          modelBadge.className = "badge badge-active";
+          modelBadge.textContent = configState.EnabledModel;
+          panel.append(modelBadge);
+        } else {
+          const none = document.createElement("span");
+          none.className = "muted";
+          none.textContent = "未选择";
+          panel.append(none);
+        }
+        panel.hidden = false;
       }
 
       function renderConfigs(configs) {
@@ -124,12 +269,12 @@
         const countBadge = byId("config-count");
         const items = (configs && configs.config) || [];
 
-        modelConfigs = items;
-        revealedKeys.clear();
+        configState = configs;
         list.replaceChildren();
 
         if (!items.length) {
           countBadge.hidden = true;
+          byId("current-panel").hidden = true;
           errorBox.textContent = "配置文件里还没有任何配置项。";
           errorBox.hidden = false;
           return;
@@ -139,6 +284,7 @@
         countBadge.hidden = false;
         items.forEach((item, index) => list.append(configCard(item, index)));
         list.hidden = false;
+        renderCurrentSelection();
       }
 
       async function loadConfigs() {
@@ -146,9 +292,11 @@
         const status = byId("config-status");
         const errorBox = byId("config-error");
         byId("config-list").hidden = true;
+        byId("current-panel").hidden = true;
         errorBox.hidden = true;
         button.disabled = true;
         status.textContent = "正在读取配置……";
+        revealedKeys.clear();
 
         try {
           const configs = await window.go.core.Core.LoadConfigs();
@@ -163,25 +311,42 @@
         }
       }
 
-      byId("load-configs").addEventListener("click", loadConfigs);
-
-      byId("login").addEventListener("click", async () => {
-        const button = byId("login");
-        const status = byId("status");
-        button.disabled = true;
-        status.textContent = "正在调用……";
-
+      // 选择/改名操作统一走这里：成功后用后端返回的完整状态重渲染，失败时提示并回读配置文件。
+      async function runSelection(action) {
+        const status = byId("config-status");
+        const errorBox = byId("config-error");
+        errorBox.hidden = true;
+        status.textContent = "正在保存……";
         try {
-          // 等待 Go 方法返回结果。
-          const code = await window.go.core.Core.StartLogin();
-          status.textContent = `返回码：${code}`;
+          renderConfigs(await action());
+          status.textContent = "";
         } catch (err) {
-          // Go 返回非空 error 时，会进入这里。
-          status.textContent = `调用失败：${String(err)}`;
-        } finally {
-          button.disabled = false;
+          status.textContent = "";
+          errorBox.textContent = `操作失败：${String(err)}`;
+          errorBox.hidden = false;
+          await loadConfigs();
         }
-      });
+      }
+
+      function selectConfig(index) {
+        return runSelection(() => window.go.core.Core.SelectConfig(index));
+      }
+
+      function selectModel(index, model) {
+        return runSelection(async () => {
+          // 模型挂在配置下：目标卡片未启用时先切换配置，再选模型。
+          if (!isEnabledCard(configState.config[index])) {
+            await window.go.core.Core.SelectConfig(index);
+          }
+          return window.go.core.Core.SelectModel(model);
+        });
+      }
+
+      function renameConfig(index, name) {
+        return runSelection(() => window.go.core.Core.RenameConfig(index, name));
+      }
+
+      byId("load-configs").addEventListener("click", loadConfigs);
 
       // 启动时自动加载一次配置；window.go 注入略晚时稍等重试。
       function startUp(retries) {

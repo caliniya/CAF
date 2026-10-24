@@ -275,3 +275,41 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
 [hidden] {
   display: none !important;
 }
+
+/* ===== 可点击与当前启用的徽章（模型选择） ===== */
+.badge-clickable {
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .badge-clickable:hover {
+    border-color: var(--accent);
+  }
+}
+
+.badge-active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ===== 配置界面的细节打磨 ===== */
+/* 卡片加一点极轻的投影，拉开和页面底色的层次。 */
+.card {
+  box-shadow: 0 1px 2px rgba(32, 38, 55, 0.05);
+}
+
+/* APIKey、模型名等机器字符串用等宽字体。 */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+}
+
+/* 卡片内的小号操作按钮（启用/重命名/显示等），避免和主按钮抢视觉。 */
+.btn-small {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+
