@@ -18,7 +18,6 @@ type Core struct {
 type Configs struct {
 	ALLConfig     *[]Config `json:"config"`
 	EnablesConfig *Config
-	ConfigFile    string
 }
 
 type Config struct {
@@ -32,7 +31,7 @@ func Init() {
 }
 
 func LoadConfig() error {
-	data, err := os.ReadFile(Platform.Configs.ConfigFile)
+	data, err := os.ReadFile(Platform.Paths.ConfigFile)
 	if err != nil {
 		return err
 	}
