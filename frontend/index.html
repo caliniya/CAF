@@ -8,29 +8,33 @@
   </head>
 
   <body>
-    <main class="page stack">
-      <header class="stack">
-        <h1>CAF</h1>
-        <p class="muted">模型服务配置管理</p>
-      </header>
+    <div class="app">
+      <aside class="sidebar" aria-label="导航">
+        <div class="stack">
+          <h1>CAF</h1>
+          <p class="muted">Agent 框架</p>
+        </div>
+      </aside>
 
-      <section class="card stack" aria-labelledby="config-heading">
-        <div class="row">
-          <h2 id="config-heading">模型配置</h2>
-          <span id="config-count" class="badge" hidden></span>
-        </div>
-        <p class="description">
-          读取数据目录下 config/MainConfig.json 中的模型服务配置；点击「启用」选择提供商，点击模型徽章选定要使用的模型。
-        </p>
-        <div id="current-panel" class="notice" hidden></div>
-        <div class="row">
-          <button id="load-configs" type="button">重新加载</button>
-        </div>
-        <p id="config-status" class="muted"></p>
-        <div id="config-error" class="notice" hidden></div>
-        <div id="config-list" class="grid" hidden></div>
-      </section>
-    </main>
+      <main class="content stack">
+        <section class="card stack" aria-labelledby="config-heading">
+          <div class="row">
+            <h2 id="config-heading">模型配置</h2>
+            <span id="config-count" class="badge" hidden></span>
+          </div>
+          <p class="description">
+            读取数据目录下 config/MainConfig.json 中的模型服务配置；点击「启用」选择提供商，点击模型徽章选定要使用的模型。
+          </p>
+          <div id="current-panel" class="notice" hidden></div>
+          <div class="row">
+            <button id="load-configs" type="button">重新加载</button>
+          </div>
+          <p id="config-status" class="muted"></p>
+          <div id="config-error" class="notice" hidden></div>
+          <div id="config-list" class="grid" hidden></div>
+        </section>
+      </main>
+    </div>
 
     <script>
       const byId = (id) => document.getElementById(id);
