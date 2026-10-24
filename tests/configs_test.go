@@ -122,11 +122,14 @@ func TestSelectModelPersistsChoice(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := core.Platform.Configs
-	if cfg.EnablesConfig == nil || cfg.EnablesConfig.ServerAddress != "https://second" || cfg.EnabledModel != "m3" {
+	if cfg.EnablesConfig == nil || cfg.EnablesConfig.ServerAddress != "https://second" || cfg.EnablesConfig.EnabledModel != "m3" {
 		t.Fatalf("unexpected state: %+v", cfg)
 	}
 	if cfg.EnablesConfig != &(*cfg.ALLConfig)[1] {
 		t.Fatal("enabled config not resolved to list entry")
+	}
+	if (*cfg.ALLConfig)[1].EnabledModel != "m3" {
+		t.Fatalf("model not persisted into config entry: %+v", (*cfg.ALLConfig)[1])
 	}
 }
 
@@ -153,12 +156,12 @@ func TestSelectModelRejectsUnknownModel(t *testing.T) {
 	if _, err := core.Platform.SelectModel("nope"); err == nil {
 		t.Fatal("unknown model accepted")
 	}
-	if core.Platform.Configs.EnabledModel != "" {
+	if core.Platform.Configs.EnablesConfig.EnabledModel != "" {
 		t.Fatal("failed model selection should not stick")
 	}
 }
 
-func TestSelectConfigClearsStaleModel(t *testing.T) {
+func TestSelectConfigRemembersModelPerProvider(t *testing.T) {
 	file := writeConfig(t, `{"config":[
 		{"ServerAddress":"https://first","APIKey":"sk-1","Model":["m1"]},
 		{"ServerAddress":"https://second","APIKey":"sk-2","Model":["m2","m3"]}
@@ -167,31 +170,75 @@ func TestSelectConfigClearsStaleModel(t *testing.T) {
 	if err := core.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
+
+	// 各选各的模型。
 	if _, err := core.Platform.SelectConfig(0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := core.Platform.SelectModel("m1"); err != nil {
 		t.Fatal(err)
 	}
-
-	// m1 不在第二个配置的模型列表里，切换提供商后应清空模型选择。
 	if _, err := core.Platform.SelectConfig(1); err != nil {
 		t.Fatal(err)
 	}
-	if core.Platform.Configs.EnabledModel != "" {
-		t.Fatalf("stale model kept: %q", core.Platform.Configs.EnabledModel)
+	if _, err := core.Platform.SelectModel("m2"); err != nil {
+		t.Fatal(err)
 	}
 
+	// 来回切换：启用模型随配置走，互不覆盖。
+	if _, err := core.Platform.SelectConfig(0); err != nil {
+		t.Fatal(err)
+	}
+	if got := core.Platform.Configs.EnablesConfig.EnabledModel; got != "m1" {
+		t.Fatalf("first provider forgot its model: %q", got)
+	}
+	if _, err := core.Platform.SelectConfig(1); err != nil {
+		t.Fatal(err)
+	}
+	if got := core.Platform.Configs.EnablesConfig.EnabledModel; got != "m2" {
+		t.Fatalf("second provider forgot its model: %q", got)
+	}
+
+	// 重新加载后依然成立。
 	if err := core.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 	cfg := core.Platform.Configs
-	if cfg.EnablesConfig == nil || cfg.EnablesConfig.ServerAddress != "https://second" || cfg.EnabledModel != "" {
+	if cfg.EnablesConfig == nil || cfg.EnablesConfig.EnabledModel != "m2" {
 		t.Fatalf("unexpected state after reload: %+v", cfg)
 	}
 }
 
+func TestLoadConfigDefaultsToFirstModel(t *testing.T) {
+	file := writeConfig(t, `{"config":[
+		{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1","m2"]}
+	],"EnablesConfig":{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1","m2"]}}`)
+	useConfigFile(t, file)
+
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	enabled := core.Platform.Configs.EnablesConfig
+	if enabled == nil || enabled.EnabledModel != "m1" {
+		t.Fatalf("default model not applied: %+v", enabled)
+	}
+}
+
+func TestLoadConfigToleratesNoEnabledEntry(t *testing.T) {
+	useConfigFile(t, writeConfig(t, `{"config":[
+		{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}
+	]}`))
+
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if core.Platform.Configs.EnablesConfig != nil {
+		t.Fatal("unexpected enabled entry")
+	}
+}
+
 func TestLoadConfigDropsStaleEnabledEntry(t *testing.T) {
+	// 顶层的 EnabledModel 是旧版遗留字段，应被忽略；幽灵启用项应被清空。
 	file := writeConfig(t, `{"config":[
 		{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}
 	],"EnablesConfig":{"ServerAddress":"https://ghost","APIKey":"sk-x","Model":["m9"]},"EnabledModel":"m9"}`)
@@ -201,7 +248,7 @@ func TestLoadConfigDropsStaleEnabledEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := core.Platform.Configs
-	if cfg.EnablesConfig != nil || cfg.EnabledModel != "" {
+	if cfg.EnablesConfig != nil {
 		t.Fatalf("stale enabled entry kept: %+v", cfg)
 	}
 }

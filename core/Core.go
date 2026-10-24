@@ -18,7 +18,6 @@ type Core struct {
 type Configs struct {
 	ALLConfig     *[]Config `json:"config"`
 	EnablesConfig *Config
-	EnabledModel  string
 }
 
 type Config struct {
@@ -26,6 +25,7 @@ type Config struct {
 	ServerAddress string   `json:"ServerAddress"`
 	APIKey        string   `json:"APIKey"`
 	Model         []string `json:"Model"`
+	EnabledModel  string   `json:"EnabledModel"`
 }
 
 func Init() {
@@ -42,6 +42,11 @@ func LoadConfig() error {
 		return err
 	}
 	resolveEnabled()
+
+	// 启用项没记住模型时默认选第一个，开箱即用；仅在内存中生效，随下次保存落盘。
+	if cfg := Platform.Configs.EnablesConfig; cfg != nil && cfg.EnabledModel == "" && len(cfg.Model) > 0 {
+		cfg.EnabledModel = cfg.Model[0]
+	}
 	return nil
 }
 
@@ -50,7 +55,6 @@ func LoadConfig() error {
 func resolveEnabled() {
 	cfg := Platform.Configs
 	if cfg.EnablesConfig == nil {
-		cfg.EnabledModel = ""
 		return
 	}
 	if cfg.ALLConfig != nil {
@@ -62,7 +66,6 @@ func resolveEnabled() {
 		}
 	}
 	cfg.EnablesConfig = nil
-	cfg.EnabledModel = ""
 }
 
 // sameConfig 名称不参与比较：改名不影响启用项的归位。

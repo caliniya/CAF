@@ -13,7 +13,6 @@ export const useConfigsStore = defineStore('configs', {
   state: () => ({
     configs: [] as Config[],
     enables: null as Config | null,
-    enabledModel: '',
     loaded: false,
     loading: false,
     status: '',
@@ -24,12 +23,15 @@ export const useConfigsStore = defineStore('configs', {
       return (item: Config) =>
         !!state.enables && state.enables.ServerAddress === item.ServerAddress
     },
+    // 当前启用的模型，随启用的配置走（每个提供商有自己的记忆）。
+    enabledModel(state) {
+      return state.enables?.EnabledModel ?? ''
+    },
   },
   actions: {
     apply(configs: Configs) {
       this.configs = configs.config ?? []
       this.enables = configs.EnablesConfig
-      this.enabledModel = configs.EnabledModel ?? ''
       this.loaded = true
     },
     async load() {

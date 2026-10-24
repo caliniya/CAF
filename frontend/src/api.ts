@@ -4,12 +4,13 @@ export interface Config {
   ServerAddress: string
   APIKey: string
   Model: string[]
+  // 该配置自己记住的启用模型；每个提供商独立记忆，切换提供商自动恢复。
+  EnabledModel: string
 }
 
 export interface Configs {
   config: Config[] | null
   EnablesConfig: Config | null
-  EnabledModel: string
 }
 
 interface CoreBindings {

@@ -45,7 +45,7 @@ func (c *Core) configAt(index int) (*Config, error) {
 }
 
 // SelectConfig 供前端调用：启用第 index 个配置（提供商，从 0 开始）并写回配置文件。
-// 切换提供商后，若先前启用的模型不在新配置的模型列表中，模型选择会被清空。
+// 启用模型随配置走：切换提供商后沿用该配置自己记住的 EnabledModel。
 func (c *Core) SelectConfig(index int) (*Configs, error) {
 	selected, err := c.configAt(index)
 	if err != nil {
@@ -53,23 +53,18 @@ func (c *Core) SelectConfig(index int) (*Configs, error) {
 	}
 
 	previousConfig := c.Configs.EnablesConfig
-	previousModel := c.Configs.EnabledModel
-
 	c.Configs.EnablesConfig = selected
-	if previousModel != "" && !slices.Contains(selected.Model, previousModel) {
-		c.Configs.EnabledModel = ""
-	}
 
 	if err := SaveConfig(); err != nil {
 		c.Configs.EnablesConfig = previousConfig
-		c.Configs.EnabledModel = previousModel
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
 	return c.Configs, nil
 }
 
-// SelectModel 供前端调用：在当前启用的配置里选定要使用的模型，并写回配置文件。
+// SelectModel 供前端调用：在当前启用的配置里选定要使用的模型，
+// 记录到该配置的 EnabledModel 字段并写回配置文件。
 func (c *Core) SelectModel(model string) (*Configs, error) {
 	if c == nil || c.Paths == nil {
 		return nil, errors.New("路径尚未初始化")
@@ -84,11 +79,11 @@ func (c *Core) SelectModel(model string) (*Configs, error) {
 		return nil, fmt.Errorf("模型 %q 不在当前配置的模型列表中", model)
 	}
 
-	previousModel := c.Configs.EnabledModel
-	c.Configs.EnabledModel = model
+	previousModel := c.Configs.EnablesConfig.EnabledModel
+	c.Configs.EnablesConfig.EnabledModel = model
 
 	if err := SaveConfig(); err != nil {
-		c.Configs.EnabledModel = previousModel
+		c.Configs.EnablesConfig.EnabledModel = previousModel
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
