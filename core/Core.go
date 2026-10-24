@@ -1,6 +1,11 @@
 package core
 
-import "github.com/caliniya/caf/platform"
+import (
+	"encoding/json"
+	"os"
+
+	"github.com/caliniya/caf/platform"
+)
 
 var Platform *Core
 
@@ -11,16 +16,26 @@ type Core struct {
 }
 
 type Configs struct {
-	ALLConfig     *[]Config
+	ALLConfig     *[]Config `json:"config"`
 	EnablesConfig *Config
+	ConfigFile    string
 }
 
 type Config struct {
-	ServerAddress string `json:"ServerAddress"`
-	APIKey        string `json:"APIKey"`
-	Modle         string
+	ServerAddress string    `json:"ServerAddress"`
+	APIKey        string    `json:"APIKey"`
+	Modlel        *[]string `json:"Model"`
 }
 
 func Init() {
 	Platform = &Core{}
+}
+
+func LoadConfig() error {
+	data, err := os.ReadFile(Platform.Configs.ConfigFile)
+	if err != nil {
+		return err
+	}
+	json.Unmarshal(data, Platform.Configs)
+	return nil
 }

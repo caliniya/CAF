@@ -7,9 +7,10 @@ import (
 
 // Paths 只保存解析后的绝对路径，不定义平台接口或运行时对象。
 type Paths struct {
-	Root string `json:"root"`
-	Data string `json:"data"`
-	Logs string `json:"logs"`
+	Root       string `json:"root"`
+	Data       string `json:"data"`
+	Logs       string `json:"logs"`
+	ConfigFile string
 }
 
 // Validate 只校验路径，不读写文件或创建目录。

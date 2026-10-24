@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/caliniya/caf/core"
 	"github.com/wailsapp/wails/v2"
@@ -18,6 +19,9 @@ func Init(assets fs.FS) error {
 	path, err := DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 	if err == nil {
 		core.Platform.Paths = &path
+
+		core.Platform.Paths.ConfigFile = filepath.Join(
+			core.Platform.Paths.Data, "config", "MainConfig")
 	} else {
 		return err
 	}

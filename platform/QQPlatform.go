@@ -24,8 +24,6 @@ type QQConfig struct {
 type QQPlatform interface {
 	GetQQClient() *client.QQClient
 
-	//auth.LoadOrSaveDevice("path/to/deviceinfo.json")
-
 	CreateQQPlatform()
 
 	StartLogin() int
