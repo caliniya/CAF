@@ -24,3 +24,5 @@
 **/qq/device.json
 **/qq/sig.bin
 **/qq/qrcode.png
+/frontend/node_modules/
+/frontend/dist/

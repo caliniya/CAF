@@ -337,3 +337,173 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
 }
 
 
+
+/* ===== 侧边栏导航项 ===== */
+.nav {
+  display: grid;
+  gap: 6px;
+  margin-top: 24px;
+}
+
+.nav-link {
+  padding: 8px 12px;
+  border-radius: var(--radius-small);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  background: var(--tonal);
+}
+
+.nav-link.router-link-active {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* ===== 侧边栏底部状态与统一页头 ===== */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.6;
+}
+
+.dot.ready {
+  background: #2e9e5b;
+  opacity: 1;
+}
+
+.page-header h2 {
+  font-size: 22px;
+}
+
+/* ===== 视口高度锁定：页面各自滚动，对话页固定输入框 ===== */
+.app {
+  height: 100vh;
+}
+
+.content {
+  overflow: hidden;
+}
+
+.page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ===== 对话页 ===== */
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 900px;
+  margin-inline: auto;
+}
+
+.chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-right: 8px;
+}
+
+.chat-empty {
+  display: grid;
+  gap: 8px;
+  margin: auto;
+  text-align: center;
+}
+
+.msg {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+.msg.user {
+  justify-items: end;
+}
+
+.msg-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.msg-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 用户消息：右侧蓝底气泡；助手消息：左侧平铺文本。 */
+.msg.user .msg-body {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.msg.assistant .msg-body {
+  padding: 2px 0;
+}
+
+/* 流式回复时的打字光标。 */
+.cursor {
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 48px;
+  max-height: 180px;
+  resize: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+}

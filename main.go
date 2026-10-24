@@ -9,11 +9,11 @@ import (
 	"github.com/caliniya/caf/core"
 )
 
-//go:embed frontend
+//go:embed all:frontend/dist
 var frontend embed.FS
 
 func main() {
-	assets, err := fs.Sub(frontend, "frontend")
+	assets, err := fs.Sub(frontend, "frontend/dist")
 	if err != nil {
 		log.Fatal(err)
 	}
