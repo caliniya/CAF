@@ -4,30 +4,194 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CAF</title>
+    <link rel="stylesheet" href="style.css" />
   </head>
-<body>
-  <button id="login">发起登录</button>
-  <p id="status"></p>
 
-  <script>
-    const button = document.getElementById("login");
-    const status = document.getElementById("status");
+  <body>
+    <main class="page stack">
+      <header class="stack">
+        <h1>CAF</h1>
+        <p class="muted">Agent 框架控制台</p>
+      </header>
 
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      status.textContent = "正在调用……";
+      <section class="card stack" aria-labelledby="config-heading">
+        <div class="row">
+          <h2 id="config-heading">模型配置</h2>
+          <span id="config-count" class="badge" hidden></span>
+        </div>
+        <p class="description">
+          读取数据目录下 config/MainConfig.json 中的模型服务配置。
+        </p>
+        <div class="row">
+          <button id="load-configs" type="button">加载配置</button>
+        </div>
+        <p id="config-status" class="muted"></p>
+        <div id="config-error" class="notice" hidden></div>
+        <div id="config-list" class="grid" hidden></div>
+      </section>
 
-      try {
-        // 等待 Go 方法返回结果。
-        const code = await window.go.core.Core.StartLogin();
-        status.textContent = `返回码：${code}`;
-      } catch (err) {
-        // Go 返回非空 error 时，会进入这里。
-        status.textContent = `调用失败：${String(err)}`;
-      } finally {
-        button.disabled = false;
+      <section class="card stack" aria-labelledby="login-heading">
+        <h2 id="login-heading">QQ 登录</h2>
+        <div class="row">
+          <button id="login" type="button">发起登录</button>
+        </div>
+        <p id="status"></p>
+      </section>
+    </main>
+
+    <script>
+      const byId = (id) => document.getElementById(id);
+
+      // 当前展示的配置数组，APIKey 的显示/隐藏切换要靠它取完整值。
+      let modelConfigs = [];
+      const revealedKeys = new Set();
+
+      function maskKey(key) {
+        if (!key) return "（未设置）";
+        if (key.length <= 10) return `${key.slice(0, 2)}…`;
+        return `${key.slice(0, 6)}…${key.slice(-4)}`;
       }
-    });
-  </script>
-</body>
+
+      function configCard(item, index) {
+        const card = document.createElement("article");
+        card.className = "card stack";
+
+        const titleRow = document.createElement("div");
+        titleRow.className = "row";
+        const title = document.createElement("h3");
+        title.textContent = item.ServerAddress || "（未设置地址）";
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = `#${index + 1}`;
+        titleRow.append(title, badge);
+
+        const keyField = document.createElement("div");
+        keyField.className = "field";
+        const keyLabel = document.createElement("label");
+        keyLabel.textContent = "APIKey";
+        const keyRow = document.createElement("div");
+        keyRow.className = "row";
+        const keyValue = document.createElement("span");
+        keyValue.className = "notice";
+        keyValue.textContent = maskKey(item.APIKey);
+        const keyToggle = document.createElement("button");
+        keyToggle.className = "btn-tonal";
+        keyToggle.type = "button";
+        keyToggle.textContent = "显示";
+        keyToggle.addEventListener("click", () => {
+          if (revealedKeys.has(index)) {
+            revealedKeys.delete(index);
+            keyValue.textContent = maskKey(item.APIKey);
+            keyToggle.textContent = "显示";
+          } else {
+            revealedKeys.add(index);
+            keyValue.textContent = item.APIKey || "（未设置）";
+            keyToggle.textContent = "隐藏";
+          }
+        });
+        keyRow.append(keyValue, keyToggle);
+        keyField.append(keyLabel, keyRow);
+
+        const modelField = document.createElement("div");
+        modelField.className = "field";
+        const modelLabel = document.createElement("label");
+        modelLabel.textContent = "模型";
+        const modelRow = document.createElement("div");
+        modelRow.className = "row";
+        const models = item.Model || [];
+        if (models.length) {
+          for (const model of models) {
+            const modelBadge = document.createElement("span");
+            modelBadge.className = "badge";
+            modelBadge.textContent = model;
+            modelRow.append(modelBadge);
+          }
+        } else {
+          const empty = document.createElement("span");
+          empty.className = "muted";
+          empty.textContent = "未配置模型";
+          modelRow.append(empty);
+        }
+        modelField.append(modelLabel, modelRow);
+
+        card.append(titleRow, keyField, modelField);
+        return card;
+      }
+
+      function renderConfigs(configs) {
+        const list = byId("config-list");
+        const errorBox = byId("config-error");
+        const countBadge = byId("config-count");
+        const items = (configs && configs.config) || [];
+
+        modelConfigs = items;
+        revealedKeys.clear();
+        list.replaceChildren();
+
+        if (!items.length) {
+          countBadge.hidden = true;
+          errorBox.textContent = "配置文件里还没有任何配置项。";
+          errorBox.hidden = false;
+          return;
+        }
+
+        countBadge.textContent = `${items.length} 项`;
+        countBadge.hidden = false;
+        items.forEach((item, index) => list.append(configCard(item, index)));
+        list.hidden = false;
+      }
+
+      async function loadConfigs() {
+        const button = byId("load-configs");
+        const status = byId("config-status");
+        const errorBox = byId("config-error");
+        byId("config-list").hidden = true;
+        errorBox.hidden = true;
+        button.disabled = true;
+        status.textContent = "正在读取配置……";
+
+        try {
+          const configs = await window.go.core.Core.LoadConfigs();
+          renderConfigs(configs);
+          status.textContent = "";
+        } catch (err) {
+          status.textContent = "";
+          errorBox.textContent = `加载失败：${String(err)}`;
+          errorBox.hidden = false;
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      byId("load-configs").addEventListener("click", loadConfigs);
+
+      byId("login").addEventListener("click", async () => {
+        const button = byId("login");
+        const status = byId("status");
+        button.disabled = true;
+        status.textContent = "正在调用……";
+
+        try {
+          // 等待 Go 方法返回结果。
+          const code = await window.go.core.Core.StartLogin();
+          status.textContent = `返回码：${code}`;
+        } catch (err) {
+          // Go 返回非空 error 时，会进入这里。
+          status.textContent = `调用失败：${String(err)}`;
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      // 启动时自动加载一次配置；window.go 注入略晚时稍等重试。
+      function startUp(retries) {
+        if (window.go && window.go.core && window.go.core.Core) {
+          loadConfigs();
+        } else if (retries > 0) {
+          setTimeout(() => startUp(retries - 1), 200);
+        }
+      }
+      startUp(25);
+    </script>
+  </body>
 </html>

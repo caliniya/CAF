@@ -36,8 +36,20 @@ func LoadConfig() error {
 		return err
 	}
 	Platform.Configs = &Configs{}
-	json.Unmarshal(data, Platform.Configs)
-	return nil
+	return json.Unmarshal(data, Platform.Configs)
+}
+
+// SaveConfig 把当前配置（含启用项）写回配置文件，先写临时文件再替换，避免写一半损坏原文件。
+func SaveConfig() error {
+	data, err := json.MarshalIndent(Platform.Configs, "", "    ")
+	if err != nil {
+		return err
+	}
+	tmp := Platform.Paths.ConfigFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, Platform.Paths.ConfigFile)
 }
 
 func (c *Core) GetPaths() *platform.Paths {
