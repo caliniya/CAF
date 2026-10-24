@@ -65,5 +65,5 @@ func (qq *DesktopQQ) LoadQQConfigFromFile() int {
 
 	qq.qqClient.UseSignProvider(sign.NewSigner(log.Printf, qq.QQCfg.Token, qq.QQCfg.SignSever))
 
-	return 1
+	return 0
 }

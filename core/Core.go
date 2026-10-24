@@ -35,6 +35,11 @@ func LoadConfig() error {
 	if err != nil {
 		return err
 	}
+	Platform.Configs = &Configs{}
 	json.Unmarshal(data, Platform.Configs)
 	return nil
+}
+
+func (c *Core) GetPaths() *platform.Paths {
+	return c.Paths // Paths 有 json tag,可以直接序列化过去
 }

@@ -14,7 +14,7 @@ type Paths struct {
 }
 
 // Validate 只校验路径，不读写文件或创建目录。
-func (p Paths) Validate() error {
+func (p *Paths) Validate() error {
 	for _, item := range []struct{ name, path string }{
 		{"root", p.Root}, {"data", p.Data}, {"logs", p.Logs},
 	} {
