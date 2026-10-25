@@ -47,10 +47,6 @@ type ChatRequest struct {
 	Temperature float64
 }
 
-// Delta 是流式响应的一个增量片段。
-// Done == true 表示本次流结束（由协议识别 [DONE] 等结束标记后设置，
-// 此时其余字段为空）；一次回复可能交替携带 Reasoning 与 Content，
-// 也可能以 ToolCalls 结尾（要求上层执行工具后继续对话）。
 type Delta struct {
 	Content   string
 	Reasoning string
