@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	netclient "github.com/caliniya/caf/NetClient"
 	"github.com/caliniya/caf/platform"
 )
 
@@ -13,6 +14,7 @@ type Core struct {
 	QQPlatform platform.QQPlatform
 	Paths      *platform.Paths
 	Configs    *Configs
+	APIClients *[]netclient.APIClient
 }
 
 type Configs struct {

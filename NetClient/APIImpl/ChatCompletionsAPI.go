@@ -1,12 +1,81 @@
 package apiImpl
 
+import "encoding/json"
+
+// ChatCompletionAPI 是 apiImpl.Protocol 的 Chat Completions 实现,目前主要考虑deepseeek格式
+type ChatCompletionAPI struct{}
+
+func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
+	body := ChatCompletionsRequest{
+		Model:           req.Model,
+		Stream:          true, // 客户端只走流式
+		Messages:        make([]CCChatMessage, 0, len(req.Messages)),
+		ReasoningEffort: req.Thinking,
+	}
+
+	for _, m := range req.Messages {
+		body.Messages = append(body.Messages, api.toCCMessage(m))
+	}
+
+	for _, t := range req.Tools {
+		body.Tools = append(body.Tools, CCChatTool{
+			Type: "function",
+			Function: CCFunctionSpec{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
+	}
+
+	if req.MaxTokens > 0 {
+		body.MaxTokens = req.MaxTokens
+	}
+	if req.Temperature > 0 {
+		t := req.Temperature
+		body.Temperature = &t
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// toCCMessage 把一条内部消息转换为对应格式
+func (api *ChatCompletionAPI) toCCMessage(m ChatMessage) CCChatMessage {
+	cc := CCChatMessage{Role: m.Role}
+	if m.Content != "" {
+		cc.Content = m.Content
+	}
+
+	switch m.Role {
+	case "tool":
+		cc.ToolCallID = m.ToolCallID
+	case "assistant":
+		for _, tc := range m.ToolCalls {
+			cc.ToolCalls = append(cc.ToolCalls, CCToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: CCFunctionCall{
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				},
+			})
+		}
+	}
+
+	return cc
+}
+
 // ChatCompletionsRequest 表示 DeepSeek Chat Completions API 的 JSON 请求体。
 // 内部结构体简写为CC
 type ChatCompletionsRequest struct {
 	// Model 是模型 ID，必填；可用模型以账号可调用列表和文档为准。
 	Model string `json:"model"`
 
-	// Messages 是对话消息列表，必填且至少包含一条消息；按顺序传入 system、user、assistant 等消息。
+	// Messages 是对话消息列表，必填且至少包含一条消息；按顺序传入 system、user、ksassistant 等消息。
 	Messages []CCChatMessage `json:"messages"`
 
 	// Thinking 控制思考模式；Type 可设为 "enabled" 或 "disabled"。省略时由服务端决定默认行为。

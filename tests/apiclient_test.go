@@ -1,19 +1,25 @@
-package apiImpl
+package tests
 
-import "testing"
+// Chat Completions 协议编码测试:锁定内部结构 → 线格式的映射行为。
+
+import (
+	"testing"
+
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+)
 
 // 基础映射:system/user 消息、工具声明、MaxTokens;零值字段(Temperature)
 // 和 Reasoning 不得出现。
 func TestEncodeRequestFixture(t *testing.T) {
-	p := ChatCompletionsProtocol{}
+	p := &apiImpl.ChatCompletionAPI{}
 
-	got, err := p.EncodeRequest(ChatRequest{
+	got, err := p.EncodeRequest(apiImpl.ChatRequest{
 		Model: "deepseek-chat",
-		Messages: []ChatMessage{
+		Messages: []apiImpl.ChatMessage{
 			{Role: "system", Content: "你是 CAF 助手"},
 			{Role: "user", Content: "你好"},
 		},
-		Tools: []Tool{{
+		Tools: []apiImpl.Tool{{
 			Name:        "read_file",
 			Description: "读取文件",
 			Parameters: map[string]any{
@@ -42,14 +48,14 @@ func TestEncodeRequestFixture(t *testing.T) {
 
 // 工具调用往返:assistant 的 ToolCalls 与 tool 结果消息(带 tool_call_id)。
 func TestEncodeRequestToolRoundTrip(t *testing.T) {
-	p := ChatCompletionsProtocol{}
+	p := &apiImpl.ChatCompletionAPI{}
 
-	got, err := p.EncodeRequest(ChatRequest{
+	got, err := p.EncodeRequest(apiImpl.ChatRequest{
 		Model: "deepseek-chat",
-		Messages: []ChatMessage{
+		Messages: []apiImpl.ChatMessage{
 			{
 				Role: "assistant",
-				ToolCalls: []ToolCall{{
+				ToolCalls: []apiImpl.ToolCall{{
 					ID:        "c1",
 					Name:      "read_file",
 					Arguments: `{"path":"a"}`,

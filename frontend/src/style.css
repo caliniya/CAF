@@ -629,3 +629,23 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
 .composer {
   align-items: stretch;
 }
+
+/* ===== 调试页 ===== */
+.debug-link {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.debug-output {
+  max-height: 60vh;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
