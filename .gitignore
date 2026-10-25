@@ -26,3 +26,4 @@
 **/qq/qrcode.png
 /frontend/node_modules/
 /frontend/dist/
+/.zcode/
