@@ -23,8 +23,10 @@ interface CoreBindings {
    * 【后端待实现】发起流式对话：
    *   Go 侧签名：func (c *Core) SendMessage(history []netclient.ChatMessage) error
    *   history 元素形如 {"role":"user"|"assistant","content":"..."}；
-   *   实现方需边流式接收边用 runtime.EventsEmit(ctx, "chat:delta", 增量文本) 推送，
-   *   函数返回（或返回 error）即代表对话结束，前端据此收尾。
+   *   实现方需边流式接收边用 runtime.EventsEmit 推送事件，函数返回（或返回
+   *   error）即代表对话结束，前端据此收尾。事件契约：
+   *     "chat:delta"  载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
+   *     "chat:tool"   载荷为 JSON 字符串 {"name": string, "event": "start"|"done"}
    */
   SendMessage(history: ChatTurn[]): Promise<void>
 }
@@ -67,9 +69,36 @@ export function SendMessage(history: ChatTurn[]): Promise<void> {
   return bridge().then((c) => c.SendMessage(history))
 }
 
-// 订阅后端的流式增量事件 "chat:delta"，返回取消订阅函数。
-// runtime 注入时机可能晚于组件挂载，短暂轮询等待。
-export async function onChatDelta(handler: (delta: string) => void): Promise<() => void> {
+// "chat:delta" 事件载荷:文本增量与思考增量分开携带(可同时)。
+export interface ChatDeltaEvent {
+  content?: string
+  reasoning?: string
+}
+
+// "chat:tool" 事件载荷:工具调用的开始/结束。
+export interface ChatToolEvent {
+  name: string
+  event: 'start' | 'done'
+}
+
+function parseEvent<T>(data: unknown): T {
+  // 事件载荷的契约是 JSON 字符串;兼容三种输入:已是对象、JSON 字符串、纯文本。
+  if (data && typeof data === 'object') return data as T
+  const text = String(data)
+  try {
+    const obj = JSON.parse(text)
+    if (obj && typeof obj === 'object') return obj as T
+  } catch {
+    /* 非 JSON 的纯文本按 content 增量处理,兼容旧契约 */
+  }
+  return { content: text } as T
+}
+
+// 订阅流式增量事件 "chat:delta",返回取消订阅函数。
+// runtime 注入时机可能晚于组件挂载,短暂轮询等待。
+export async function onChatDelta(
+  handler: (delta: ChatDeltaEvent) => void,
+): Promise<() => void> {
   for (let i = 0; i < 50; i++) {
     const rt = (
       window as unknown as {
@@ -80,8 +109,30 @@ export async function onChatDelta(handler: (delta: string) => void): Promise<() 
       }
     ).runtime
     if (rt) {
-      rt.EventsOn('chat:delta', (data) => handler(String(data)))
+      rt.EventsOn('chat:delta', (data) => handler(parseEvent<ChatDeltaEvent>(data)))
       return () => rt.EventsOff('chat:delta')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return () => {}
+}
+
+// 订阅工具调用事件 "chat:tool",返回取消订阅函数。
+export async function onChatTool(
+  handler: (tool: ChatToolEvent) => void,
+): Promise<() => void> {
+  for (let i = 0; i < 50; i++) {
+    const rt = (
+      window as unknown as {
+        runtime?: {
+          EventsOn(name: string, cb: (data: unknown) => void): void
+          EventsOff(...names: string[]): void
+        }
+      }
+    ).runtime
+    if (rt) {
+      rt.EventsOn('chat:tool', (data) => handler(parseEvent<ChatToolEvent>(data)))
+      return () => rt.EventsOff('chat:tool')
     }
     await new Promise((resolve) => setTimeout(resolve, 100))
   }

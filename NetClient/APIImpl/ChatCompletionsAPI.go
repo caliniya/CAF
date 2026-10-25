@@ -43,9 +43,6 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 	return string(data), nil
 }
 
-// toCCMessage 把一条内部消息转换为对应格式。
-// Reasoning 必须回传:DeepSeek 要求携带 tools 的请求在后续所有请求中
-// 完整传回 reasoning_content(即使该轮没有实际工具调用),否则返回 400。
 func (api *ChatCompletionAPI) toCCMessage(m ChatMessage) CCChatMessage {
 	cc := CCChatMessage{Role: m.Role}
 	if m.Content != "" {

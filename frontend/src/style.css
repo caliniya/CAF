@@ -743,3 +743,306 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   font-weight: 400;
   color: var(--muted);
 }
+
+/* ===== 对话页宣传级打磨 ===== */
+
+/* Hero 空状态:渐变标题 + slogan + 推荐提示词。 */
+.hero-title {
+  font-size: 44px;
+  line-height: 1.2;
+  background: linear-gradient(135deg, var(--accent) 20%, #8b5cf6 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-sub {
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.hero-meta {
+  margin-top: 8px;
+}
+
+.prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.prompt-chip {
+  min-height: 0;
+  padding: 6px 14px;
+  border: 1px solid var(--outline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.prompt-chip:hover {
+  border-color: var(--accent);
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* 思考过程折叠区。 */
+.reasoning {
+  border-left: 3px solid var(--outline);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--tonal) 55%, transparent);
+}
+
+.reasoning summary {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.reasoning-body {
+  padding: 0 12px 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 工具调用卡片。 */
+.tool-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.tool-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+.tool-icon.run {
+  background: var(--tonal);
+  color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
+.tool-icon.done {
+  background: #e3f5e9;
+  color: #1e7d3c;
+}
+
+.tool-name {
+  color: var(--ink);
+}
+
+.tool-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 消息入场动画。 */
+.msg {
+  animation: msg-in 220ms ease;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* 用户气泡改为轻微渐变。 */
+.msg.user .msg-body {
+  background: linear-gradient(135deg, var(--accent), #6a7ff0);
+}
+
+/* 代码块与行内代码(等 markdown 渲染接入后直接生效)。 */
+.msg-body pre {
+  background: #f6f8fb;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.msg-body code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+  font-size: 13px;
+  background: var(--tonal);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.msg-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg {
+    animation: none;
+  }
+
+  .tool-icon.run {
+    animation: none;
+  }
+}
+
+/* ===== 界面精简版式(第二轮) ===== */
+
+/* 品牌行:CAF + 版本号,紧凑。 */
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.brand h1 {
+  font-size: 20px;
+}
+
+.brand-version {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 底部齿轮按钮(替代文字按钮与状态灯)。 */
+.settings-btn {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-small);
+  color: var(--muted);
+}
+
+.settings-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.settings-btn:hover,
+.settings-btn.active {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* 任务列表的文件夹图标。 */
+.task-folder {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* 空状态水印。 */
+.watermark {
+  font-size: clamp(36px, 6vw, 84px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  opacity: 0.07;
+  user-select: none;
+  text-align: center;
+  margin: 0;
+}
+
+/* 新建工作区:输入框外左上角的幽灵按钮。 */
+.composer-top {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.new-workspace {
+  min-height: 0;
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.new-workspace:hover {
+  color: var(--accent);
+}
+
+/* 盒式输入框:输入与选项都在同一容器内。 */
+.composer {
+  border: 1px solid var(--outline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
+}
+
+.composer-input {
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  min-height: 48px;
+  resize: none;
+}
+
+.composer-input:focus {
+  border-color: transparent;
+}
+
+.composer-meta {
+  padding: 0 2px;
+}
+
+/* 发送图标按钮。 */
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.send-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.send-btn:disabled {
+  opacity: 0.45;
+}
