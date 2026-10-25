@@ -16,6 +16,12 @@ export const useChatStore = defineStore('chat', {
     error: '',
   }),
   actions: {
+    // 新建对话：清空当前会话（演示用途，消息本来就只存在内存里）。
+    reset() {
+      this.messages = []
+      this.error = ''
+      this.sending = false
+    },
     // 由 ChatPage 订阅的 "chat:delta" 事件驱动，把增量追加到最后的助手消息。
     applyDelta(delta: string) {
       const last = this.messages[this.messages.length - 1]
