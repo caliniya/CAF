@@ -8,11 +8,7 @@ type ChatTool struct {
 }
 
 // 表示一条对话消息
-type ChatMessage struct {
-	Type string
-	Text string
-	Name string
-}
+// 已移至 Types.go 的正式定义（ChatMessage），此处不再重复声明。
 
 type APIStruct interface {
 	SetTool(*[]ChatTool) int
