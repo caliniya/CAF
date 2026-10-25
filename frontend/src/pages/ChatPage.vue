@@ -37,10 +37,7 @@ watch(
       <div v-if="!chat.messages.length" class="chat-empty">
         <!-- 背景水印:不做任何功能说明 -->
         <p class="watermark">caliniya's agent frame</p>
-        <p v-if="configs.enables && configs.enabledModel" class="muted hero-meta">
-          当前模型：<span class="badge badge-active">{{ configs.enabledModel }}</span>
-        </p>
-        <p v-else class="muted hero-meta">
+        <p v-if="!configs.enables || !configs.enabledModel" class="muted hero-meta">
           还没有可用的模型，<RouterLink to="/settings/models">先去配置</RouterLink>。
         </p>
       </div>
@@ -129,9 +126,17 @@ watch(
             </select>
           </label>
           <span class="ctx" title="上下文占用（演示用假数据）">
-            <span class="ctx-bar">
-              <span class="ctx-fill" :style="{ width: chat.ctxPercent + '%' }"></span>
-            </span>
+            <!-- 圆环指示器:进度 = 周长 × 百分比,旋转 -90° 从顶部起画 -->
+            <svg class="ctx-ring" viewBox="0 0 20 20" aria-hidden="true">
+              <circle class="ctx-ring-bg" cx="10" cy="10" r="8" />
+              <circle
+                class="ctx-ring-fill"
+                cx="10"
+                cy="10"
+                r="8"
+                :style="{ strokeDashoffset: 50.27 * (1 - chat.ctxPercent / 100) }"
+              />
+            </svg>
             {{ chat.ctxPercent }}%
           </span>
 
@@ -143,18 +148,18 @@ watch(
             title="发送"
             @click="chat.send()"
           >
-            <!-- 纸飞机图标(Feather, MIT) -->
+            <!-- 向上箭头图标(Feather, MIT):小尺寸下比纸飞机更清晰 -->
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="2.5"
               stroke-linecap="round"
               stroke-linejoin="round"
               aria-hidden="true"
             >
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
             </svg>
           </button>
         </div>

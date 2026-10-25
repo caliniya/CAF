@@ -1046,3 +1046,47 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
 .send-btn:disabled {
   opacity: 0.45;
 }
+
+/* ===== 第三轮微调 ===== */
+
+/* 水印加深一点,保持背景感但不至于看不见。 */
+.watermark {
+  opacity: 0.13;
+}
+
+/* 上下文圆环指示器(替代横条)。 */
+.ctx-ring {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+}
+
+.ctx-ring-bg,
+.ctx-ring-fill {
+  fill: none;
+  stroke-width: 3;
+}
+
+.ctx-ring-bg {
+  stroke: var(--outline);
+}
+
+.ctx-ring-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-dasharray: 50.27; /* 2πr,r=8 */
+  transition: stroke-dashoffset 300ms ease;
+}
+
+/* ===== 圆环与水印修正 ===== */
+
+/* 全局 button 的 min-height:44px 会把 34px 的圆形按钮拉成椭圆,归零。 */
+.send-btn {
+  min-height: 0;
+}
+
+/* 水印强制单行,字号随视口缩放保证不溢出。 */
+.watermark {
+  white-space: nowrap;
+  font-size: clamp(24px, 4.5vw, 72px);
+}

@@ -39,7 +39,7 @@ export const useChatStore = defineStore('chat', {
         (n, m) => n + m.content.length + (m.reasoning?.length ?? 0),
         0,
       )
-      return Math.min(95, Math.round(total / 300) + 2)
+      return Math.min(95, Math.round(total / 30) + 2)
     },
   },
   actions: {
