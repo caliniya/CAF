@@ -1,30 +1,78 @@
 package apiImpl
 
-// ChatCompletionsRequest 表示 Chat Completions API 的 JSON 请求体。
+// ChatCompletionsRequest 表示 DeepSeek Chat Completions API 的 JSON 请求体。
 type ChatCompletionsRequest struct {
-	// Model 是模型 ID，必填。可用值以账号当前可调用的模型列表和官方文档为准，
-	// 例如文档中出现过 deepseek-flash、deepseek-v4-pro；模型名称可能随服务更新。
+	// Model 是模型 ID，必填；可用模型以账号可调用列表和文档为准。
 	Model string `json:"model"`
 
-	// Messages 是对话历史，必填且至少包含一条消息。多轮对话时由调用方传入历史消息。
+	// Messages 是对话消息列表，必填且至少包含一条消息；按顺序传入 system、user、assistant 等消息。
 	Messages []ChatMessage `json:"messages"`
 
-	// Stream 控制是否流式返回：true 表示通过 SSE 返回增量，结束标记为 data: [DONE]；
-	// false 或省略表示等待完整 JSON 响应。默认值为 false。
-	Stream bool `json:"stream,omitempty"`
+	// Thinking 控制思考模式；Type 可设为 "enabled" 或 "disabled"。省略时由服务端决定默认行为。
+	Thinking *ThinkingConfig `json:"thinking,omitempty"`
 
-	// MaxTokens 限制本次生成的最大 token 数，必须为正数；省略时由服务端使用模型默认值。
-	// 输入与输出 token 总量仍受模型上下文长度限制。
+	// ReasoningEffort 控制思考开关或强度，可设为 "none"、"low"、"high"、"max"；
+	// 文档兼容值 "minimal" 映射为 "low"，"medium" / "xhigh" 映射为 "high"。
+	// 它与 Thinking 都用于控制思考行为，具体支持组合以当前模型文档为准。
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+
+	// MaxTokens 限制生成 token 数，DeepSeek 文档范围为 1 到 393216；省略时使用模型默认值。
 	MaxTokens int `json:"max_tokens,omitempty"`
 
-	// Tools 声明模型可调用的工具。DeepSeek Chat Completions 当前支持 type 为 "function"；
-	// 不需要工具调用时可省略。模型只返回调用请求，实际执行函数需要由客户端完成。
+	// ResponseFormat 指定输出格式；Type 可设为 "text" 或 "json_object"。
+	// 使用 JSON 模式时，还应在消息中明确要求模型输出 JSON。
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
+	// Stop 是停止序列，可传一个字符串或最多包含 16 个字符串的切片。
+	Stop any `json:"stop,omitempty"`
+
+	// Stream 控制是否以 SSE 流式返回；流结束标记为 data: [DONE]。省略或 false 表示非流式。
+	Stream bool `json:"stream,omitempty"`
+
+	// StreamOptions 配置流式返回选项；只有 Stream 为 true 时才能设置。
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+
+	// Temperature 控制采样随机性，范围为 0 到 2；思考模式下不生效。
+	// 使用指针以支持显式发送 0；nil 表示省略字段。
+	Temperature *float64 `json:"temperature,omitempty"`
+
+	// TopP 控制 nucleus sampling，范围为 (0, 1]；思考模式下仅 0.95 到 1.0 有效，
+	// 低于 0.95 会按 0.95 处理，非思考模式下该参数会被忽略。
+	TopP *float64 `json:"top_p,omitempty"`
+
+	// Tools 声明模型可调用的工具；目前支持 function 类型。模型只返回调用请求，函数需由客户端执行。
 	Tools []ChatTool `json:"tools,omitempty"`
 
-	// ToolChoice 控制工具调用策略，可传 "none"、"auto"、"required"，
-	// 或 NamedToolChoice 指定一个函数。未提供 tools 时默认相当于 "none"，
-	// 提供 tools 时默认相当于 "auto"。部分思考模式下不支持 required 或指定函数。
+	// ToolChoice 控制工具调用策略，可传 "none"、"auto"、"required"，或 NamedToolChoice 指定函数。
+	// 有 tools 时默认 auto，无 tools 时默认 none；思考模式下不支持 required 或指定函数。
 	ToolChoice any `json:"tool_choice,omitempty"`
+
+	// Logprobs 为 true 时在响应中返回输出 token 的对数概率。
+	Logprobs bool `json:"logprobs,omitempty"`
+
+	// TopLogprobs 指定每个输出位置返回概率最高的 token 数量，范围为 0 到 20；需要同时启用 Logprobs。
+	TopLogprobs *int `json:"top_logprobs,omitempty"`
+
+	// UserID 是可选的业务侧用户标识，最多 512 个字符，仅允许字母、数字、连字符和下划线；不要放隐私信息。
+	UserID string `json:"user_id,omitempty"`
+}
+
+// ThinkingConfig 控制是否启用模型思考模式。
+type ThinkingConfig struct {
+	// Type 为 "enabled" 启用思考模式，为 "disabled" 关闭思考模式。
+	Type string `json:"type"`
+}
+
+// ResponseFormat 指定模型的响应格式。
+type ResponseFormat struct {
+	// Type 可为 "text"（普通文本）或 "json_object"（JSON 模式）。
+	Type string `json:"type"`
+}
+
+// StreamOptions 配置流式响应的附加信息。
+type StreamOptions struct {
+	// IncludeUsage 为 true 时在流式响应中包含 token 用量统计；必须同时启用 Stream。
+	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
 // ChatMessage 表示对话中的一条消息，也可承载模型的工具调用或工具执行结果。
