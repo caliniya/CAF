@@ -1,15 +1,16 @@
 package apiImpl
 
 // ChatCompletionsRequest 表示 DeepSeek Chat Completions API 的 JSON 请求体。
+// 内部结构体简写为CC
 type ChatCompletionsRequest struct {
 	// Model 是模型 ID，必填；可用模型以账号可调用列表和文档为准。
 	Model string `json:"model"`
 
 	// Messages 是对话消息列表，必填且至少包含一条消息；按顺序传入 system、user、assistant 等消息。
-	Messages []ChatMessage `json:"messages"`
+	Messages []CCChatMessage `json:"messages"`
 
 	// Thinking 控制思考模式；Type 可设为 "enabled" 或 "disabled"。省略时由服务端决定默认行为。
-	Thinking *ThinkingConfig `json:"thinking,omitempty"`
+	Thinking *CCThinkingConfig `json:"thinking,omitempty"`
 
 	// ReasoningEffort 控制思考开关或强度，可设为 "none"、"low"、"high"、"max"；
 	// 文档兼容值 "minimal" 映射为 "low"，"medium" / "xhigh" 映射为 "high"。
@@ -21,7 +22,7 @@ type ChatCompletionsRequest struct {
 
 	// ResponseFormat 指定输出格式；Type 可设为 "text" 或 "json_object"。
 	// 使用 JSON 模式时，还应在消息中明确要求模型输出 JSON。
-	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *CCResponseFormat `json:"response_format,omitempty"`
 
 	// Stop 是停止序列，可传一个字符串或最多包含 16 个字符串的切片。
 	Stop any `json:"stop,omitempty"`
@@ -30,7 +31,7 @@ type ChatCompletionsRequest struct {
 	Stream bool `json:"stream,omitempty"`
 
 	// StreamOptions 配置流式返回选项；只有 Stream 为 true 时才能设置。
-	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	StreamOptions *CCStreamOptions `json:"stream_options,omitempty"`
 
 	// Temperature 控制采样随机性，范围为 0 到 2；思考模式下不生效。
 	// 使用指针以支持显式发送 0；nil 表示省略字段。
@@ -41,7 +42,7 @@ type ChatCompletionsRequest struct {
 	TopP *float64 `json:"top_p,omitempty"`
 
 	// Tools 声明模型可调用的工具；目前支持 function 类型。模型只返回调用请求，函数需由客户端执行。
-	Tools []ChatTool `json:"tools,omitempty"`
+	Tools []CCChatTool `json:"tools,omitempty"`
 
 	// ToolChoice 控制工具调用策略，可传 "none"、"auto"、"required"，或 NamedToolChoice 指定函数。
 	// 有 tools 时默认 auto，无 tools 时默认 none；思考模式下不支持 required 或指定函数。
@@ -58,25 +59,25 @@ type ChatCompletionsRequest struct {
 }
 
 // ThinkingConfig 控制是否启用模型思考模式。
-type ThinkingConfig struct {
+type CCThinkingConfig struct {
 	// Type 为 "enabled" 启用思考模式，为 "disabled" 关闭思考模式。
 	Type string `json:"type"`
 }
 
 // ResponseFormat 指定模型的响应格式。
-type ResponseFormat struct {
+type CCResponseFormat struct {
 	// Type 可为 "text"（普通文本）或 "json_object"（JSON 模式）。
 	Type string `json:"type"`
 }
 
 // StreamOptions 配置流式响应的附加信息。
-type StreamOptions struct {
+type CCStreamOptions struct {
 	// IncludeUsage 为 true 时在流式响应中包含 token 用量统计；必须同时启用 Stream。
 	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
 // ChatMessage 表示对话中的一条消息，也可承载模型的工具调用或工具执行结果。
-type ChatMessage struct {
+type CCChatMessage struct {
 	// Role 表示消息角色，常见可用值为 "system"、"user"、"assistant"、"tool"。
 	// tool 角色用于回传工具执行结果；assistant 消息可包含 ToolCalls。
 	Role string `json:"role"`
@@ -88,23 +89,26 @@ type ChatMessage struct {
 	Name string `json:"name,omitempty"`
 
 	// ToolCalls 是 assistant 请求调用的工具列表；每项包含调用 ID、类型和函数参数。
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	ToolCalls []CCToolCall `json:"tool_calls,omitempty"`
 
 	// ToolCallID 是 role 为 "tool" 的结果消息所对应的调用 ID，必须匹配先前 ToolCalls 中的 ID。
 	ToolCallID string `json:"tool_call_id,omitempty"`
+
+	// 保留模型返回的思考内容，供工具调用后续请求回传。
+	ReasoningContent *string `json:"reasoning_content,omitempty"`
 }
 
 // ChatTool 声明模型可以调用的工具。目前 DeepSeek Chat Completions 支持 function 类型。
-type ChatTool struct {
+type CCChatTool struct {
 	// Type 工具类型，目前必须为 "function"。
 	Type string `json:"type"`
 
 	// Function 描述可供模型选择调用的函数。
-	Function FunctionSpec `json:"function"`
+	Function CCFunctionSpec `json:"function"`
 }
 
 // FunctionSpec 描述函数用途和参数 JSON Schema。它只提供调用说明，不会执行实际函数。
-type FunctionSpec struct {
+type CCFunctionSpec struct {
 	// Name 是函数名称，必填；仅允许英文字母、数字、下划线和连字符，最长 128 个字符，且工具间必须唯一。
 	Name string `json:"name"`
 
@@ -117,17 +121,17 @@ type FunctionSpec struct {
 }
 
 // ToolCall 是 assistant 消息中的一次函数调用请求。它表示模型要求调用，不代表函数已经执行。
-type ToolCall struct {
+type CCToolCall struct {
 	// ID 是本次调用的唯一标识，回传工具结果时放入 ChatMessage.ToolCallID。
 	ID string `json:"id"`
 	// Type 当前为 "function"。
 	Type string `json:"type"`
 	// Function 包含函数名和模型生成的参数。
-	Function FunctionCall `json:"function"`
+	Function CCFunctionCall `json:"function"`
 }
 
 // FunctionCall 包含模型生成的函数名称和 JSON 格式参数字符串。调用前应校验参数，不能默认信任模型输出。
-type FunctionCall struct {
+type CCFunctionCall struct {
 	// Name 是模型请求调用的函数名，应与已声明的 FunctionSpec.Name 匹配。
 	Name string `json:"name"`
 	// Arguments 是 JSON 编码的参数字符串；解析后仍应校验类型、必填字段和业务权限。
@@ -135,14 +139,14 @@ type FunctionCall struct {
 }
 
 // NamedToolChoice 用于 tool_choice，强制模型调用指定函数。
-type NamedToolChoice struct {
+type CCNamedToolChoice struct {
 	// Type 必须为 "function"。
 	Type string `json:"type"`
 	// Function 指定需要调用的函数。
-	Function NamedFunctionChoice `json:"function"`
+	Function CCNamedFunctionChoice `json:"function"`
 }
 
 // NamedFunctionChoice 指定要调用的函数名称；该名称必须已包含在请求的 tools 中。
-type NamedFunctionChoice struct {
+type CCNamedFunctionChoice struct {
 	Name string `json:"name"`
 }
