@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useChatStore } from './stores/chat'
 import { useConfigsStore } from './stores/configs'
+import SidebarTasks from './components/SidebarTasks.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,15 +29,17 @@ function newConversation() {
         <p class="muted">Agent 框架</p>
       </RouterLink>
 
-      <!-- 主界面模式：新建对话 -->
-      <button
-        v-if="mode === 'chat'"
-        type="button"
-        class="btn new-chat"
-        @click="newConversation"
-      >
-        ＋ 新建对话
-      </button>
+      <!-- 主界面模式：新建对话 + 任务列表 -->
+      <template v-if="mode === 'chat'">
+        <button
+          type="button"
+          class="btn new-chat"
+          @click="newConversation"
+        >
+          ＋ 新建对话
+        </button>
+        <SidebarTasks />
+      </template>
 
       <!-- 设置模式：设置分区导航 -->
       <nav v-else class="nav" aria-label="设置">

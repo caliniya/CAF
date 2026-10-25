@@ -10,6 +10,8 @@ type ChatMessage struct {
 
 	// 思考内容：支持思考的模型（DeepSeek-R1、Qwen thinking 等）会分两路输出，
 	// Reasoning 与 Content 分开携带，前端分开展示。
+	// 注意：必须随历史完整回传——DeepSeek 规定携带 tools 的请求在后续所有
+	// 请求中都要带 reasoning_content（即使该轮无工具调用），否则返回 400。
 	Reasoning string
 
 	// assistant 发起的工具调用；一条消息可能同时携带 Content 和多个 ToolCalls。
