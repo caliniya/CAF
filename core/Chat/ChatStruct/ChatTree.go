@@ -9,11 +9,13 @@ type ChatTree struct {
 
 //根节点配置名字和子节点就够了?
 type TreeRoot struct {
-	Next *[]ChatNode
-	Name string
+	Next  *[]ChatNode
+	Model string
+	Name  string
 }
 
 //将当前的树结构转为请求
+//注意,一些字段是没有设置的(比如api地址)
 func (tree *ChatTree) ToChatRequest() *apiImpl.ChatRequest {
 	return &apiImpl.ChatRequest{}
 }
