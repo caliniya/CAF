@@ -3,7 +3,11 @@ package apiImpl
 import "encoding/json"
 
 // ChatCompletionAPI 是 apiImpl.Protocol 的 Chat Completions 实现,目前主要考虑deepseeek格式
-type ChatCompletionAPI struct{}
+// 注意:DecodeEvent 需要在实例上聚合 tool_call 分片,因此每条流都要 new 一个实例。
+type ChatCompletionAPI struct {
+	// 工具调用分片的聚合中间态(每流独立)
+	toolDrafts []ccToolCallDraft
+}
 
 func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 	body := ChatCompletionsRequest{
