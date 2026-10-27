@@ -2,7 +2,7 @@ package chatstruct
 
 import apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 
-//多轮对话的一个节点,可以是发送的消息,模型回复,或者过程
+//多轮对话的一个节点一般来说用户消息只有一条,模型回复会有多个
 //对于过程中节点,以子节点的形式存在(不是下一节点)
 type ChatNode struct {
 
@@ -18,7 +18,12 @@ type ChatNode struct {
 
 //递归的获取所有消息
 func (n *ChatNode) GetEach(get func(res *apiImpl.ChatMessage)) {
-	for _, ar := range n.Child {
-		get(&ar)
+	for i := range n.Child {
+		get(&n.Child[i])
 	}
+}
+
+func (n *ChatNode) CreateNext(m ...apiImpl.ChatMessage) *ChatNode {
+	a := &ChatNode{Child: m}
+	return a
 }

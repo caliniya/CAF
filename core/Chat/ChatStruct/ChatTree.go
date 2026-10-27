@@ -9,9 +9,10 @@ type ChatTree struct {
 
 //根节点配置名字和子节点就够了?
 type TreeRoot struct {
-	Next  *[]ChatNode
-	Model string
-	Name  string
+	Choice int
+	Next   *[]ChatNode
+	Model  string
+	Name   string
 }
 
 //将当前的树结构转为请求
