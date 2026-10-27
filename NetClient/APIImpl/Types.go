@@ -2,7 +2,8 @@ package apiImpl
 
 // ChatMessage 是一条对话消息。
 type ChatMessage struct {
-	Role    string // "system" | "user" | "assistant" | "tool"
+	Role string // "system" | "user" | "assistant" | "tool"
+
 	Content string
 
 	// 思考内容：支持思考的模型会分两路输出，
