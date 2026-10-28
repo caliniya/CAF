@@ -57,6 +57,23 @@ func TestDecodeEventReasoning(t *testing.T) {
 	}
 }
 
+func TestDecodeEventUsage(t *testing.T) {
+	proto := &apiImpl.ChatCompletionAPI{}
+	deltas, err := proto.DecodeEvent(
+		`{"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}}`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deltas) != 1 || deltas[0].Usage == nil {
+		t.Fatalf("expected usage delta, got %+v", deltas)
+	}
+	usage := deltas[0].Usage
+	if usage.PromptTokens != 120 || usage.CompletionTokens != 30 || usage.TotalTokens != 150 {
+		t.Fatalf("unexpected usage: %+v", usage)
+	}
+}
+
 // 工具调用分片:首行带 index/id/name,后续行只追加 arguments,
 // 在 finish_reason=tool_calls 时一次性吐出完整调用。
 func TestDecodeEventToolCallAggregation(t *testing.T) {

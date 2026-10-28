@@ -15,20 +15,21 @@ export interface Configs {
 
 interface CoreBindings {
   LoadConfigs(): Promise<Configs>
+  GetModelContextWindow(): Promise<number>
   SelectConfig(index: number): Promise<Configs>
   SelectModel(model: string): Promise<Configs>
   RenameConfig(index: number, name: string): Promise<Configs>
   StartLogin(): Promise<number>
   /**
-   * 【后端待实现】发起流式对话：
-   *   Go 侧签名：func (c *Core) SendMessage(history []netclient.ChatMessage) error
+  * 发起流式对话：
+  *   Go 侧签名：func (c *Core) SendMessage(history []apiImpl.ChatMessage, reasoningEffort string) error
    *   history 元素形如 {"role":"user"|"assistant","content":"..."}；
    *   实现方需边流式接收边用 runtime.EventsEmit 推送事件，函数返回（或返回
    *   error）即代表对话结束，前端据此收尾。事件契约：
    *     "chat:delta"  载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
    *     "chat:tool"   载荷为 JSON 字符串 {"name": string, "event": "start"|"done"}
    */
-  SendMessage(history: ChatTurn[]): Promise<void>
+  SendMessage(history: ChatTurn[], reasoningEffort: string): Promise<void>
 }
 
 // window.go 由 Wails 运行时注入，时机可能晚于页面脚本，短暂轮询等待。
@@ -45,6 +46,10 @@ async function bridge(): Promise<CoreBindings> {
 
 export function LoadConfigs(): Promise<Configs> {
   return bridge().then((c) => c.LoadConfigs())
+}
+
+export function GetModelContextWindow(): Promise<number> {
+  return bridge().then((c) => c.GetModelContextWindow())
 }
 
 export function SelectConfig(index: number): Promise<Configs> {
@@ -65,14 +70,21 @@ export interface ChatTurn {
   content: string
 }
 
-export function SendMessage(history: ChatTurn[]): Promise<void> {
-  return bridge().then((c) => c.SendMessage(history))
+export function SendMessage(history: ChatTurn[], reasoningEffort: string): Promise<void> {
+  return bridge().then((c) => c.SendMessage(history, reasoningEffort))
 }
 
 // "chat:delta" 事件载荷:文本增量与思考增量分开携带(可同时)。
 export interface ChatDeltaEvent {
   content?: string
   reasoning?: string
+  usage?: TokenUsage
+}
+
+export interface TokenUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
 }
 
 // "chat:tool" 事件载荷:工具调用的开始/结束。

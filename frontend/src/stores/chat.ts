@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
-import { SendMessage, type ChatDeltaEvent, type ChatToolEvent, type ChatTurn } from '../api'
+import {
+  GetModelContextWindow,
+  SendMessage,
+  type ChatDeltaEvent,
+  type ChatToolEvent,
+  type ChatTurn,
+  type TokenUsage,
+} from '../api'
 import { useConfigsStore } from './configs'
+
+let contextWindowRequestId = 0
 
 export interface ToolCard {
   name: string
@@ -26,20 +35,25 @@ export const useChatStore = defineStore('chat', {
     draft: '',
     sending: false,
     error: '',
+    usage: null as TokenUsage | null,
+    contextWindow: null as number | null,
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
     permission: '标准',
-    effort: '关闭',
+    effort: 'none' as 'none' | 'low' | 'high' | 'max',
     // 工作区列表(演示阶段仅前端本地,新建对话不清除)。
     workspaces: [] as WorkspaceEntry[],
   }),
   getters: {
-    // 假的上下文占用指示器:按消息总字数粗略增长,仅用于演示。
-    ctxPercent(state) {
-      const total = state.messages.reduce(
-        (n, m) => n + m.content.length + (m.reasoning?.length ?? 0),
-        0,
-      )
-      return Math.min(95, Math.round(total / 30) + 2)
+    ctxPercent(state): number | null {
+      if (!state.usage || !state.contextWindow) return null
+      return Math.min(100, (state.usage.total_tokens / state.contextWindow) * 100)
+    },
+    ctxTooltip(state): string {
+      if (!state.usage) return '尚无服务端 token 用量数据'
+      const used = state.usage.total_tokens.toLocaleString()
+      if (!state.contextWindow) return `本次请求 ${used} tokens · 模型上下文窗口未知`
+      const percent = Math.min(100, (state.usage.total_tokens / state.contextWindow) * 100)
+      return `上下文约 ${percent.toFixed(1)}% · ${used} / ${state.contextWindow.toLocaleString()} tokens`
     },
   },
   actions: {
@@ -47,15 +61,24 @@ export const useChatStore = defineStore('chat', {
       const n = this.workspaces.length + 1
       this.workspaces.push({ name: `工作区 ${n}`, conversations: [] })
     },
-    // 新建对话：清空当前会话（演示用途，消息本来就只存在内存里）。
     reset() {
       this.messages = []
       this.error = ''
       this.sending = false
+      this.usage = null
     },
-    // 由 ChatPage 订阅的 "chat:delta" 事件驱动：内容与思考增量分别追加
-    // 到最后的助手消息上（当前正在流式输出的那条）。
+    async loadContextWindow() {
+      const requestId = ++contextWindowRequestId
+      this.contextWindow = null
+      try {
+        const contextWindow = await GetModelContextWindow()
+        if (requestId === contextWindowRequestId) this.contextWindow = contextWindow
+      } catch {
+        // Compatible providers may not expose DeepSeek's model metadata endpoint.
+      }
+    },
     applyDelta(delta: ChatDeltaEvent) {
+      if (delta.usage) this.usage = delta.usage
       const last = this.messages[this.messages.length - 1]
       if (!last || last.role !== 'assistant') return
       if (delta.reasoning) {
@@ -65,7 +88,6 @@ export const useChatStore = defineStore('chat', {
         last.content += delta.content
       }
     },
-    // 由 "chat:tool" 事件驱动：往最后的助手消息上添加/完结工具调用卡片。
     applyTool(tool: ChatToolEvent) {
       const last = this.messages[this.messages.length - 1]
       if (!last || last.role !== 'assistant') return
@@ -74,7 +96,6 @@ export const useChatStore = defineStore('chat', {
         last.tools.push({ name: tool.name, status: 'run' })
         return
       }
-      // done:完结最近一张同名且还在运行的卡片。
       for (let i = last.tools.length - 1; i >= 0; i--) {
         if (last.tools[i].name === tool.name && last.tools[i].status === 'run') {
           last.tools[i].status = 'done'
@@ -93,6 +114,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.error = ''
+      this.usage = null
       this.draft = ''
       this.messages.push({ role: 'user', content: text })
       this.messages.push({ role: 'assistant', content: '' })
@@ -104,7 +126,7 @@ export const useChatStore = defineStore('chat', {
         .map((m) => ({ role: m.role, content: m.content }))
 
       try {
-        await SendMessage(history)
+        await SendMessage(history, this.effort)
       } catch (err) {
         this.error = String(err)
         const last = this.messages[this.messages.length - 1]

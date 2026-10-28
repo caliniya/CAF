@@ -48,5 +48,26 @@ type Delta struct {
 	Content   string
 	Reasoning string
 	ToolCalls []ToolCall
+	Usage     *TokenUsage
 	Done      bool
+}
+
+// TokenUsage 是模型服务返回的本次请求 token 用量。
+type TokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// StreamError 表示服务端在流中返回的错误对象。
+type StreamError struct {
+	Message string
+	Code    any
+}
+
+func (e *StreamError) Error() string {
+	if e.Code != nil {
+		return "模型服务错误: " + e.Message
+	}
+	return "模型服务错误: " + e.Message
 }

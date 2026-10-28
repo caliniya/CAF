@@ -4,7 +4,13 @@ package tests
 
 import (
 	"testing"
+	"time"
 
+	"context"
+	"net/http"
+	"net/http/httptest"
+
+	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
 
@@ -38,11 +44,105 @@ func TestEncodeRequestFixture(t *testing.T) {
 	want := `{"model":"deepseek-chat","messages":[` +
 		`{"role":"system","content":"你是 CAF 助手"},` +
 		`{"role":"user","content":"你好"}],` +
-		`"max_tokens":1024,"stream":true,` +
+		`"max_tokens":1024,"stream":true,"stream_options":{"include_usage":true},` +
 		`"tools":[{"type":"function","function":{"name":"read_file","description":"读取文件",` +
 		`"parameters":{"properties":{"path":{"type":"string"}},"type":"object"}}}]}`
 	if got != want {
 		t.Fatalf("unexpected encode:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestGetModelContextWindow(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Fatalf("unexpected authorization header: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"other","context_window":32000},{"id":"deepseek-chat","context_window":128000}]}`))
+	}))
+	defer server.Close()
+
+	client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL, APIKey: "sk-test"})
+	got, err := client.GetModelContextWindow(context.Background(), "deepseek-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 128000 {
+		t.Fatalf("unexpected context window: %d", got)
+	}
+}
+
+func TestNewAPIClientFallsBackToRootModelEndpoint(t *testing.T) {
+	paths := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Errorf("unexpected authorization header: %q", got)
+		}
+		if r.URL.Path == "/v1/models" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path != "/model" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000}`))
+	}))
+	defer server.Close()
+
+	client := netclient.NewAPIClient(netclient.Options{
+		ServerAddress: server.URL + "/v1",
+		APIKey:        "sk-test",
+		Model:         "deepseek-chat",
+	})
+
+	got, err := client.GetModelContextWindow(context.Background(), "deepseek-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 128000 {
+		t.Fatalf("unexpected context window: %d", got)
+	}
+	if primary := <-paths; primary != "/v1/models" {
+		t.Fatalf("unexpected primary endpoint: %q", primary)
+	}
+	if fallback := <-paths; fallback != "/model" {
+		t.Fatalf("unexpected fallback endpoint: %q", fallback)
+	}
+}
+
+func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
+	requested := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested <- struct{}{}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}]}`))
+	}))
+	defer server.Close()
+
+	client := netclient.NewAPIClient(netclient.Options{
+		ServerAddress: server.URL,
+		APIKey:        "sk-test",
+		Model:         "deepseek-chat",
+	})
+
+	select {
+	case <-requested:
+	case <-time.After(2 * time.Second):
+		t.Fatal("client did not automatically request model metadata")
+	}
+
+	models, err := client.GetModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].Name != "DeepSeek Chat" || models[0].ContextWindow != 128000 {
+		t.Fatalf("unexpected model info: %+v", models)
 	}
 }
 
@@ -77,7 +177,7 @@ func TestEncodeRequestToolRoundTrip(t *testing.T) {
 		`"function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}],` +
 		`"reasoning_content":"用户让我处理文件,先调用工具"},` +
 		`{"role":"tool","content":"文件内容","tool_call_id":"c1"}],` +
-		`"stream":true}`
+		`"stream":true,"stream_options":{"include_usage":true}}`
 	if got != want {
 		t.Fatalf("unexpected encode:\n got: %s\nwant: %s", got, want)
 	}

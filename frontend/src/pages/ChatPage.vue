@@ -17,6 +17,12 @@ onMounted(() => {
 })
 onUnmounted(() => offs.forEach((off) => off()))
 
+watch(
+  () => [configs.enables?.ServerAddress, configs.enables?.APIKey, configs.enabledModel],
+  () => chat.loadContextWindow(),
+  { immediate: true },
+)
+
 // 消息条数、正文/思考/工具卡变化(流式增量)时滚到底部。
 watch(
   () => {
@@ -119,14 +125,18 @@ watch(
           <label class="composer-chip">
             思考
             <select v-model="chat.effort">
-              <option>关闭</option>
-              <option>低</option>
-              <option>中</option>
-              <option>高</option>
+              <option value="none">关闭</option>
+              <option value="low">低</option>
+              <option value="high">中</option>
+              <option value="max">高</option>
             </select>
           </label>
-          <span class="ctx" title="上下文占用（演示用假数据）">
-            <!-- 圆环指示器:进度 = 周长 × 百分比,旋转 -90° 从顶部起画 -->
+          <span
+            class="ctx"
+            :data-tooltip="chat.ctxTooltip"
+            :aria-label="chat.ctxTooltip"
+            tabindex="0"
+          >
             <svg class="ctx-ring" viewBox="0 0 20 20" aria-hidden="true">
               <circle class="ctx-ring-bg" cx="10" cy="10" r="8" />
               <circle
@@ -134,10 +144,10 @@ watch(
                 cx="10"
                 cy="10"
                 r="8"
-                :style="{ strokeDashoffset: 50.27 * (1 - chat.ctxPercent / 100) }"
+                :class="{ 'ctx-ring-unknown': chat.ctxPercent === null }"
+                :style="{ strokeDashoffset: 50.27 * (1 - (chat.ctxPercent ?? 0) / 100) }"
               />
             </svg>
-            {{ chat.ctxPercent }}%
           </span>
 
           <button
