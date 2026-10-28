@@ -54,14 +54,14 @@ func TestEncodeRequestFixture(t *testing.T) {
 
 func TestGetModelContextWindow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/models" {
+		if r.Method != http.MethodGet || r.URL.Path != "/model" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
 			t.Fatalf("unexpected authorization header: %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"other","context_window":32000},{"id":"deepseek-chat","context_window":128000}]}`))
+		_, _ = w.Write([]byte(`{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000}`))
 	}))
 	defer server.Close()
 
@@ -75,53 +75,15 @@ func TestGetModelContextWindow(t *testing.T) {
 	}
 }
 
-func TestNewAPIClientFallsBackToRootModelEndpoint(t *testing.T) {
-	paths := make(chan string, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths <- r.URL.Path
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
-			t.Errorf("unexpected authorization header: %q", got)
-		}
-		if r.URL.Path == "/v1/models" {
-			http.NotFound(w, r)
-			return
-		}
-		if r.URL.Path != "/model" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000}`))
-	}))
-	defer server.Close()
-
-	client := netclient.NewAPIClient(netclient.Options{
-		ServerAddress: server.URL + "/v1",
-		APIKey:        "sk-test",
-		Model:         "deepseek-chat",
-	})
-
-	got, err := client.GetModelContextWindow(context.Background(), "deepseek-chat")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != 128000 {
-		t.Fatalf("unexpected context window: %d", got)
-	}
-	if primary := <-paths; primary != "/v1/models" {
-		t.Fatalf("unexpected primary endpoint: %q", primary)
-	}
-	if fallback := <-paths; fallback != "/model" {
-		t.Fatalf("unexpected fallback endpoint: %q", fallback)
-	}
-}
-
 func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
 	requested := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/model" {
+			t.Errorf("unexpected endpoint: %s", r.URL.Path)
+		}
 		requested <- struct{}{}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}]}`))
+		_, _ = w.Write([]byte(`{"data":{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}}`))
 	}))
 	defer server.Close()
 

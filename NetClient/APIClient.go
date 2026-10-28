@@ -33,7 +33,7 @@ type APIClient struct {
 	modelInfoErr   error
 }
 
-// ModelInfo 描述 /models 返回的模型元数据。
+// ModelInfo 描述模型元数据。
 type ModelInfo struct {
 	ID               string   `json:"id"`
 	Object           string   `json:"object"`
@@ -59,7 +59,9 @@ func NewAPIClient(opts Options) *APIClient {
 
 func (c *APIClient) loadModelInfo() {
 	defer close(c.modelInfoReady)
-	c.modelInfo, c.modelInfoErr = c.fetchModelInfo(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c.modelInfo, c.modelInfoErr = c.fetchModelInfo(ctx)
 }
 
 func (c *APIClient) fetchModelInfo(ctx context.Context) ([]ModelInfo, error) {
@@ -67,31 +69,59 @@ func (c *APIClient) fetchModelInfo(ctx context.Context) ([]ModelInfo, error) {
 		return nil, errors.New("客户端未配置")
 	}
 
-	primaryURL := strings.TrimRight(c.Config.ServerAddress, "/") + "/models"
-	primaryCtx, cancelPrimary := context.WithTimeout(ctx, 5*time.Second)
-	models, primaryErr := c.fetchModelsAt(primaryCtx, primaryURL, false)
-	cancelPrimary()
-	if primaryErr == nil && (c.Config.Model == "" || containsModel(models, c.Config.Model)) {
-		return models, nil
+	endpoint, err := modelEndpointAtRoot(c.Config.ServerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("生成模型信息查询地址失败：%w", err)
 	}
-	if primaryErr == nil {
-		primaryErr = fmt.Errorf("模型列表中未找到 %q", c.Config.Model)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
+
+	client := c.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("获取模型信息失败：%w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("获取模型信息失败：%s", response.Status)
 	}
 
-	fallbackURL, err := modelEndpointAtRoot(c.Config.ServerAddress)
+	body, err := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
 	if err != nil {
-		return nil, errors.Join(primaryErr, fmt.Errorf("生成根路径模型查询地址失败：%w", err))
+		return nil, fmt.Errorf("读取模型信息失败：%w", err)
 	}
-	fallbackCtx, cancelFallback := context.WithTimeout(ctx, 5*time.Second)
-	fallbackModels, fallbackErr := c.fetchModelsAt(fallbackCtx, fallbackURL, true)
-	cancelFallback()
-	if fallbackErr == nil && c.Config.Model != "" && !containsModel(fallbackModels, c.Config.Model) {
-		fallbackErr = fmt.Errorf("根路径模型信息中未找到 %q", c.Config.Model)
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
 	}
-	if fallbackErr != nil {
-		return nil, errors.Join(primaryErr, fmt.Errorf("回退查询失败：%w", fallbackErr))
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("解析模型信息失败：%w", err)
 	}
-	return fallbackModels, nil
+	if len(envelope.Data) > 0 {
+		var models []ModelInfo
+		if err := json.Unmarshal(envelope.Data, &models); err == nil {
+			return models, nil
+		}
+		var model ModelInfo
+		if err := json.Unmarshal(envelope.Data, &model); err == nil && model.ID != "" {
+			return []ModelInfo{model}, nil
+		}
+		return nil, errors.New("模型信息的 data 字段格式无效")
+	}
+	var model ModelInfo
+	if err := json.Unmarshal(body, &model); err != nil {
+		return nil, fmt.Errorf("解析模型信息失败：%w", err)
+	}
+	if model.ID == "" {
+		return nil, errors.New("模型信息响应未包含模型 ID")
+	}
+	return []ModelInfo{model}, nil
 }
 
 func modelEndpointAtRoot(serverAddress string) (string, error) {
@@ -107,70 +137,6 @@ func modelEndpointAtRoot(serverAddress string) (string, error) {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
-}
-
-func (c *APIClient) fetchModelsAt(ctx context.Context, endpoint string, allowSingle bool) ([]ModelInfo, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Accept", "application/json")
-	if c.Config.APIKey != "" {
-		request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
-	}
-
-	client := c.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("获取模型列表失败：%w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取模型列表失败：%s", response.Status)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("读取模型列表失败：%w", err)
-	}
-	var models struct {
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(body, &models); err != nil {
-		return nil, fmt.Errorf("解析模型列表失败：%w", err)
-	}
-	if len(models.Data) > 0 {
-		var list []ModelInfo
-		if err := json.Unmarshal(models.Data, &list); err == nil {
-			return list, nil
-		}
-		if allowSingle {
-			var item ModelInfo
-			if err := json.Unmarshal(models.Data, &item); err == nil && item.ID != "" {
-				return []ModelInfo{item}, nil
-			}
-		}
-		return nil, errors.New("模型列表的 data 字段格式无效")
-	}
-	if allowSingle {
-		var item ModelInfo
-		if err := json.Unmarshal(body, &item); err == nil && item.ID != "" {
-			return []ModelInfo{item}, nil
-		}
-	}
-	return nil, errors.New("模型列表响应未包含模型数据")
-}
-
-func containsModel(models []ModelInfo, model string) bool {
-	for _, item := range models {
-		if item.ID == model {
-			return true
-		}
-	}
-	return false
 }
 
 // GetModels 等待初始化时自动发起的模型信息查询，并返回查询结果。
@@ -223,7 +189,7 @@ func (c *APIClient) StreamChat(
 		return fmt.Errorf("编码请求失败：%w", err)
 	}
 
-	url := strings.TrimRight(c.Config.ServerAddress, "/") + "/chat/completions"
+	url := strings.TrimRight(c.Config.ServerAddress, "/")
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
 		return err

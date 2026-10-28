@@ -71,3 +71,13 @@ func (e *StreamError) Error() string {
 	}
 	return "模型服务错误: " + e.Message
 }
+
+// 表示一种模型
+type Model struct {
+	Name              string
+	MaxContext        int
+	Max_output_tokens int
+	Input_modalities  []string
+	output_modalities []string
+	SupportedLevels   []string
+}
