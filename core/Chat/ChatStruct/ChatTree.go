@@ -23,6 +23,6 @@ func (tree *ChatTree) ToChatRequest() *apiImpl.ChatRequest {
 
 //自然是用户开始的所以说只有一条
 func (tree *ChatTree) Start(text apiImpl.ChatMessage) *ChatNode {
-	n := &ChatNode{}
+	n := &ChatNode{Child: []apiImpl.ChatMessage{text}, Choice: 0}
 	return n
 }
