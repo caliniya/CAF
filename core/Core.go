@@ -2,9 +2,12 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 
 	netclient "github.com/caliniya/caf/NetClient"
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	"github.com/caliniya/caf/platform"
 )
 
@@ -23,11 +26,55 @@ type Configs struct {
 }
 
 type Config struct {
-	Name          string   `json:"Name"`
-	ServerAddress string   `json:"ServerAddress"`
-	APIKey        string   `json:"APIKey"`
-	Model         []string `json:"Model"`
-	EnabledModel  string   `json:"EnabledModel"`
+	Name              string          `json:"Name"`
+	ServerAddress     string          `json:"ServerAddress"`
+	Protocol          string          `json:"Protocol"`
+	APIKey            string          `json:"APIKey"`
+	Model             []apiImpl.Model `json:"Model"`
+	EnabledModel      string          `json:"EnabledModel"`
+	legacyModelFormat bool            `json:"-"`
+}
+
+func (c *Config) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Name          string          `json:"Name"`
+		ServerAddress string          `json:"ServerAddress"`
+		Protocol      string          `json:"Protocol"`
+		APIKey        string          `json:"APIKey"`
+		Model         json.RawMessage `json:"Model"`
+		EnabledModel  string          `json:"EnabledModel"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.Name = raw.Name
+	c.ServerAddress = raw.ServerAddress
+	c.Protocol = raw.Protocol
+	if c.Protocol == "" {
+		c.Protocol = "chat-completions"
+	}
+	c.APIKey = raw.APIKey
+	c.EnabledModel = raw.EnabledModel
+	if len(raw.Model) == 0 || string(raw.Model) == "null" {
+		c.Model = nil
+		return nil
+	}
+	if err := json.Unmarshal(raw.Model, &c.Model); err == nil {
+		return nil
+	}
+	var legacy []string
+	if err := json.Unmarshal(raw.Model, &legacy); err != nil {
+		return fmt.Errorf("解析模型配置失败：%w", err)
+	}
+	c.legacyModelFormat = true
+	c.Model = make([]apiImpl.Model, 0, len(legacy))
+	for _, name := range legacy {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			c.Model = append(c.Model, apiImpl.Model{ID: name, Name: name})
+		}
+	}
+	return nil
 }
 
 func Init() {
@@ -45,9 +92,22 @@ func LoadConfig() error {
 	}
 	resolveEnabled()
 
+	// 旧字符串格式转换为结构体后立即保存，以持久化新配置格式。
+	needsSave := false
+	if Platform.Configs.ALLConfig != nil {
+		for i := range *Platform.Configs.ALLConfig {
+			needsSave = needsSave || (*Platform.Configs.ALLConfig)[i].legacyModelFormat
+		}
+	}
+	if needsSave {
+		if err := SaveConfig(); err != nil {
+			return fmt.Errorf("保存迁移后的模型配置失败：%w", err)
+		}
+	}
+
 	// 启用项没记住模型时默认选第一个，开箱即用；仅在内存中生效，随下次保存落盘。
 	if cfg := Platform.Configs.EnablesConfig; cfg != nil && cfg.EnabledModel == "" && len(cfg.Model) > 0 {
-		cfg.EnabledModel = cfg.Model[0]
+		cfg.EnabledModel = cfg.Model[0].ID
 	}
 	return nil
 }
@@ -72,11 +132,11 @@ func resolveEnabled() {
 
 // sameConfig 名称不参与比较：改名不影响启用项的归位。
 func sameConfig(a, b *Config) bool {
-	if a.ServerAddress != b.ServerAddress || a.APIKey != b.APIKey || len(a.Model) != len(b.Model) {
+	if a.ServerAddress != b.ServerAddress || a.Protocol != b.Protocol || a.APIKey != b.APIKey || len(a.Model) != len(b.Model) {
 		return false
 	}
 	for i := range a.Model {
-		if a.Model[i] != b.Model[i] {
+		if a.Model[i].ID != b.Model[i].ID {
 			return false
 		}
 	}

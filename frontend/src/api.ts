@@ -2,10 +2,22 @@
 export interface Config {
   Name: string
   ServerAddress: string
+  Protocol: 'chat-completions'
   APIKey: string
-  Model: string[]
+  Model: Model[]
   // 该配置自己记住的启用模型；每个提供商独立记忆，切换提供商自动恢复。
   EnabledModel: string
+}
+
+export interface Model {
+  id: string
+  name?: string
+  context_window?: number
+  max_output_tokens?: number
+  input_modalities?: string[]
+  output_modalities?: string[]
+  supported_levels?: string[]
+  default_level?: string
 }
 
 export interface Configs {
@@ -16,6 +28,9 @@ export interface Configs {
 interface CoreBindings {
   LoadConfigs(): Promise<Configs>
   GetModelContextWindow(): Promise<number>
+  ProbeModels(serverAddress: string, apiKey: string): Promise<ModelProbeResult>
+  AddModelConfig(name: string, serverAddress: string, protocol: Config['Protocol'], apiKey: string, models: Model[]): Promise<Configs>
+  RefreshModelConfig(index: number, serverAddress: string, models: Model[]): Promise<Configs>
   SelectConfig(index: number): Promise<Configs>
   SelectModel(model: string): Promise<Configs>
   RenameConfig(index: number, name: string): Promise<Configs>
@@ -30,6 +45,11 @@ interface CoreBindings {
    *     "chat:tool"   载荷为 JSON 字符串 {"name": string, "event": "start"|"done"}
    */
   SendMessage(history: ChatTurn[], reasoningEffort: string): Promise<void>
+}
+
+export interface ModelProbeResult {
+  models: Model[]
+  serverAddress: string
 }
 
 // window.go 由 Wails 运行时注入，时机可能晚于页面脚本，短暂轮询等待。
@@ -50,6 +70,24 @@ export function LoadConfigs(): Promise<Configs> {
 
 export function GetModelContextWindow(): Promise<number> {
   return bridge().then((c) => c.GetModelContextWindow())
+}
+
+export function ProbeModels(serverAddress: string, apiKey: string): Promise<ModelProbeResult> {
+  return bridge().then((c) => c.ProbeModels(serverAddress, apiKey))
+}
+
+export function AddModelConfig(
+  name: string,
+  serverAddress: string,
+  protocol: Config['Protocol'],
+  apiKey: string,
+  models: Model[],
+): Promise<Configs> {
+  return bridge().then((c) => c.AddModelConfig(name, serverAddress, protocol, apiKey, models))
+}
+
+export function RefreshModelConfig(index: number, serverAddress: string, models: Model[]): Promise<Configs> {
+  return bridge().then((c) => c.RefreshModelConfig(index, serverAddress, models))
 }
 
 export function SelectConfig(index: number): Promise<Configs> {

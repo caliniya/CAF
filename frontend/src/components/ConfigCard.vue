@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useConfigsStore } from '../stores/configs'
-import type { Config } from '../api'
+import ModelSelectionDialog from './ModelSelectionDialog.vue'
+import type { Config, Model } from '../api'
 
 const props = defineProps<{ config: Config; index: number }>()
 const store = useConfigsStore()
@@ -17,6 +18,47 @@ const keyDisplay = computed(() => {
 })
 
 const enabled = computed(() => store.isEnabled(props.config))
+const refreshing = ref(false)
+const refreshMessage = ref('')
+const selectionOpen = ref(false)
+const discoveredModels = ref<Model[]>([])
+const probedServerAddress = ref('')
+
+async function refreshModels() {
+  refreshing.value = true
+  refreshMessage.value = ''
+  try {
+    const result = await store.probeModels(props.config.ServerAddress, props.config.APIKey)
+    discoveredModels.value = Array.isArray(result?.models) ? result.models : []
+    probedServerAddress.value = result?.serverAddress || props.config.ServerAddress
+    selectionOpen.value = true
+  } catch (error) {
+    refreshMessage.value = `重新探测失败：${String(error)}`
+  } finally {
+    refreshing.value = false
+  }
+}
+
+async function saveRefreshedModels(selected: Model[]) {
+  selectionOpen.value = false
+  refreshing.value = true
+  refreshMessage.value = ''
+  try {
+    await store.refreshModelConfig(props.index, probedServerAddress.value, selected)
+    refreshMessage.value = `已保存 ${selected.length} 个模型。`
+  } catch (error) {
+    refreshMessage.value = `保存探测结果失败：${String(error)}`
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function modelTooltip(model: Config['Model'][number]) {
+  const details = [`模型 ID: ${model.id}`]
+  if (model.context_window) details.push(`上下文: ${model.context_window.toLocaleString()} tokens`)
+  if (model.max_output_tokens) details.push(`最大输出: ${model.max_output_tokens.toLocaleString()} tokens`)
+  return details.join(' · ')
+}
 
 // 行内重命名编辑器的局部状态。
 const renaming = ref(false)
@@ -91,19 +133,19 @@ function submitRename() {
         <template v-if="config.Model?.length">
           <span
             v-for="model in config.Model"
-            :key="model"
+            :key="model.id"
             class="badge badge-clickable"
             role="button"
             tabindex="0"
-            :class="{ 'badge-active': enabled && model === store.enabledModel }"
+            :class="{ 'badge-active': enabled && model.id === store.enabledModel }"
             :title="
-              enabled && model === store.enabledModel ? '当前启用的模型' : undefined
+              enabled && model.id === store.enabledModel ? modelTooltip(model) : model.name
             "
-            @click="store.selectModel(index, model)"
-            @keydown.enter.prevent="store.selectModel(index, model)"
-            @keydown.space.prevent="store.selectModel(index, model)"
+            @click="store.selectModel(index, model.id)"
+            @keydown.enter.prevent="store.selectModel(index, model.id)"
+            @keydown.space.prevent="store.selectModel(index, model.id)"
           >
-            {{ model }}
+            {{ model.name || model.id }}
           </span>
           <span v-if="enabled && !store.enabledModel" class="field-hint">
             尚未选择模型，点击模型即可启用。
@@ -125,6 +167,22 @@ function submitRename() {
       <button type="button" class="btn-secondary btn-small" @click="beginRename">
         重命名
       </button>
+      <button
+        type="button"
+        class="btn-secondary btn-small"
+        :disabled="refreshing"
+        @click="refreshModels"
+      >
+        {{ refreshing ? '正在探测…' : '重新探测' }}
+      </button>
     </div>
+    <p v-if="refreshMessage" class="muted" role="status">{{ refreshMessage }}</p>
+    <ModelSelectionDialog
+      :open="selectionOpen"
+      :models="discoveredModels"
+      confirm-label="保存选中模型"
+      @confirm="saveRefreshedModels"
+      @cancel="selectionOpen = false"
+    />
   </article>
 </template>

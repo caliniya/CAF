@@ -54,7 +54,7 @@ func TestEncodeRequestFixture(t *testing.T) {
 
 func TestGetModelContextWindow(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/model" {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
@@ -65,7 +65,7 @@ func TestGetModelContextWindow(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL, APIKey: "sk-test"})
+	client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL + "/v1", APIKey: "sk-test"})
 	got, err := client.GetModelContextWindow(context.Background(), "deepseek-chat")
 	if err != nil {
 		t.Fatal(err)
@@ -78,17 +78,20 @@ func TestGetModelContextWindow(t *testing.T) {
 func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
 	requested := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/model" {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" {
 			t.Errorf("unexpected endpoint: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Errorf("unexpected authorization header: %q", got)
 		}
 		requested <- struct{}{}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","object":"model","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}]}`))
 	}))
 	defer server.Close()
 
 	client := netclient.NewAPIClient(netclient.Options{
-		ServerAddress: server.URL,
+		ServerAddress: server.URL + "/chat/completions",
 		APIKey:        "sk-test",
 		Model:         "deepseek-chat",
 	})
@@ -103,9 +106,101 @@ func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 || models[0].Name != "DeepSeek Chat" || models[0].ContextWindow != 128000 {
+	if len(models) != 1 || models[0].Name != "DeepSeek Chat" || models[0].MaxContext != 128000 {
 		t.Fatalf("unexpected model info: %+v", models)
 	}
+}
+
+func TestModelEndpointFallsBackBetweenV1AndRoot(t *testing.T) {
+	tests := []struct {
+		name         string
+		serverPath   string
+		fallbackPath string
+	}{
+		{name: "v1 to root", serverPath: "/v1/models", fallbackPath: "/models"},
+		{name: "root to v1", serverPath: "/models", fallbackPath: "/v1/models"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requested := make(chan string, 2)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requested <- r.URL.Path
+				if r.URL.Path == test.serverPath {
+					http.NotFound(w, r)
+					return
+				}
+				if r.URL.Path != test.fallbackPath {
+					t.Errorf("unexpected endpoint: %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"model-1","object":"model"}]}`))
+			}))
+			defer server.Close()
+
+			basePath := "/"
+			if test.serverPath == "/v1/models" {
+				basePath = "/v1"
+			}
+			client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL + basePath})
+			models, err := client.GetModels(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(models) != 1 || models[0].ID != "model-1" {
+				t.Fatalf("unexpected models: %+v", models)
+			}
+			if first := <-requested; first != test.serverPath {
+				t.Fatalf("first endpoint = %q, want %q", first, test.serverPath)
+			}
+			if fallback := <-requested; fallback != test.fallbackPath {
+				t.Fatalf("fallback endpoint = %q, want %q", fallback, test.fallbackPath)
+			}
+		})
+	}
+}
+
+func TestProbeChatEndpoint(t *testing.T) {
+	t.Run("uses input path when accepted", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/custom" {
+				t.Errorf("unexpected endpoint: %s", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		client := &netclient.APIClient{Client: server.Client(), Config: &netclient.Options{ServerAddress: server.URL + "/custom"}}
+		got, err := client.ProbeChatEndpoint(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != server.URL+"/custom" {
+			t.Fatalf("unexpected endpoint: %s", got)
+		}
+	})
+
+	t.Run("appends chat completions after not found", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1" {
+				http.NotFound(w, r)
+				return
+			}
+			if r.URL.Path != "/v1/chat/completions" {
+				t.Errorf("unexpected endpoint: %s", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer server.Close()
+
+		client := &netclient.APIClient{Client: server.Client(), Config: &netclient.Options{ServerAddress: server.URL + "/v1"}}
+		got, err := client.ProbeChatEndpoint(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != server.URL+"/v1/chat/completions" {
+			t.Fatalf("unexpected endpoint: %s", got)
+		}
+	})
 }
 
 // 工具调用往返:assistant 的 ToolCalls 与 tool 结果消息(带 tool_call_id);

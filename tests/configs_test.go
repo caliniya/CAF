@@ -3,8 +3,10 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/platform"
 )
@@ -221,6 +223,98 @@ func TestLoadConfigDefaultsToFirstModel(t *testing.T) {
 	enabled := core.Platform.Configs.EnablesConfig
 	if enabled == nil || enabled.EnabledModel != "m1" {
 		t.Fatalf("default model not applied: %+v", enabled)
+	}
+}
+
+func TestLoadConfigMigratesLegacyModelNames(t *testing.T) {
+	file := writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1","m2"]}]}`)
+	useConfigFile(t, file)
+
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	models := (*core.Platform.Configs.ALLConfig)[0].Model
+	if len(models) != 2 || models[0].ID != "m1" || models[0].Name != "m1" {
+		t.Fatalf("legacy models not converted: %+v", models)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"Model": ["m1"`) || !strings.Contains(string(data), `"id": "m1"`) {
+		t.Fatalf("legacy model config was not migrated on disk: %s", data)
+	}
+}
+
+func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
+	file := writeConfig(t, `{"config":[]}`)
+	useConfigFile(t, file)
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	configs, err := core.Platform.AddModelConfig("测试服务", "https://example.com/v1", "chat-completions", "sk-test", []apiImpl.Model{{
+		ID:              "m1",
+		Name:            "Model One",
+		MaxContext:      32768,
+		MaxOutputTokens: 4096,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configs.EnablesConfig == nil || configs.EnablesConfig.EnabledModel != "m1" {
+		t.Fatalf("new model config was not enabled: %+v", configs.EnablesConfig)
+	}
+	if got := configs.EnablesConfig.Model[0].MaxContext; got != 32768 {
+		t.Fatalf("model metadata not retained: %d", got)
+	}
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if got := core.Platform.Configs.EnablesConfig.Model[0].ID; got != "m1" {
+		t.Fatalf("model config not persisted: %q", got)
+	}
+}
+
+func TestRefreshModelConfigPersistsUpdatedModels(t *testing.T) {
+	file := writeConfig(t, `{"config":[{"ServerAddress":"https://old.example/v1/chat/completions","APIKey":"sk-test","Model":[{"id":"keep","name":"Keep"},{"id":"remove","name":"Remove"}],"EnabledModel":"keep"}],"EnablesConfig":{"ServerAddress":"https://old.example/v1/chat/completions","APIKey":"sk-test","Model":[{"id":"keep","name":"Keep"},{"id":"remove","name":"Remove"}],"EnabledModel":"keep"}}`)
+	useConfigFile(t, file)
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	configs, err := core.Platform.RefreshModelConfig(0, "https://new.example/chat/completions", []apiImpl.Model{{ID: "keep", Name: "Keep updated"}, {ID: "new", Name: "New"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := (*configs.ALLConfig)[0]
+	if entry.ServerAddress != "https://new.example/chat/completions" || entry.EnabledModel != "keep" || len(entry.Model) != 2 {
+		t.Fatalf("unexpected refreshed config: %+v", entry)
+	}
+	if configs.EnablesConfig != &(*configs.ALLConfig)[0] {
+		t.Fatal("enabled config no longer points to refreshed entry")
+	}
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if got := core.Platform.Configs.EnablesConfig; got == nil || got.ServerAddress != "https://new.example/chat/completions" || got.EnabledModel != "keep" {
+		t.Fatalf("refreshed config not persisted: %+v", got)
+	}
+}
+
+func TestRefreshModelConfigRejectsEmptyModelsWithoutChanges(t *testing.T) {
+	file := writeConfig(t, `{"config":[{"ServerAddress":"https://old.example","APIKey":"sk-test","Model":[{"id":"keep"}],"EnabledModel":"keep"}]}`)
+	useConfigFile(t, file)
+	if err := core.LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := core.Platform.RefreshModelConfig(0, "https://new.example", nil); err == nil {
+		t.Fatal("empty model list accepted")
+	}
+	entry := (*core.Platform.Configs.ALLConfig)[0]
+	if entry.ServerAddress != "https://old.example" || len(entry.Model) != 1 || entry.EnabledModel != "keep" {
+		t.Fatalf("failed refresh changed existing config: %+v", entry)
 	}
 }
 

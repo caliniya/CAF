@@ -983,10 +983,15 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   display: flex;
   width: 38px;
   height: 38px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-small);
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
 }
 
 .settings-btn svg {
@@ -998,6 +1003,105 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
 .settings-btn.active {
   background: var(--tonal);
   color: var(--accent);
+}
+
+.model-add-form {
+  padding-block: 20px;
+  border-block: 1px solid var(--outline);
+}
+
+.model-options {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-block: 1px solid var(--outline);
+}
+
+.model-options legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.model-options .check-line {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.model-picker {
+  width: min(620px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(80vh, 760px);
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 80px rgb(22 29 50 / 24%);
+}
+
+.model-picker::backdrop {
+  background: rgb(22 29 50 / 48%);
+  backdrop-filter: blur(2px);
+}
+
+.model-picker-content {
+  gap: 18px;
+  padding: 24px;
+}
+
+.model-picker-header,
+.model-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.model-picker-header p {
+  margin-top: 4px;
+}
+
+.model-picker-list {
+  display: grid;
+  gap: 4px;
+  max-height: min(42vh, 420px);
+  overflow: auto;
+  padding: 8px 0;
+  border-block: 1px solid var(--outline);
+}
+
+.model-picker-item {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: var(--radius-small);
+}
+
+.model-picker-item:hover {
+  background: var(--page);
+}
+
+.model-picker-item span {
+  overflow-wrap: anywhere;
+}
+
+.model-picker-manual input {
+  flex: 1;
+}
+
+.model-picker-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 520px) {
+  .model-picker-content {
+    padding: 18px;
+  }
+
+  .model-picker-header {
+    align-items: flex-start;
+  }
 }
 
 /* 任务列表的文件夹图标。 */

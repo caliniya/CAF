@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
@@ -24,25 +23,13 @@ type Options struct {
 
 // APIClient 是传输层:负责 HTTP、认证头与 SSE 分帧。
 // 本身不持有对话状态——增量通过 onDelta 回调即时上抛,
-// 因此同一个客户端可被多个对话并发使用。
+// 因此同一个客户端可被多个对话并发使用(当然了我会启动多个使用的)。
 type APIClient struct {
 	Client         *http.Client
 	Config         *Options
 	modelInfoReady chan struct{}
 	modelInfo      []ModelInfo
 	modelInfoErr   error
-}
-
-// ModelInfo 描述模型元数据。
-type ModelInfo struct {
-	ID               string   `json:"id"`
-	Object           string   `json:"object"`
-	OwnedBy          string   `json:"owned_by"`
-	Name             string   `json:"name"`
-	ContextWindow    int      `json:"context_window"`
-	MaxOutputTokens  int      `json:"max_output_tokens"`
-	InputModalities  []string `json:"input_modalities"`
-	OutputModalities []string `json:"output_modalities"`
 }
 
 // NewAPIClient 构造客户端并在后台自动尝试获取模型元数据。
@@ -57,119 +44,50 @@ func NewAPIClient(opts Options) *APIClient {
 	return client
 }
 
-func (c *APIClient) loadModelInfo() {
-	defer close(c.modelInfoReady)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	c.modelInfo, c.modelInfoErr = c.fetchModelInfo(ctx)
-}
-
-func (c *APIClient) fetchModelInfo(ctx context.Context) ([]ModelInfo, error) {
+// ProbeChatEndpoint 先检查用户输入的地址；仅当它返回 404 时，再尝试追加 Chat Completions 路径。
+func (c *APIClient) ProbeChatEndpoint(ctx context.Context) (string, error) {
 	if c == nil || c.Config == nil {
-		return nil, errors.New("客户端未配置")
+		return "", errors.New("客户端未配置")
 	}
-
-	endpoint, err := modelEndpointAtRoot(c.Config.ServerAddress)
-	if err != nil {
-		return nil, fmt.Errorf("生成模型信息查询地址失败：%w", err)
+	base := strings.TrimSpace(c.Config.ServerAddress)
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("无效服务地址 %q", base)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
+	candidates := []string{parsed.String()}
+	if !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/chat/completions") {
+		fallback := *parsed
+		fallback.Path = strings.TrimRight(fallback.Path, "/") + "/chat/completions"
+		fallback.RawPath = ""
+		candidates = append(candidates, fallback.String())
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
 
 	client := c.Client
 	if client == nil {
 		client = http.DefaultClient
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, fmt.Errorf("获取模型信息失败：%w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("获取模型信息失败：%s", response.Status)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
-	if err != nil {
-		return nil, fmt.Errorf("读取模型信息失败：%w", err)
-	}
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, fmt.Errorf("解析模型信息失败：%w", err)
-	}
-	if len(envelope.Data) > 0 {
-		var models []ModelInfo
-		if err := json.Unmarshal(envelope.Data, &models); err == nil {
-			return models, nil
+	for _, endpoint := range candidates {
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(`{"model":"__caf_probe__","messages":[],"stream":false}`))
+		if err != nil {
+			return "", err
 		}
-		var model ModelInfo
-		if err := json.Unmarshal(envelope.Data, &model); err == nil && model.ID != "" {
-			return []ModelInfo{model}, nil
+		request.Header.Set("Content-Type", "application/json")
+		if c.Config.APIKey != "" {
+			request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
 		}
-		return nil, errors.New("模型信息的 data 字段格式无效")
-	}
-	var model ModelInfo
-	if err := json.Unmarshal(body, &model); err != nil {
-		return nil, fmt.Errorf("解析模型信息失败：%w", err)
-	}
-	if model.ID == "" {
-		return nil, errors.New("模型信息响应未包含模型 ID")
-	}
-	return []ModelInfo{model}, nil
-}
-
-func modelEndpointAtRoot(serverAddress string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(serverAddress))
-	if err != nil {
-		return "", err
-	}
-	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("无效服务地址 %q", serverAddress)
-	}
-	parsed.Path = "/model"
-	parsed.RawPath = ""
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String(), nil
-}
-
-// GetModels 等待初始化时自动发起的模型信息查询，并返回查询结果。
-func (c *APIClient) GetModels(ctx context.Context) ([]ModelInfo, error) {
-	if c == nil || c.modelInfoReady == nil {
-		return nil, errors.New("客户端未初始化")
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.modelInfoReady:
-	}
-	if c.modelInfoErr != nil {
-		return nil, c.modelInfoErr
-	}
-	return append([]ModelInfo(nil), c.modelInfo...), nil
-}
-
-// GetModelContextWindow 从自动获取的模型信息中读取上下文窗口容量。
-func (c *APIClient) GetModelContextWindow(ctx context.Context, model string) (int, error) {
-	models, err := c.GetModels(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, item := range models {
-		if item.ID == model {
-			if item.ContextWindow <= 0 {
-				return 0, fmt.Errorf("模型 %q 未提供有效的上下文窗口", model)
+		response, err := client.Do(request)
+		if err != nil {
+			if endpoint == candidates[len(candidates)-1] {
+				return "", fmt.Errorf("探测聊天接口失败：%w", err)
 			}
-			return item.ContextWindow, nil
+			continue
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			return endpoint, nil
 		}
 	}
-	return 0, fmt.Errorf("模型列表中未找到 %q", model)
+	return candidates[0], nil
 }
 
 // StreamChat 发起一次流式对话:编码请求 → POST → 按行分帧 SSE →

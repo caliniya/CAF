@@ -1,5 +1,7 @@
 package apiImpl
 
+import "encoding/json"
+
 // ChatMessage 是一条对话消息。
 type ChatMessage struct {
 	Role string // "system" | "user" | "assistant" | "tool"
@@ -72,12 +74,49 @@ func (e *StreamError) Error() string {
 	return "模型服务错误: " + e.Message
 }
 
-// 表示一种模型
+// Model 表示模型服务返回的模型元数据。
 type Model struct {
-	Name              string
-	MaxContext        int
-	Max_output_tokens int
-	Input_modalities  []string
-	output_modalities []string
-	SupportedLevels   []string
+	ID               string   `json:"id"`
+	Name             string   `json:"name,omitempty"`
+	MaxContext       int      `json:"context_window,omitempty"`
+	MaxOutputTokens  int      `json:"max_output_tokens,omitempty"`
+	InputModalities  []string `json:"input_modalities,omitempty"`
+	OutputModalities []string `json:"output_modalities,omitempty"`
+	SupportedLevels  []string `json:"supported_levels,omitempty"`
+	DefaultLevel     string   `json:"default_level,omitempty"`
+}
+
+func (m *Model) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID               string   `json:"id"`
+		Name             string   `json:"name"`
+		ContextWindow    int      `json:"context_window"`
+		MaxOutputTokens  int      `json:"max_output_tokens"`
+		InputModalities  []string `json:"input_modalities"`
+		OutputModalities []string `json:"output_modalities"`
+		SupportedLevels  []string `json:"supported_levels"`
+		DefaultLevel     string   `json:"default_level"`
+		Effort           struct {
+			SupportedLevels []string `json:"supported_levels"`
+			DefaultLevel    string   `json:"default_level"`
+		} `json:"effort"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.ID = raw.ID
+	m.Name = raw.Name
+	m.MaxContext = raw.ContextWindow
+	m.MaxOutputTokens = raw.MaxOutputTokens
+	m.InputModalities = raw.InputModalities
+	m.OutputModalities = raw.OutputModalities
+	m.SupportedLevels = raw.SupportedLevels
+	m.DefaultLevel = raw.DefaultLevel
+	if len(m.SupportedLevels) == 0 {
+		m.SupportedLevels = raw.Effort.SupportedLevels
+	}
+	if m.DefaultLevel == "" {
+		m.DefaultLevel = raw.Effort.DefaultLevel
+	}
+	return nil
 }

@@ -4,8 +4,12 @@ import {
   SelectConfig,
   SelectModel,
   RenameConfig,
+  ProbeModels,
+  AddModelConfig,
+  RefreshModelConfig,
   type Config,
   type Configs,
+  type Model,
 } from '../api'
 
 // 全局配置状态：页面切换时保留，避免重复读取配置文件。
@@ -73,6 +77,25 @@ export const useConfigsStore = defineStore('configs', {
     },
     rename(index: number, name: string) {
       return this.run(() => RenameConfig(index, name))
+    },
+    probeModels(serverAddress: string, apiKey: string) {
+      return ProbeModels(serverAddress, apiKey)
+    },
+    async refreshModelConfig(index: number, serverAddress: string, models: Model[]) {
+      if (models.length === 0) throw new Error('没有选择模型，原配置未更改')
+      this.apply(await RefreshModelConfig(index, serverAddress, models))
+    },
+    addModelConfig(name: string, serverAddress: string, protocol: Config['Protocol'], apiKey: string, models: Model[]) {
+      this.error = ''
+      this.status = '正在添加模型服务……'
+      return AddModelConfig(name, serverAddress, protocol, apiKey, models)
+        .then((configs) => this.apply(configs))
+        .catch((err) => {
+          this.error = `添加失败：${String(err)}`
+        })
+        .finally(() => {
+          this.status = ''
+        })
     },
   },
 })
