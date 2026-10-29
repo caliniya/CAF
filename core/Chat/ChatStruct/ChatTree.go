@@ -15,8 +15,14 @@ type TreeRoot struct {
 	Name   string
 }
 
-//将当前的树结构转为请求
+//将当前的树结构转为请求(使用当前的分支结构)
 //注意,一些字段是没有设置的(比如api地址)
 func (tree *ChatTree) ToChatRequest() *apiImpl.ChatRequest {
 	return &apiImpl.ChatRequest{}
+}
+
+//自然是用户开始的所以说只有一条
+func (tree *ChatTree) Start(text apiImpl.ChatMessage) *ChatNode {
+	n := &ChatNode{}
+	return n
 }
