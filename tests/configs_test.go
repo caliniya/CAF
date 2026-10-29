@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/platform"
 )
@@ -22,7 +23,10 @@ func writeConfig(t *testing.T, content string) string {
 
 func useConfigFile(t *testing.T, file string) {
 	t.Helper()
-	core.Platform = &core.Core{Paths: &platform.Paths{ConfigFile: file}}
+	core.Platform = &core.Core{
+		Paths: &platform.Paths{ConfigFile: file},
+		FS:    &desktopBackend.DesktopFileSystem{},
+	}
 }
 
 func TestLoadConfigReadsFile(t *testing.T) {

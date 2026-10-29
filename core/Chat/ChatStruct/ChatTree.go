@@ -7,10 +7,10 @@ type ChatTree struct {
 	Root *TreeRoot
 }
 
-//根节点配置名字和子节点就够了?
+//树的抽象根节点,不是对话的一部分
 type TreeRoot struct {
 	Choice int
-	Next   *[]ChatNode
+	Next   []*ChatNode
 	Model  string
 	Name   string
 }
@@ -24,5 +24,10 @@ func (tree *ChatTree) ToChatRequest() *apiImpl.ChatRequest {
 //自然是用户开始的所以说只有一条
 func (tree *ChatTree) Start(text apiImpl.ChatMessage) *ChatNode {
 	n := &ChatNode{Child: []apiImpl.ChatMessage{text}, Choice: 0}
+	//tree.Root
 	return n
+}
+
+func (r *TreeRoot) Add(node *ChatNode) {
+	r.Next = append(r.Next, node)
 }

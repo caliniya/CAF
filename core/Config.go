@@ -3,7 +3,6 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
@@ -67,7 +66,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 }
 
 func LoadConfig() error {
-	data, err := os.ReadFile(Platform.Paths.ConfigFile)
+	data, err := Platform.FS.ReadFile(Platform.Paths.ConfigFile)
 	if err != nil {
 		return err
 	}
@@ -135,8 +134,8 @@ func SaveConfig() error {
 		return err
 	}
 	tmp := Platform.Paths.ConfigFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := Platform.FS.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, Platform.Paths.ConfigFile)
+	return Platform.FS.MoveFile(tmp, Platform.Paths.ConfigFile)
 }

@@ -3,7 +3,6 @@ package desktopBackend
 import (
 	"encoding/json"
 	"log"
-	"os"
 	"path/filepath"
 
 	"github.com/LagrangeDev/LagrangeGo/client"
@@ -38,7 +37,7 @@ func (qq *DesktopQQ) GetQQClient() *client.QQClient {
 }
 
 func (qq *DesktopQQ) LoadQQConfigFromFile() int {
-	data, err := os.ReadFile(qq.QQConfigFile)
+	data, err := core.Platform.FS.ReadFile(qq.QQConfigFile)
 	if err != nil {
 		log.Printf("读取配置失败：%v", err)
 		return 1
