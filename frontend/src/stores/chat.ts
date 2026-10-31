@@ -2,14 +2,14 @@ import { defineStore } from 'pinia'
 import {
   CreateChat,
   DeleteChat,
+  GetChatModelContextWindow,
   GetChat,
-  GetModelContextWindow,
   ListChats,
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
   UpdateChatModel,
-  type ChatSession as StoredChatSession,
+  type ChatTask as StoredChatTask,
   type ChatSummary,
   type ChatDeltaEvent,
   type ChatToolEvent,
@@ -35,15 +35,10 @@ export interface ChatMessage {
   branchCount?: number
 }
 
-export interface WorkspaceEntry {
-  name: string
-  conversations: { id: number; title: string }[]
-}
-
 export const useChatStore = defineStore('chat', {
   state: () => ({
     chats: [] as ChatSummary[],
-    session: null as StoredChatSession | null,
+    session: null as StoredChatTask | null,
     messages: [] as ChatMessage[],
     draft: '',
     sending: false,
@@ -53,7 +48,6 @@ export const useChatStore = defineStore('chat', {
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
     permission: '标准',
     effort: 'none' as 'none' | 'low' | 'high' | 'max',
-    workspaces: [] as WorkspaceEntry[],
   }),
   getters: {
     ctxPercent(state): number | null {
@@ -69,10 +63,6 @@ export const useChatStore = defineStore('chat', {
     },
   },
   actions: {
-    addWorkspace() {
-      const n = this.workspaces.length + 1
-      this.workspaces.push({ name: `工作区 ${n}`, conversations: [] })
-    },
     reset() {
       this.session = null
       this.messages = []
@@ -83,8 +73,9 @@ export const useChatStore = defineStore('chat', {
     async loadContextWindow() {
       const requestId = ++contextWindowRequestId
       this.contextWindow = null
+      if (!this.session) return
       try {
-        const contextWindow = await GetModelContextWindow()
+        const contextWindow = await GetChatModelContextWindow(this.session.id)
         if (requestId === contextWindowRequestId) this.contextWindow = contextWindow
       } catch {
         // Compatible providers may not expose DeepSeek's model metadata endpoint.

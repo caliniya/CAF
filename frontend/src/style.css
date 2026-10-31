@@ -478,6 +478,37 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   padding: 2px 0;
 }
 
+.branch-controls,
+.regenerate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.branch-controls button,
+.regenerate-btn {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.branch-controls button:hover,
+.regenerate-btn:hover {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.regenerate-btn {
+  width: fit-content;
+}
+
 /* 流式回复时的打字光标。 */
 .cursor {
   animation: blink 1s steps(2, start) infinite;
@@ -751,6 +782,30 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   background: var(--tonal);
   color: var(--accent);
   font-weight: 600;
+}
+
+.task-delete {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.task-workspace {
+  position: relative;
+}
+
+.task-workspace:hover .task-delete,
+.task-delete:focus-visible {
+  opacity: 1;
 }
 
 /* 工作区折叠:名称行变成可点按钮,箭头旋转指示。 */

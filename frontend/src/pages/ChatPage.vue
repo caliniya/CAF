@@ -49,7 +49,7 @@ onMounted(() => {
 onUnmounted(() => offs.forEach((off) => off()))
 
 watch(
-  () => [configs.enables?.ServerAddress, configs.enables?.APIKey, configs.enabledModel],
+  () => [chat.session?.id, chat.session?.configId, chat.session?.model],
   () => chat.loadContextWindow(),
   { immediate: true },
 )
@@ -135,13 +135,6 @@ watch(
     </div>
 
     <div v-if="chat.error" class="notice chat-error">{{ chat.error }}</div>
-
-    <!-- 新建工作区:位于输入框外、左上位置 -->
-    <div class="composer-top">
-      <button type="button" class="new-workspace" @click="chat.addWorkspace()">
-        ＋ 新建工作区
-      </button>
-    </div>
 
     <!-- 盒式输入框:输入与全部选项都在框内 -->
     <div class="composer">

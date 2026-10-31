@@ -29,6 +29,7 @@ export interface Configs {
 interface CoreBindings {
   LoadConfigs(): Promise<Configs>
   GetModelContextWindow(): Promise<number>
+  GetChatModelContextWindow(id: string): Promise<number>
   ProbeModels(serverAddress: string, apiKey: string): Promise<ModelProbeResult>
   AddModelConfig(name: string, serverAddress: string, protocol: Config['Protocol'], apiKey: string, models: Model[]): Promise<Configs>
   RefreshModelConfig(index: number, serverAddress: string, models: Model[]): Promise<Configs>
@@ -37,12 +38,12 @@ interface CoreBindings {
   RenameConfig(index: number, name: string): Promise<Configs>
   StartLogin(): Promise<number>
   ListChats(): Promise<ChatSummary[]>
-  CreateChat(configId: string, model: string, title: string): Promise<ChatSession>
-  GetChat(id: string): Promise<ChatSession>
-  RenameChat(id: string, title: string): Promise<ChatSession>
+  CreateChat(configId: string, model: string, title: string): Promise<ChatTask>
+  GetChat(id: string): Promise<ChatTask>
+  RenameChat(id: string, title: string): Promise<ChatTask>
   DeleteChat(id: string): Promise<void>
-  UpdateChatModel(id: string, configId: string, model: string): Promise<ChatSession>
-  SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatSession>
+  UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask>
+  SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
 }
@@ -74,7 +75,7 @@ export interface StoredChatMessage {
   ToolCallID?: string
 }
 
-export interface ChatSession extends ChatSummary {
+export interface ChatTask extends ChatSummary {
   tree: ChatTree
   createdAt: string
 }
@@ -102,6 +103,10 @@ export function LoadConfigs(): Promise<Configs> {
 
 export function GetModelContextWindow(): Promise<number> {
   return bridge().then((c) => c.GetModelContextWindow())
+}
+
+export function GetChatModelContextWindow(id: string): Promise<number> {
+  return bridge().then((c) => c.GetChatModelContextWindow(id))
 }
 
 export function ProbeModels(serverAddress: string, apiKey: string): Promise<ModelProbeResult> {
@@ -135,18 +140,18 @@ export function RenameConfig(index: number, name: string): Promise<Configs> {
 }
 
 export function ListChats(): Promise<ChatSummary[]> { return bridge().then((c) => c.ListChats()) }
-export function CreateChat(configId = '', model = '', title = ''): Promise<ChatSession> {
+export function CreateChat(configId = '', model = '', title = ''): Promise<ChatTask> {
   return bridge().then((c) => c.CreateChat(configId, model, title))
 }
-export function GetChat(id: string): Promise<ChatSession> { return bridge().then((c) => c.GetChat(id)) }
-export function RenameChat(id: string, title: string): Promise<ChatSession> {
+export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c) => c.GetChat(id)) }
+export function RenameChat(id: string, title: string): Promise<ChatTask> {
   return bridge().then((c) => c.RenameChat(id, title))
 }
 export function DeleteChat(id: string): Promise<void> { return bridge().then((c) => c.DeleteChat(id)) }
-export function UpdateChatModel(id: string, configId: string, model: string): Promise<ChatSession> {
+export function UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask> {
   return bridge().then((c) => c.UpdateChatModel(id, configId, model))
 }
-export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatSession> {
+export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatBranch(id, parentId, choice))
 }
 export function SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void> {

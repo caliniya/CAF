@@ -17,7 +17,7 @@ import (
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
 
-type ChatSession struct {
+type ChatTask struct {
 	ID        string               `json:"id"`
 	Title     string               `json:"title"`
 	ConfigID  string               `json:"configId"`
@@ -25,6 +25,18 @@ type ChatSession struct {
 	Tree      *chatstruct.ChatTree `json:"tree"`
 	CreatedAt time.Time            `json:"createdAt"`
 	UpdatedAt time.Time            `json:"updatedAt"`
+	Client    *netclient.APIClient `json:"-"`
+}
+
+func NewChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *ChatTask {
+	if tree == nil {
+		tree = chatstruct.CreateTree(title)
+	}
+	now := time.Now().UTC()
+	return &ChatTask{
+		ID: id, Title: title, ConfigID: configID, Model: model,
+		Tree: tree, CreatedAt: now, UpdatedAt: now,
+	}
 }
 
 type ChatSummary struct {
@@ -92,7 +104,7 @@ func (c *Core) writeJSONLocked(path string, value any) error {
 	return nil
 }
 
-func (c *Core) readChatLocked(directory, id string) (*ChatSession, error) {
+func (c *Core) readChatLocked(directory, id string) (*ChatTask, error) {
 	if !validChatID(id) {
 		return nil, errors.New("无效会话 ID")
 	}
@@ -100,7 +112,7 @@ func (c *Core) readChatLocked(directory, id string) (*ChatSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	var session ChatSession
+	var session ChatTask
 	if err := json.Unmarshal(data, &session); err != nil {
 		return nil, fmt.Errorf("解析会话失败：%w", err)
 	}
@@ -113,7 +125,7 @@ func (c *Core) readChatLocked(directory, id string) (*ChatSession, error) {
 	return &session, nil
 }
 
-func (c *Core) saveChatLocked(directory string, session *ChatSession) error {
+func (c *Core) saveChatLocked(directory string, session *ChatTask) error {
 	if err := c.writeJSONLocked(filepath.Join(directory, session.ID+".json"), session); err != nil {
 		return fmt.Errorf("保存会话失败：%w", err)
 	}
@@ -168,7 +180,7 @@ func (c *Core) ListChats() ([]ChatSummary, error) {
 	return index.Chats, nil
 }
 
-func (c *Core) CreateChat(configID, model, title string) (*ChatSession, error) {
+func (c *Core) CreateChat(configID, model, title string) (*ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c == nil || c.Configs == nil {
@@ -195,10 +207,9 @@ func (c *Core) CreateChat(configID, model, title string) (*ChatSession, error) {
 		title = "新建对话"
 	}
 	now := time.Now().UTC()
-	session := &ChatSession{
-		ID: newID(), Title: title, ConfigID: configID, Model: model,
-		Tree: chatstruct.CreateTree(title), CreatedAt: now, UpdatedAt: now,
-	}
+	session := NewChatTask(newID(), title, configID, model, chatstruct.CreateTree(title))
+	session.CreatedAt = now
+	session.UpdatedAt = now
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return nil, err
@@ -210,7 +221,7 @@ func (c *Core) CreateChat(configID, model, title string) (*ChatSession, error) {
 	return session, nil
 }
 
-func (c *Core) GetChat(id string) (*ChatSession, error) {
+func (c *Core) GetChat(id string) (*ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	directory, err := c.chatDirectory()
@@ -220,7 +231,7 @@ func (c *Core) GetChat(id string) (*ChatSession, error) {
 	return c.readChatLocked(directory, id)
 }
 
-func (c *Core) RenameChat(id, title string) (*ChatSession, error) {
+func (c *Core) RenameChat(id, title string) (*ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c.chatSending[id] {
@@ -252,6 +263,7 @@ func (c *Core) DeleteChat(id string) error {
 	if c.chatSending[id] {
 		return errors.New("对话正在生成中，暂时无法删除")
 	}
+	delete(c.chatClients, id)
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return err
@@ -276,7 +288,7 @@ func (c *Core) DeleteChat(id string) error {
 	return c.writeJSONLocked(filepath.Join(directory, "index.json"), index)
 }
 
-func (c *Core) UpdateChatModel(id, configID, model string) (*ChatSession, error) {
+func (c *Core) UpdateChatModel(id, configID, model string) (*ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c.chatSending[id] {
@@ -299,6 +311,7 @@ func (c *Core) UpdateChatModel(id, configID, model string) (*ChatSession, error)
 	}
 	session.ConfigID = configID
 	session.Model = model
+	delete(c.chatClients, id)
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
 		return nil, err
@@ -306,7 +319,7 @@ func (c *Core) UpdateChatModel(id, configID, model string) (*ChatSession, error)
 	return session, nil
 }
 
-func (c *Core) SetChatBranch(id, parentID string, choice int) (*ChatSession, error) {
+func (c *Core) SetChatBranch(id, parentID string, choice int) (*ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c.chatSending[id] {
@@ -328,6 +341,26 @@ func (c *Core) SetChatBranch(id, parentID string, choice int) (*ChatSession, err
 		return nil, err
 	}
 	return session, nil
+}
+
+func (c *Core) GetChatModelContextWindow(id string) (int, error) {
+	task, err := c.GetChat(id)
+	if err != nil {
+		return 0, err
+	}
+	config, err := c.configByID(task.ConfigID)
+	if err != nil {
+		return 0, err
+	}
+	for _, model := range config.Model {
+		if model.ID == task.Model {
+			if model.MaxContext <= 0 {
+				return 0, fmt.Errorf("模型 %q 未保存有效的上下文窗口数据", task.Model)
+			}
+			return model.MaxContext, nil
+		}
+	}
+	return 0, fmt.Errorf("模型列表中未找到 %q", task.Model)
 }
 
 func slicesContainsModel(cfg *Config, model string) bool {
@@ -435,7 +468,7 @@ func titleFromMessage(text string) string {
 	return text
 }
 
-func (c *Core) beginChatSend(id string) (*ChatSession, *Config, string, error) {
+func (c *Core) beginChatSend(id string) (*ChatTask, *Config, string, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c.chatSending == nil {
@@ -470,7 +503,7 @@ func (c *Core) endChatSend(id string) {
 	c.chatMu.Unlock()
 }
 
-func (c *Core) runChatNode(id string, session *ChatSession, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
+func (c *Core) runChatNode(id string, session *ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
 	session.UpdatedAt = time.Now().UTC()
 	c.chatMu.Lock()
 	err := c.saveChatLocked(directory, session)
@@ -479,14 +512,28 @@ func (c *Core) runChatNode(id string, session *ChatSession, config *Config, dire
 		return err
 	}
 
-	client := netclient.NewAPIClient(netclient.Options{
-		ServerAddress: config.ServerAddress,
-		APIKey:        config.APIKey,
-		Model:         session.Model,
-	})
+	c.chatMu.Lock()
+	if c.chatClients == nil {
+		c.chatClients = make(map[string]chatClientEntry)
+	}
+	entry := c.chatClients[id]
+	if entry.client == nil || entry.configID != session.ConfigID || entry.model != session.Model {
+		entry = chatClientEntry{
+			configID: session.ConfigID,
+			model:    session.Model,
+			client: netclient.NewAPIClient(netclient.Options{
+				ServerAddress: config.ServerAddress,
+				APIKey:        config.APIKey,
+				Model:         session.Model,
+			}),
+		}
+		c.chatClients[id] = entry
+	}
+	session.Client = entry.client
+	c.chatMu.Unlock()
 	request := apiImpl.ChatRequest{Model: session.Model, Messages: messages, Thinking: reasoningEffort}
 	generated := apiImpl.ChatMessage{Role: "assistant"}
-	streamErr := client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
+	streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 		if delta.Content != "" {
 			generated.Content += delta.Content
 		}
