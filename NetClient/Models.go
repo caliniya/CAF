@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
@@ -17,14 +16,8 @@ import (
 // ModelInfo 是模型元数据的兼容名称，实际结构统一使用 apiImpl.Model。
 type ModelInfo = apiImpl.Model
 
-func (c *APIClient) loadModelInfo() {
-	defer close(c.modelInfoReady)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	c.modelInfo, c.modelInfoErr = c.fetchModelInfo(ctx)
-}
-
-func (c *APIClient) fetchModelInfo(ctx context.Context) ([]ModelInfo, error) {
+// FetchModels 显式查询模型元数据(仅配置页面调用,对话链路不做任何探测)。
+func (c *APIClient) FetchModels(ctx context.Context) ([]ModelInfo, error) {
 	if c == nil || c.Config == nil {
 		return nil, errors.New("客户端未配置")
 	}
@@ -133,25 +126,10 @@ func parseModelsResponse(body []byte) ([]ModelInfo, error) {
 	return []ModelInfo{model}, nil
 }
 
-// GetModels 等待初始化时自动发起的模型信息查询，并返回查询结果。
-func (c *APIClient) GetModels(ctx context.Context) ([]ModelInfo, error) {
-	if c == nil || c.modelInfoReady == nil {
-		return nil, errors.New("客户端未初始化")
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-c.modelInfoReady:
-	}
-	if c.modelInfoErr != nil {
-		return nil, c.modelInfoErr
-	}
-	return append([]ModelInfo(nil), c.modelInfo...), nil
-}
-
-// GetModelContextWindow 从自动获取的模型信息中读取上下文窗口容量。
+// GetModelContextWindow 从模型元数据查询中读取指定模型的上下文窗口容量。
+// 注意:这是显式网络查询,仅配置页面调用;对话链路应从已保存的配置元数据读取。
 func (c *APIClient) GetModelContextWindow(ctx context.Context, model string) (int, error) {
-	models, err := c.GetModels(ctx)
+	models, err := c.FetchModels(ctx)
 	if err != nil {
 		return 0, err
 	}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
@@ -85,6 +84,8 @@ func (c *Core) SendMessage(history []apiImpl.ChatMessage, reasoningEffort string
 }
 
 // GetModelContextWindow 返回当前启用模型的上下文窗口容量。
+// 只读取配置页探测时保存的模型元数据,不做任何网络请求;
+// 没有数据(未探测过或服务未提供)时返回错误,前端按未知处理。
 func (c *Core) GetModelContextWindow() (int, error) {
 	if c == nil || c.Configs == nil || c.Configs.EnablesConfig == nil {
 		return 0, errors.New("尚未选择配置（提供商），请先选择配置")
@@ -94,14 +95,15 @@ func (c *Core) GetModelContextWindow() (int, error) {
 		return 0, errors.New("尚未选定模型，请先选择模型")
 	}
 
-	client := netclient.NewAPIClient(netclient.Options{
-		ServerAddress: cfg.ServerAddress,
-		APIKey:        cfg.APIKey,
-		Model:         cfg.EnabledModel,
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return client.GetModelContextWindow(ctx, cfg.EnabledModel)
+	for _, model := range cfg.Model {
+		if model.ID == cfg.EnabledModel {
+			if model.MaxContext <= 0 {
+				return 0, errors.New("该模型未保存上下文窗口数据，请在配置页重新探测")
+			}
+			return model.MaxContext, nil
+		}
+	}
+	return 0, errors.New("配置中未找到当前模型，请在配置页重新探测")
 }
 
 // EmitJSON 把结构体序列化成 JSON 字符串后推送——

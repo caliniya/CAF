@@ -118,7 +118,7 @@ func (c *Core) ProbeModels(serverAddress, apiKey string) (*ModelProbeResult, err
 	if err != nil {
 		return nil, err
 	}
-	models, _ := client.GetModels(ctx)
+	models, _ := client.FetchModels(ctx)
 	if models == nil {
 		models = []apiImpl.Model{}
 	}

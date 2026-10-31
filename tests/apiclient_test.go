@@ -75,18 +75,13 @@ func TestGetModelContextWindow(t *testing.T) {
 	}
 }
 
-func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
+// NewAPIClient 不得自动探测模型元数据;探测只能由配置页显式调用 FetchModels。
+func TestNewAPIClientDoesNotProbeAutomatically(t *testing.T) {
 	requested := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/models" {
-			t.Errorf("unexpected endpoint: %s", r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
-			t.Errorf("unexpected authorization header: %q", got)
-		}
 		requested <- struct{}{}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","object":"model","name":"DeepSeek Chat","context_window":128000,"max_output_tokens":8192}]}`))
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","name":"DeepSeek Chat","context_window":128000}]}`))
 	}))
 	defer server.Close()
 
@@ -98,11 +93,12 @@ func TestNewAPIClientAutomaticallyFetchesModels(t *testing.T) {
 
 	select {
 	case <-requested:
-	case <-time.After(2 * time.Second):
-		t.Fatal("client did not automatically request model metadata")
+		t.Fatal("client probed model metadata without being asked")
+	case <-time.After(300 * time.Millisecond):
 	}
 
-	models, err := client.GetModels(context.Background())
+	// 显式调用 FetchModels 才会发起请求,并返回解析后的模型元数据。
+	models, err := client.FetchModels(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +138,7 @@ func TestModelEndpointFallsBackBetweenV1AndRoot(t *testing.T) {
 				basePath = "/v1"
 			}
 			client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL + basePath})
-			models, err := client.GetModels(context.Background())
+			models, err := client.FetchModels(context.Background())
 			if err != nil {
 				t.Fatal(err)
 			}

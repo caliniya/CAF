@@ -24,24 +24,19 @@ type Options struct {
 // APIClient 是传输层:负责 HTTP、认证头与 SSE 分帧。
 // 本身不持有对话状态——增量通过 onDelta 回调即时上抛,
 // 因此同一个客户端可被多个对话并发使用(当然了我会启动多个使用的)。
+// 模型元数据探测不在客户端内自动进行,由配置页面显式调用 FetchModels。
 type APIClient struct {
-	Client         *http.Client
-	Config         *Options
-	modelInfoReady chan struct{}
-	modelInfo      []ModelInfo
-	modelInfoErr   error
+	Client *http.Client
+	Config *Options
 }
 
-// NewAPIClient 构造客户端并在后台自动尝试获取模型元数据。
+// NewAPIClient 构造客户端。
 // http.Client 不设总超时(长回复会被掐断),超时与取消统一由传入的 context 控制。
 func NewAPIClient(opts Options) *APIClient {
-	client := &APIClient{
-		Client:         &http.Client{},
-		Config:         &opts,
-		modelInfoReady: make(chan struct{}),
+	return &APIClient{
+		Client: &http.Client{},
+		Config: &opts,
 	}
-	go client.loadModelInfo()
-	return client
 }
 
 // ProbeChatEndpoint 先检查用户输入的地址；仅当它返回 404 时，再尝试追加 Chat Completions 路径。
