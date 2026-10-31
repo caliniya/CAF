@@ -164,6 +164,7 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 	}
 
 	entry := Config{
+		ID:            newID(),
 		Name:          strings.TrimSpace(name),
 		ServerAddress: serverAddress,
 		Protocol:      protocol,

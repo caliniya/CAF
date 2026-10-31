@@ -10,10 +10,41 @@ const configs = useConfigsStore()
 const scroller = ref<HTMLElement | null>(null)
 let offs: (() => void)[] = []
 
+async function selectConfig(configId: string) {
+  const config = configs.configs.find((item) => item.ID === configId)
+  const model = config?.EnabledModel || config?.Model[0]?.id
+  if (!chat.session || !config || !model) return
+  try {
+    await chat.updateModel(configId, model)
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
+async function selectModel(model: string) {
+  if (!chat.session || !model) return
+  try {
+    await chat.updateModel(chat.session.configId, model)
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
+async function selectBranch(message: (typeof chat.messages)[number], direction: number) {
+  if (!message.parentId || message.branchIndex === undefined || !message.branchCount) return
+  const next = (message.branchIndex + direction + message.branchCount) % message.branchCount
+  try {
+    await chat.selectBranch(message.parentId, next)
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
 onMounted(() => {
   onChatDelta((delta) => chat.applyDelta(delta)).then((off) => offs.push(off))
   onChatTool((tool) => chat.applyTool(tool)).then((off) => offs.push(off))
   if (!configs.loaded) configs.load()
+  if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
 onUnmounted(() => offs.forEach((off) => off()))
 
@@ -50,7 +81,7 @@ watch(
 
       <div
         v-for="(m, i) in chat.messages"
-        :key="i"
+        :key="`${m.nodeId}:${i}`"
         class="msg"
         :class="m.role"
       >
@@ -86,6 +117,20 @@ watch(
             aria-hidden="true"
           >▍</span>
         </div>
+        <div v-if="m.branchCount && m.branchCount > 1" class="branch-controls">
+          <button type="button" title="上一个分支" aria-label="上一个分支" @click="selectBranch(m, -1)">‹</button>
+          <span>{{ (m.branchIndex ?? 0) + 1 }} / {{ m.branchCount }}</span>
+          <button type="button" title="下一个分支" aria-label="下一个分支" @click="selectBranch(m, 1)">›</button>
+        </div>
+        <button
+          v-if="m.role === 'assistant' && m.nodeId && !chat.sending"
+          type="button"
+          class="regenerate-btn"
+          title="重新生成"
+          @click="chat.regenerate(m)"
+        >
+          重新生成
+        </button>
       </div>
     </div>
 
@@ -100,6 +145,24 @@ watch(
 
     <!-- 盒式输入框:输入与全部选项都在框内 -->
     <div class="composer">
+      <div v-if="chat.session" class="session-models">
+        <label class="composer-chip">
+          提供商
+          <select :value="chat.session.configId" @change="selectConfig(($event.target as HTMLSelectElement).value)">
+            <option v-for="(config, index) in configs.configs" :key="config.ID" :value="config.ID">
+              {{ config.Name || config.ServerAddress || `配置 ${index + 1}` }}
+            </option>
+          </select>
+        </label>
+        <label class="composer-chip">
+          模型
+          <select :value="chat.session.model" @change="selectModel(($event.target as HTMLSelectElement).value)">
+            <option v-for="model in configs.configs.find((item) => item.ID === chat.session?.configId)?.Model ?? []" :key="model.id" :value="model.id">
+              {{ model.name || model.id }}
+            </option>
+          </select>
+        </label>
+      </div>
       <textarea
         v-model="chat.draft"
         class="composer-input"
@@ -119,8 +182,8 @@ watch(
         </label>
 
         <div class="composer-right">
-          <span class="badge" :class="{ 'badge-active': configs.enabledModel }">
-            {{ configs.enabledModel || '未配置模型' }}
+          <span class="badge" :class="{ 'badge-active': chat.session?.model }">
+            {{ chat.session?.model || '未配置模型' }}
           </span>
           <label class="composer-chip">
             思考

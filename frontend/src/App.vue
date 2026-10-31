@@ -15,9 +15,13 @@ const ready = computed(() => store.loaded && !store.error)
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? 'CAF')
 const mode = computed(() => (route.meta.mode as string | undefined) ?? 'chat')
 
-function newConversation() {
-  chat.reset()
-  router.push('/chat')
+async function newConversation() {
+  try {
+    await chat.createChat()
+    await router.push('/chat')
+  } catch (err) {
+    chat.error = String(err)
+  }
 }
 </script>
 

@@ -1,5 +1,6 @@
 // 与 Go 侧 core.Configs / core.Config 对应的 JSON 结构。
 export interface Config {
+  ID: string
   Name: string
   ServerAddress: string
   Protocol: 'chat-completions'
@@ -35,16 +36,47 @@ interface CoreBindings {
   SelectModel(model: string): Promise<Configs>
   RenameConfig(index: number, name: string): Promise<Configs>
   StartLogin(): Promise<number>
-  /**
-  * 发起流式对话：
-  *   Go 侧签名：func (c *Core) SendMessage(history []apiImpl.ChatMessage, reasoningEffort string) error
-   *   history 元素形如 {"role":"user"|"assistant","content":"..."}；
-   *   实现方需边流式接收边用 runtime.EventsEmit 推送事件，函数返回（或返回
-   *   error）即代表对话结束，前端据此收尾。事件契约：
-   *     "chat:delta"  载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
-   *     "chat:tool"   载荷为 JSON 字符串 {"name": string, "event": "start"|"done"}
-   */
-  SendMessage(history: ChatTurn[], reasoningEffort: string): Promise<void>
+  ListChats(): Promise<ChatSummary[]>
+  CreateChat(configId: string, model: string, title: string): Promise<ChatSession>
+  GetChat(id: string): Promise<ChatSession>
+  RenameChat(id: string, title: string): Promise<ChatSession>
+  DeleteChat(id: string): Promise<void>
+  UpdateChatModel(id: string, configId: string, model: string): Promise<ChatSession>
+  SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatSession>
+  SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
+  RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
+}
+
+export interface ChatSummary {
+  id: string
+  title: string
+  configId: string
+  model: string
+  updatedAt: string
+}
+
+export interface ChatTreeNode {
+  id: string
+  choice: number
+  next: ChatTreeNode[]
+  child: StoredChatMessage[]
+}
+
+export interface ChatTree {
+  root: { choice: number; next: ChatTreeNode[]; name: string }
+}
+
+export interface StoredChatMessage {
+  Role: string
+  Content: string
+  Reasoning?: string
+  ToolCalls?: { ID: string; Name: string; Arguments: string }[]
+  ToolCallID?: string
+}
+
+export interface ChatSession extends ChatSummary {
+  tree: ChatTree
+  createdAt: string
 }
 
 export interface ModelProbeResult {
@@ -102,18 +134,32 @@ export function RenameConfig(index: number, name: string): Promise<Configs> {
   return bridge().then((c) => c.RenameConfig(index, name))
 }
 
-// 一条对话消息；role 为 "user" 或 "assistant"。
-export interface ChatTurn {
-  role: string
-  content: string
+export function ListChats(): Promise<ChatSummary[]> { return bridge().then((c) => c.ListChats()) }
+export function CreateChat(configId = '', model = '', title = ''): Promise<ChatSession> {
+  return bridge().then((c) => c.CreateChat(configId, model, title))
 }
-
-export function SendMessage(history: ChatTurn[], reasoningEffort: string): Promise<void> {
-  return bridge().then((c) => c.SendMessage(history, reasoningEffort))
+export function GetChat(id: string): Promise<ChatSession> { return bridge().then((c) => c.GetChat(id)) }
+export function RenameChat(id: string, title: string): Promise<ChatSession> {
+  return bridge().then((c) => c.RenameChat(id, title))
+}
+export function DeleteChat(id: string): Promise<void> { return bridge().then((c) => c.DeleteChat(id)) }
+export function UpdateChatModel(id: string, configId: string, model: string): Promise<ChatSession> {
+  return bridge().then((c) => c.UpdateChatModel(id, configId, model))
+}
+export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatSession> {
+  return bridge().then((c) => c.SetChatBranch(id, parentId, choice))
+}
+export function SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void> {
+  return bridge().then((c) => c.SendChatMessage(id, text, reasoningEffort))
+}
+export function RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void> {
+  return bridge().then((c) => c.RegenerateChatMessage(id, nodeId, reasoningEffort))
 }
 
 // "chat:delta" 事件载荷:文本增量与思考增量分开携带(可同时)。
 export interface ChatDeltaEvent {
+  chatId?: string
+  nodeId?: string
   content?: string
   reasoning?: string
   usage?: TokenUsage
@@ -127,6 +173,8 @@ export interface TokenUsage {
 
 // "chat:tool" 事件载荷:工具调用的开始/结束。
 export interface ChatToolEvent {
+  chatId?: string
+  nodeId?: string
   name: string
   event: 'start' | 'done'
 }

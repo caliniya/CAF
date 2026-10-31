@@ -14,6 +14,7 @@ type Configs struct {
 }
 
 type Config struct {
+	ID                string          `json:"ID"`
 	Name              string          `json:"Name"`
 	ServerAddress     string          `json:"ServerAddress"`
 	Protocol          string          `json:"Protocol"`
@@ -25,6 +26,7 @@ type Config struct {
 
 func (c *Config) UnmarshalJSON(data []byte) error {
 	var raw struct {
+		ID            string          `json:"ID"`
 		Name          string          `json:"Name"`
 		ServerAddress string          `json:"ServerAddress"`
 		Protocol      string          `json:"Protocol"`
@@ -35,6 +37,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	c.ID = raw.ID
 	c.Name = raw.Name
 	c.ServerAddress = raw.ServerAddress
 	c.Protocol = raw.Protocol
@@ -80,7 +83,12 @@ func LoadConfig() error {
 	needsSave := false
 	if Platform.Configs.ALLConfig != nil {
 		for i := range *Platform.Configs.ALLConfig {
-			needsSave = needsSave || (*Platform.Configs.ALLConfig)[i].legacyModelFormat
+			entry := &(*Platform.Configs.ALLConfig)[i]
+			needsSave = needsSave || entry.legacyModelFormat
+			if entry.ID == "" {
+				entry.ID = newID()
+				needsSave = true
+			}
 		}
 	}
 	if needsSave {
@@ -116,6 +124,9 @@ func resolveEnabled() {
 
 // sameConfig 名称不参与比较：改名不影响启用项的归位。
 func sameConfig(a, b *Config) bool {
+	if a.ID != "" && b.ID != "" {
+		return a.ID == b.ID
+	}
 	if a.ServerAddress != b.ServerAddress || a.Protocol != b.Protocol || a.APIKey != b.APIKey || len(a.Model) != len(b.Model) {
 		return false
 	}

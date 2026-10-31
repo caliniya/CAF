@@ -2,6 +2,8 @@ package core
 
 import (
 	//netclient "github.com/caliniya/caf/NetClient"
+	"sync"
+
 	"github.com/caliniya/caf/platform"
 )
 
@@ -13,6 +15,9 @@ type Core struct {
 	Configs    *Configs
 	//APIClients *[]netclient.APIClient
 	FS platform.FilePlatform
+
+	chatMu      sync.Mutex
+	chatSending map[string]bool
 }
 
 func (c *Core) GetPaths() *platform.Paths {
