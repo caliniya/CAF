@@ -1,13 +1,42 @@
 package chat
 
 import (
-	"github.com/caliniya/caf/core"
+	"time"
+
+	netclient "github.com/caliniya/caf/NetClient"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
 
-// ChatTask 保留旧包路径，实际类型统一定义在 core 包。
-type ChatTask = core.ChatTask
+type ChatTask struct {
+	ID        string               `json:"id"`
+	Title     string               `json:"title"`
+	ConfigID  string               `json:"configId"`
+	Model     string               `json:"model"`
+	Tree      *chatstruct.ChatTree `json:"tree"`
+	CreatedAt time.Time            `json:"createdAt"`
+	UpdatedAt time.Time            `json:"updatedAt"`
+	Client    *netclient.APIClient `json:"-"`
+}
+
+type ChatSummary struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	ConfigID  string    `json:"configId"`
+	Model     string    `json:"model"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+func NewChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *ChatTask {
+	if tree == nil {
+		tree = chatstruct.CreateTree(title)
+	}
+	now := time.Now().UTC()
+	return &ChatTask{
+		ID: id, Title: title, ConfigID: configID, Model: model,
+		Tree: tree, CreatedAt: now, UpdatedAt: now,
+	}
+}
 
 func CreateChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *ChatTask {
-	return core.NewChatTask(id, title, configID, model, tree)
+	return NewChatTask(id, title, configID, model, tree)
 }

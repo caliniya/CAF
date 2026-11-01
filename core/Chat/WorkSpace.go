@@ -1,6 +1,6 @@
 package chat
 
-//表示一个工作区
+// 表示一个工作区
 type WorkSpace struct {
 	//显而易见
 	Name string
