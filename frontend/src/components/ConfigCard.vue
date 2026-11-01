@@ -53,6 +53,12 @@ async function saveRefreshedModels(selected: Model[]) {
   }
 }
 
+function confirmDelete() {
+  const label = props.config.Name || props.config.ServerAddress
+  if (!window.confirm(`确定删除配置「${label}」吗？此操作不可撤销。`)) return
+  store.deleteConfig(props.index)
+}
+
 function modelTooltip(model: Config['Model'][number]) {
   const details = [`模型 ID: ${model.id}`]
   if (model.context_window) details.push(`上下文: ${model.context_window.toLocaleString()} tokens`)
@@ -77,8 +83,7 @@ function beginRename() {
 function submitRename() {
   renaming.value = false
   const value = draftName.value.trim()
-  if (value === (props.config.Name || '')) return
-  store.rename(props.index, value)
+  if (value === (props.config.Name || '')) return  store.rename(props.index, value)
 }
 </script>
 
@@ -174,6 +179,9 @@ function submitRename() {
         @click="refreshModels"
       >
         {{ refreshing ? '正在探测…' : '重新探测' }}
+      </button>
+      <button type="button" class="btn-secondary btn-small" @click="confirmDelete">
+        删除
       </button>
     </div>
     <p v-if="refreshMessage" class="muted" role="status">{{ refreshMessage }}</p>

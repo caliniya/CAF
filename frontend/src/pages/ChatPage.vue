@@ -203,53 +203,59 @@ watch(
             <div v-if="modelMenuOpen" class="model-menu" @keydown.esc.stop="modelMenuOpen = false">
               <div class="model-menu-section">
                 <span class="model-menu-label">模型提供商</span>
-                <button
-                  type="button"
-                  class="model-menu-row"
-                  :aria-expanded="providerOptionsOpen"
-                  @click="providerOptionsOpen = !providerOptionsOpen; modelOptionsOpen = false"
-                >
-                  <span>{{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}</span>
-                  <span class="menu-chevron" aria-hidden="true">{{ providerOptionsOpen ? '⌄' : '›' }}</span>
-                </button>
-                <div v-if="providerOptionsOpen" class="model-menu-options">
+                <div class="model-menu-item">
                   <button
-                    v-for="(config, index) in configs.configs"
-                    :key="config.ID"
                     type="button"
-                    class="model-menu-option"
-                    :class="{ selected: config.ID === activeConfig?.ID }"
-                    @click="selectConfig(config.ID)"
+                    class="model-menu-row"
+                    :aria-expanded="providerOptionsOpen"
+                    @click="providerOptionsOpen = !providerOptionsOpen; modelOptionsOpen = false"
                   >
-                    {{ config.Name || config.ServerAddress || `配置 ${index + 1}` }}
+                    <span>{{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}</span>
+                    <span class="menu-chevron" aria-hidden="true">{{ providerOptionsOpen ? '‹' : '›' }}</span>
                   </button>
-                  <span v-if="!configs.configs.length" class="model-menu-empty">暂无已配置的提供商</span>
+                  <div v-if="providerOptionsOpen" class="model-menu-options model-menu-flyout">
+                    <span class="model-menu-flyout-title">选择提供商</span>
+                    <button
+                      v-for="(config, index) in configs.configs"
+                      :key="config.ID"
+                      type="button"
+                      class="model-menu-option"
+                      :class="{ selected: config.ID === activeConfig?.ID }"
+                      @click="selectConfig(config.ID)"
+                    >
+                      {{ config.Name || config.ServerAddress || `配置 ${index + 1}` }}
+                    </button>
+                    <span v-if="!configs.configs.length" class="model-menu-empty">暂无已配置的提供商</span>
+                  </div>
                 </div>
               </div>
 
               <div class="model-menu-section">
                 <span class="model-menu-label">模型</span>
-                <button
-                  type="button"
-                  class="model-menu-row"
-                  :aria-expanded="modelOptionsOpen"
-                  :disabled="!activeConfig?.Model?.length"
-                  @click="modelOptionsOpen = !modelOptionsOpen; providerOptionsOpen = false"
-                >
-                  <span>{{ activeConfig?.Model.find((item) => item.id === activeModel)?.name || activeModel || '未选择模型' }}</span>
-                  <span class="menu-chevron" aria-hidden="true">{{ modelOptionsOpen ? '⌄' : '›' }}</span>
-                </button>
-                <div v-if="modelOptionsOpen" class="model-menu-options">
+                <div class="model-menu-item">
                   <button
-                    v-for="model in activeConfig?.Model ?? []"
-                    :key="model.id"
                     type="button"
-                    class="model-menu-option"
-                    :class="{ selected: model.id === activeModel }"
-                    @click="selectModel(model.id)"
+                    class="model-menu-row"
+                    :aria-expanded="modelOptionsOpen"
+                    :disabled="!activeConfig?.Model?.length"
+                    @click="modelOptionsOpen = !modelOptionsOpen; providerOptionsOpen = false"
                   >
-                    {{ model.name || model.id }}
+                    <span>{{ activeConfig?.Model.find((item) => item.id === activeModel)?.name || activeModel || '未选择模型' }}</span>
+                    <span class="menu-chevron" aria-hidden="true">{{ modelOptionsOpen ? '‹' : '›' }}</span>
                   </button>
+                  <div v-if="modelOptionsOpen" class="model-menu-options model-menu-flyout">
+                    <span class="model-menu-flyout-title">选择模型</span>
+                    <button
+                      v-for="model in activeConfig?.Model ?? []"
+                      :key="model.id"
+                      type="button"
+                      class="model-menu-option"
+                      :class="{ selected: model.id === activeModel }"
+                      @click="selectModel(model.id)"
+                    >
+                      {{ model.name || model.id }}
+                    </button>
+                  </div>
                 </div>
               </div>
 

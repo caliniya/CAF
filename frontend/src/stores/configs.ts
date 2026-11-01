@@ -4,6 +4,7 @@ import {
   SelectConfig,
   SelectModel,
   RenameConfig,
+  DeleteConfig,
   ProbeModels,
   AddModelConfig,
   RefreshModelConfig,
@@ -77,6 +78,9 @@ export const useConfigsStore = defineStore('configs', {
     },
     rename(index: number, name: string) {
       return this.run(() => RenameConfig(index, name))
+    },
+    deleteConfig(index: number) {
+      return this.run(() => DeleteConfig(index))
     },
     probeModels(serverAddress: string, apiKey: string) {
       return ProbeModels(serverAddress, apiKey)

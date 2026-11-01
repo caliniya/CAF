@@ -262,6 +262,39 @@ func (c *Core) RenameConfig(index int, name string) (*Configs, error) {
 	return c.Configs, nil
 }
 
+// DeleteConfig 供前端调用：删除第 index 个配置并写回配置文件。
+// 若删除的是当前启用的配置，启用状态一并清空。
+func (c *Core) DeleteConfig(index int) (*Configs, error) {
+	if c == nil || c.Paths == nil {
+		return nil, errors.New("路径尚未初始化")
+	}
+	if c.Configs == nil || c.Configs.ALLConfig == nil {
+		return nil, errors.New("配置尚未加载")
+	}
+
+	all := *c.Configs.ALLConfig
+	if index < 0 || index >= len(all) {
+		return nil, fmt.Errorf("配置下标越界：%d（共 %d 项）", index, len(all))
+	}
+
+	previousAll := slices.Clone(all)
+	previousEnables := c.Configs.EnablesConfig
+
+	removed := &all[index]
+	*c.Configs.ALLConfig = append(all[:index:index], all[index+1:]...)
+	if c.Configs.EnablesConfig == removed {
+		c.Configs.EnablesConfig = nil
+	}
+
+	if err := SaveConfig(); err != nil {
+		*c.Configs.ALLConfig = previousAll
+		c.Configs.EnablesConfig = previousEnables
+		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
+	}
+
+	return c.Configs, nil
+}
+
 type chatIndex struct {
 	Chats []chat.ChatSummary `json:"chats"`
 }

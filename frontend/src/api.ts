@@ -36,6 +36,7 @@ interface CoreBindings {
   SelectConfig(index: number): Promise<Configs>
   SelectModel(model: string): Promise<Configs>
   RenameConfig(index: number, name: string): Promise<Configs>
+  DeleteConfig(index: number): Promise<Configs>
   StartLogin(): Promise<number>
   ListChats(): Promise<ChatSummary[]>
   CreateChat(configId: string, model: string, title: string): Promise<ChatTask>
@@ -137,6 +138,10 @@ export function SelectModel(model: string): Promise<Configs> {
 
 export function RenameConfig(index: number, name: string): Promise<Configs> {
   return bridge().then((c) => c.RenameConfig(index, name))
+}
+
+export function DeleteConfig(index: number): Promise<Configs> {
+  return bridge().then((c) => c.DeleteConfig(index))
 }
 
 export function ListChats(): Promise<ChatSummary[]> { return bridge().then((c) => c.ListChats()) }
