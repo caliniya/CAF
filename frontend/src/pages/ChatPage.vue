@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool } from '../api'
 import { useChatStore } from '../stores/chat'
@@ -8,25 +8,52 @@ import { useConfigsStore } from '../stores/configs'
 const chat = useChatStore()
 const configs = useConfigsStore()
 const scroller = ref<HTMLElement | null>(null)
+const modelMenuAnchor = ref<HTMLElement | null>(null)
+const modelMenuOpen = ref(false)
+const providerOptionsOpen = ref(false)
+const modelOptionsOpen = ref(false)
+const activeConfig = computed(
+  () => configs.configs.find((item) => item.ID === chat.session?.configId) ?? configs.enables,
+)
+const activeModel = computed(() => chat.session?.model || activeConfig.value?.EnabledModel || '')
 let offs: (() => void)[] = []
 
 async function selectConfig(configId: string) {
   const config = configs.configs.find((item) => item.ID === configId)
   const model = config?.EnabledModel || config?.Model[0]?.id
-  if (!chat.session || !config || !model) return
+  if (!config) return
   try {
-    await chat.updateModel(configId, model)
+    if (chat.session) {
+      if (!model) return
+      await chat.updateModel(configId, model)
+    } else {
+      await configs.selectConfig(configs.configs.indexOf(config))
+    }
+    providerOptionsOpen.value = false
   } catch (err) {
     chat.error = String(err)
   }
 }
 
 async function selectModel(model: string) {
-  if (!chat.session || !model) return
+  if (!model || !activeConfig.value) return
   try {
-    await chat.updateModel(chat.session.configId, model)
+    if (chat.session) {
+      await chat.updateModel(chat.session.configId, model)
+    } else {
+      await configs.selectModel(configs.configs.indexOf(activeConfig.value), model)
+    }
+    modelOptionsOpen.value = false
   } catch (err) {
     chat.error = String(err)
+  }
+}
+
+function closeModelMenuOnOutside(event: PointerEvent) {
+  if (modelMenuAnchor.value && !modelMenuAnchor.value.contains(event.target as Node)) {
+    modelMenuOpen.value = false
+    providerOptionsOpen.value = false
+    modelOptionsOpen.value = false
   }
 }
 
@@ -41,12 +68,16 @@ async function selectBranch(message: (typeof chat.messages)[number], direction: 
 }
 
 onMounted(() => {
+  document.addEventListener('pointerdown', closeModelMenuOnOutside)
   onChatDelta((delta) => chat.applyDelta(delta)).then((off) => offs.push(off))
   onChatTool((tool) => chat.applyTool(tool)).then((off) => offs.push(off))
   if (!configs.loaded) configs.load()
   if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
-onUnmounted(() => offs.forEach((off) => off()))
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', closeModelMenuOnOutside)
+  offs.forEach((off) => off())
+})
 
 watch(
   () => [chat.session?.id, chat.session?.configId, chat.session?.model],
@@ -138,24 +169,6 @@ watch(
 
     <!-- 盒式输入框:输入与全部选项都在框内 -->
     <div class="composer">
-      <div v-if="chat.session" class="session-models">
-        <label class="composer-chip">
-          提供商
-          <select :value="chat.session.configId" @change="selectConfig(($event.target as HTMLSelectElement).value)">
-            <option v-for="(config, index) in configs.configs" :key="config.ID" :value="config.ID">
-              {{ config.Name || config.ServerAddress || `配置 ${index + 1}` }}
-            </option>
-          </select>
-        </label>
-        <label class="composer-chip">
-          模型
-          <select :value="chat.session.model" @change="selectModel(($event.target as HTMLSelectElement).value)">
-            <option v-for="model in configs.configs.find((item) => item.ID === chat.session?.configId)?.Model ?? []" :key="model.id" :value="model.id">
-              {{ model.name || model.id }}
-            </option>
-          </select>
-        </label>
-      </div>
       <textarea
         v-model="chat.draft"
         class="composer-input"
@@ -175,9 +188,77 @@ watch(
         </label>
 
         <div class="composer-right">
-          <span class="badge" :class="{ 'badge-active': chat.session?.model }">
-            {{ chat.session?.model || '未配置模型' }}
-          </span>
+          <div ref="modelMenuAnchor" class="model-menu-anchor">
+            <button
+              type="button"
+              class="badge model-menu-trigger"
+              :class="{ 'badge-active': activeModel }"
+              :aria-expanded="modelMenuOpen"
+              aria-haspopup="true"
+              @click="modelMenuOpen = !modelMenuOpen; providerOptionsOpen = false; modelOptionsOpen = false"
+            >
+              {{ activeModel || '未配置模型' }}
+              <span class="menu-chevron" aria-hidden="true">⌃</span>
+            </button>
+            <div v-if="modelMenuOpen" class="model-menu" @keydown.esc.stop="modelMenuOpen = false">
+              <div class="model-menu-section">
+                <span class="model-menu-label">模型提供商</span>
+                <button
+                  type="button"
+                  class="model-menu-row"
+                  :aria-expanded="providerOptionsOpen"
+                  @click="providerOptionsOpen = !providerOptionsOpen; modelOptionsOpen = false"
+                >
+                  <span>{{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}</span>
+                  <span class="menu-chevron" aria-hidden="true">{{ providerOptionsOpen ? '⌄' : '›' }}</span>
+                </button>
+                <div v-if="providerOptionsOpen" class="model-menu-options">
+                  <button
+                    v-for="(config, index) in configs.configs"
+                    :key="config.ID"
+                    type="button"
+                    class="model-menu-option"
+                    :class="{ selected: config.ID === activeConfig?.ID }"
+                    @click="selectConfig(config.ID)"
+                  >
+                    {{ config.Name || config.ServerAddress || `配置 ${index + 1}` }}
+                  </button>
+                  <span v-if="!configs.configs.length" class="model-menu-empty">暂无已配置的提供商</span>
+                </div>
+              </div>
+
+              <div class="model-menu-section">
+                <span class="model-menu-label">模型</span>
+                <button
+                  type="button"
+                  class="model-menu-row"
+                  :aria-expanded="modelOptionsOpen"
+                  :disabled="!activeConfig?.Model?.length"
+                  @click="modelOptionsOpen = !modelOptionsOpen; providerOptionsOpen = false"
+                >
+                  <span>{{ activeConfig?.Model.find((item) => item.id === activeModel)?.name || activeModel || '未选择模型' }}</span>
+                  <span class="menu-chevron" aria-hidden="true">{{ modelOptionsOpen ? '⌄' : '›' }}</span>
+                </button>
+                <div v-if="modelOptionsOpen" class="model-menu-options">
+                  <button
+                    v-for="model in activeConfig?.Model ?? []"
+                    :key="model.id"
+                    type="button"
+                    class="model-menu-option"
+                    :class="{ selected: model.id === activeModel }"
+                    @click="selectModel(model.id)"
+                  >
+                    {{ model.name || model.id }}
+                  </button>
+                </div>
+              </div>
+
+              <RouterLink class="model-menu-settings" to="/settings/models" @click="modelMenuOpen = false">
+                打开模型设置
+                <span aria-hidden="true">↗</span>
+              </RouterLink>
+            </div>
+          </div>
           <label class="composer-chip">
             思考
             <select v-model="chat.effort">
