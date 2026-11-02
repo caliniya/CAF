@@ -1,7 +1,7 @@
 package agenttool
 
-var Tools []ToolMeta
+var Tools []Tool
 
-func Add(t ToolMeta) {
+func Add(t Tool) {
 	Tools = append(Tools, t)
 }
