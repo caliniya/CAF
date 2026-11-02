@@ -10,6 +10,13 @@ type ToolMeta struct {
 	Fun ToolFunc
 }
 
+type Tool interface {
+	Load()
+	Name() string
+	Description() string
+	Fun(map[string]any) (string, error)
+}
+
 //某种工具集的表示
 type ToolsSet struct {
 	Name        string
