@@ -511,7 +511,7 @@ func (c *Core) DeleteChat(id string) error {
 	if c.chatSending[id] {
 		return errors.New("对话正在生成中，暂时无法删除")
 	}
-	delete(c.chatClients, id)
+	delete(c.ChatList, id)
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return err
@@ -559,7 +559,7 @@ func (c *Core) UpdateChatModel(id, configID, model string) (*chat.ChatTask, erro
 	}
 	session.ConfigID = configID
 	session.Model = model
-	delete(c.chatClients, id)
+	delete(c.ChatList, id)
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
 		return nil, err
@@ -749,23 +749,23 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	}
 
 	c.chatMu.Lock()
-	if c.chatClients == nil {
-		c.chatClients = make(map[string]chatClientEntry)
+	if c.ChatList == nil {
+		c.ChatList = make(map[string]chat.ChatTask)
 	}
-	entry := c.chatClients[id]
-	if entry.client == nil || entry.configID != session.ConfigID || entry.model != session.Model {
-		entry = chatClientEntry{
-			configID: session.ConfigID,
-			model:    session.Model,
-			client: netclient.NewAPIClient(netclient.Options{
+	entry := c.ChatList[id]
+	if entry.Client == nil || entry.ConfigID != session.ConfigID || entry.Model != session.Model {
+		entry = chat.ChatTask{
+			ConfigID: session.ConfigID,
+			Model:    session.Model,
+			Client: netclient.NewAPIClient(netclient.Options{
 				ServerAddress: config.ServerAddress,
 				APIKey:        config.APIKey,
 				Model:         session.Model,
 			}),
 		}
-		c.chatClients[id] = entry
+		c.ChatList[id] = entry
 	}
-	session.Client = entry.client
+	session.Client = entry.Client
 	c.chatMu.Unlock()
 
 	request := apiImpl.ChatRequest{Model: session.Model, Messages: messages, Thinking: reasoningEffort}
