@@ -1,0 +1,7 @@
+button:hover{
+    background-color: var(--muted);
+}
+
+button:checked{
+    background-color: var(--ink);
+}

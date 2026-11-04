@@ -1,50 +1,93 @@
+@font-face {
+  font-family: "LXGW";
+  src: url("./assets/fonts/normal.ttf") format("truetype");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
+
   --page: #F5F6FA;
   --surface: #FFFFFF;
   --ink: #202637;
   --muted: #71798D;
   --accent: #4561DC;
+  --accent-hover: #3550C9;
+  --accent-active: #2D45B0;
   --on-accent: #FFFFFF;
   --tonal: #EDF0FF;
   --outline: #E3E7F1;
+  --danger: #B42318;
+  --warning: #B45309;
+
   --radius: 14px;
   --radius-small: 9px;
+
+  --font-sans: "LXGW", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
 }
 
+/* ===== Reset ===== */
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
   background: var(--page);
   color: var(--ink);
-  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-sans);
   font-size: 15px;
   line-height: 1.65;
   overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, p {
+/* ===== 基础排版 ===== */
+h1,
+h2,
+h3,
+p,
+figure {
   margin: 0;
 }
 
-h1 { font-size: 28px; line-height: 1.35; }
-h2 { font-size: 20px; line-height: 1.4; }
-h3 { font-size: 16px; line-height: 1.5; }
-
-button, input, select, textarea {
-  font: inherit;
+h1 {
+  font-size: 28px;
+  line-height: 1.35;
 }
 
-img {
+h2 {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+h3 {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg {
   display: block;
   max-width: 100%;
-  height: auto;
 }
 
 a {
@@ -52,246 +95,135 @@ a {
   text-underline-offset: 3px;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0px;
+}
+
 ::selection {
   background: var(--tonal);
   color: var(--accent);
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.muted, .description, #status {
-  color: var(--muted);
-}
-
-#status {
-  margin-top: 14px;
-  white-space: pre-wrap;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.row > *, .grid > * {
-  min-width: 0;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 20px;
-}
-
-/* 卡片里有多个区域时，可以同时使用 class="card stack"。 */
-.card {
-  min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.divider {
-  height: 1px;
-  margin-block: 20px;
-  border: 0;
-  background: var(--outline);
-}
-
-button, .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 18px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-small);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-  line-height: 1.4;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-/* 次要按钮：class="btn-secondary"。 */
-.btn-secondary {
-  border-color: var(--outline);
-  background: var(--surface);
-  color: var(--ink);
-}
-
-/* 浅色强调按钮：class="btn-tonal"。 */
-.btn-tonal {
-  background: var(--tonal);
-  color: var(--accent);
-}
-
-@media (hover: hover) {
-  button:not(:disabled):hover, .btn:not(:disabled):hover {
-    box-shadow: 0 0 0 3px var(--tonal);
-  }
-
-  .btn-secondary:not(:disabled):hover {
-    border-color: var(--accent);
-    background: var(--tonal);
-  }
-}
-
-button:disabled, .btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* ===== 表单：label、输入框、下拉菜单、多行文本 ===== */
-.field {
-  display: grid;
-  gap: 7px;
-}
-
-label {
-  font-weight: 600;
-}
-
-input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),
-select,
-textarea {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  color: var(--ink);
-}
-
-textarea {
-  min-height: 120px;
-  resize: vertical;
-}
-
-input::placeholder, textarea::placeholder {
-  color: var(--muted);
-  opacity: 1;
-}
-
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-}
-
-input:disabled, select:disabled, textarea:disabled {
-  background: var(--page);
-  color: var(--muted);
-  cursor: not-allowed;
-}
-
-input[type="checkbox"], input[type="radio"], input[type="range"] {
-  accent-color: var(--accent);
-}
-
-.field-hint {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.check-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 400;
-}
-
-/* ===== 提示框、标签与二维码区域 ===== */
-.notice {
-  padding: 12px 16px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius-small);
-  background: var(--tonal);
-  color: var(--ink);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--tonal);
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.qr-panel {
-  display: grid;
-  place-items: center;
-  width: 224px;
-  max-width: 100%;
-  aspect-ratio: 1;
-  margin-inline: auto;
-  padding: 16px;
-  border: 1px solid var(--outline);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--muted);
-  text-align: center;
-}
-
-/* 不给二维码加滤镜或圆角，保留图像本身的辨识度。 */
-.qr-panel img {
-  width: 100%;
-  object-fit: contain;
-}
-
-/* ===== 小窗口和系统无动画偏好 ===== */
-@media (max-width: 600px) {
-  .card { padding: 20px; }
-  h1 { font-size: 24px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  button, .btn { transition: none; }
-}
-
-/* 隐藏元素不能因为上面的 display 布局规则重新显示。 */
 [hidden] {
   display: none !important;
 }
 
-.badge-active {
-  background: var(--accent);
-  color: var(--on-accent);
+/* ===== 弹出菜单：一级面板与二级面板共用同一套尺寸 =====
+   用法：
+     <div class="menu-pop">                    一级面板（position: relative 作为二级锚点）
+       <button class="menu-pop-row">…</button>
+       <div class="menu-pop-sub menu-pop">      二级面板，向右展开
+     </div>
+   二级面板的 top 与面板 padding 对齐，第一行高度也一致，
+   所以展开时第一行正好贴着触发它的那一行。 */
+.menu-pop {
+  position: relative;
+  min-width: 260px;
+  max-width: calc(100vw - 48px);
+  padding: 4px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(32 38 55 / 16%);
 }
 
-/* 卡片加一点极轻的投影，拉开和页面底色的层次。 */
-.card {
-  box-shadow: 0 1px 2px rgba(32, 38, 55, 0.05);
+/* 行高固定 40px：二级面板第一行必须与触发行的盒子完全等高 */
+.menu-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-/* APIKey、模型名等机器字符串用等宽字体。 */
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+.menu-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
 }
 
-/* 卡片内的小号操作按钮（启用/重命名/显示等），避免和主按钮抢视觉。 */
-.btn-small {
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 14px;
+.menu-pop-row:hover,
+.menu-pop-item:hover {
+  background: var(--tonal);
+}
+
+.menu-pop-row.on,
+.menu-pop-item.on {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.menu-pop-label {
+  padding: 8px 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.menu-pop-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--outline);
+}
+
+/* 灰色小标签：API / 视觉 之类 */
+.menu-pop-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgb(32 38 55 / 7%);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.menu-pop-spacer {
+  flex: 1;
+}
+
+.menu-pop-sub {
+  position: absolute;
+  top: 4px;
+  left: calc(100% + 6px);
+  z-index: 1;
+  min-width: 230px;
+}
+
+.menu-pop-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-pop-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }

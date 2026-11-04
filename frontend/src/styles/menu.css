@@ -1,0 +1,238 @@
+/* ===== 通用弹出菜单 =====
+   一级面板用 .menu，二级面板用 .flyout（绝对定位贴在触发行右侧）。
+   两级里"可点击的一行"都用 .menu-row，高度统一由 --menu-row-h 控制，
+   所以二级菜单的第一行天然与触发它的那一行同高、顶部对齐。 */
+
+:root {
+  --menu-row-h: 38px;
+}
+
+.menu {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 244px;
+  padding: 5px;
+  border: 1px solid var(--outline);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(32 38 55 / 16%);
+}
+
+.menu-label {
+  padding: 7px 8px 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* 一行：图标 + 名称 + 标签 + 右侧箭头 */
+.menu-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: var(--menu-row-h);
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.menu-row:hover,
+.menu-row[aria-expanded='true'] {
+  background: var(--tonal);
+}
+
+.menu-row.on {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.menu-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 二级菜单的定位锚点：包住"触发行 + 它的 flyout" */
+.menu-slot {
+  position: relative;
+}
+
+/* 行左侧的字段名（模型 / 思考强度） */
+.menu-row-label {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* 行右侧的当前值 */
+.menu-value {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 行右侧的快捷键提示 */
+.menu-kbd {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--outline);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.menu-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 行首图标 */
+.row-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.menu-empty {
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu-row .chev {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 行内小标签：API / 视觉 之类 */
+.tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--page);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.menu-item:hover,
+.menu-item.on {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.menu-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--outline);
+}
+
+.menu-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin-top: 3px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.menu-footer:hover {
+  background: var(--tonal);
+}
+
+/* ===== 二级菜单 ===== */
+.flyout {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 6px);
+  z-index: 1;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--outline);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(32 38 55 / 16%);
+}
+
+/* 右侧空间不足时翻到左侧 */
+.flyout--flip {
+  left: auto;
+  right: calc(100% + 6px);
+}
+
+/* 窄版：只放几个短选项时用 */
+.flyout--narrow {
+  min-width: 148px;
+}
+
+/* 首行与触发行严格等高、顶部对齐 */
+.flyout > .menu-row:first-child,
+.flyout > .menu-item:first-child {
+  height: var(--menu-row-h);
+}
