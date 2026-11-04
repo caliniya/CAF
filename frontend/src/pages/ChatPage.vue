@@ -203,7 +203,7 @@ watch(
     <div class="composer-wrap">
       <!-- 工作区条：对话为空时才出现，视觉上压在输入框后面 -->
       <div class="composer-frame">
-        <div class="workspace-bar" :class="{ 'is-hidden': chat.messages.length }" :inert="chat.messages.length > 0">
+        <div class="workspace-bar">
           <button type="button" class="ctx-pill" title="切换工作区">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -393,7 +393,7 @@ watch(
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 24px 28px 8px;
+  padding: 24px 28px 48px;
   overflow-y: auto;
 }
 
@@ -515,32 +515,30 @@ watch(
   padding: 0 28px;
 }
 
-/* 工作区条浮在输入框上沿之外，不占布局：它隐藏时输入框不会跳动 */
+/* 托盘常驻：灰底包住输入框，文件夹标签只在托盘上沿露出来 */
 .composer-frame {
   position: relative;
   display: flex;
   flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--outline);
+  border-radius: 16px;
+  background: var(--page);
 }
 
 .workspace-bar {
   position: absolute;
-  left: 0;
-  bottom: 100%;
+  left: 10px;
+  bottom: calc(100% - 1px);
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px 4px 2px;
-  border-radius: 10px 10px 0 0;
+  padding: 2px 4px 1px;
+  border: 1px solid var(--outline);
+  border-bottom: 0;
+  border-radius: 9px 9px 0 0;
   background: var(--page);
   white-space: nowrap;
-  transition: opacity 120ms ease;
-}
-
-/* 有对话后只淡出，元素仍在但不可交互，也不影响布局 */
-.workspace-bar.is-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .composer {
@@ -548,15 +546,14 @@ watch(
   flex-direction: column;
   gap: 8px;
   padding: 12px 12px 9px;
-  border: 1px solid transparent;
-  border-radius: 16px;
-  background: var(--page);
-  transition: border-color 150ms ease, background-color 150ms ease;
+  border: 1px solid var(--outline);
+  border-radius: 11px;
+  background: var(--surface);
+  transition: border-color 150ms ease;
 }
 
 .composer:focus-within {
-  border-color: var(--outline);
-  background: var(--surface);
+  border-color: var(--accent);
 }
 
 .composer-input {
