@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
 	"github.com/caliniya/caf/platform"
+	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
 func writeConfig(t *testing.T, content string) string {

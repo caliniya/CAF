@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance } from 'vue'
 import { useChatStore } from '../stores/chat'
 
 // 侧边栏展示后端持久化的会话。
@@ -11,6 +11,12 @@ const menuPosition = ref<Record<string, string>>({})
 const renamingId = ref('')
 const renameDraft = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
+
+// v-for 内的字符串 ref 会被收集成数组，改用函数 ref 精确拿到当前正在编辑的输入框。
+function setRenameInput(el: Element | ComponentPublicInstance | null) {
+  if (el instanceof HTMLInputElement) renameInput.value = el
+}
+
 const menuItem = computed(() => chat.chats.find((item) => item.id === openedMenuId.value))
 
 function toggleMenu(id: string, event: MouseEvent) {
@@ -102,7 +108,7 @@ onUnmounted(() => {
     <div v-for="item in chat.chats" :key="item.id" class="task-workspace">
       <div v-if="renamingId === item.id" class="task-rename">
         <input
-          ref="renameInput"
+          :ref="setRenameInput"
           v-model="renameDraft"
           type="text"
           aria-label="对话名称"

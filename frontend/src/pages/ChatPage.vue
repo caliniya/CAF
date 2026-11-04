@@ -57,6 +57,13 @@ function closeModelMenuOnOutside(event: PointerEvent) {
   }
 }
 
+// Enter 发送；输入法组合输入（拼音候选）期间不能当作发送。
+function onComposerEnter(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  chat.send()
+}
+
 async function selectBranch(message: (typeof chat.messages)[number], direction: number) {
   if (!message.parentId || message.branchIndex === undefined || !message.branchCount) return
   const next = (message.branchIndex + direction + message.branchCount) % message.branchCount
@@ -174,7 +181,7 @@ watch(
         class="composer-input"
         rows="2"
         placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-        @keydown.enter.exact.prevent="chat.send()"
+        @keydown.enter.exact="onComposerEnter"
       ></textarea>
 
       <div class="composer-meta">

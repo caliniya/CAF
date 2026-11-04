@@ -83,7 +83,9 @@ function beginRename() {
 function submitRename() {
   renaming.value = false
   const value = draftName.value.trim()
-  if (value === (props.config.Name || '')) return  store.rename(props.index, value)
+  // 名称未变化时不触发保存。
+  if (value === (props.config.Name || '')) return
+  store.rename(props.index, value)
 }
 </script>
 

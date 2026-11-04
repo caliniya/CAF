@@ -5,8 +5,8 @@ import (
 	"io/fs"
 	"log"
 
-	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
+	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
 //go:embed all:frontend/dist

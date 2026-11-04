@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	desktopBackend "github.com/caliniya/caf/backend/desktop"
 	"github.com/caliniya/caf/core"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	"github.com/caliniya/caf/platform"
+	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
 func useChatTaskCore(t *testing.T) *core.Core {
