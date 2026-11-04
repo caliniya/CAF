@@ -19,8 +19,10 @@
   --on-accent: #FFFFFF;
   --tonal: #EDF0FF;
   --outline: #E3E7F1;
-  --danger: #B42318;
+  --danger: #B53D45;
   --warning: #B45309;
+  --success: #1E7D3C;
+  --success-soft: #E3F5E9;
 
   --radius: 14px;
   --radius-small: 9px;

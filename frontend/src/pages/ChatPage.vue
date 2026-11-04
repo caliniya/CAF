@@ -584,31 +584,12 @@ watch(
   font-family: var(--font-mono);
 }
 
-.branch,
-.regen {
+.branch {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: var(--muted);
   font-size: 12px;
-}
-
-.branch button,
-.regen {
-  min-width: 26px;
-  min-height: 26px;
-  padding: 2px 7px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.branch button:hover,
-.regen:hover {
-  background: var(--tonal);
-  color: var(--accent);
 }
 
 .chat-error {
@@ -651,38 +632,6 @@ watch(
   padding-left: 2px;
 }
 
-.ctx-pill,
-.ctx-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.ctx-pill svg,
-.ctx-add svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.ctx-pill:hover,
-.ctx-add:hover {
-  background: rgb(32 38 55 / 6%);
-  color: var(--ink);
-}
-
 .composer-input {
   width: 100%;
   min-height: 26px;
@@ -711,87 +660,8 @@ watch(
   gap: 2px;
 }
 
-.bar-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.bar-icon svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-}
-
-.bar-icon:hover {
-  background: rgb(32 38 55 / 6%);
-  color: var(--ink);
-}
-
 .bar-spacer {
   flex: 1;
-}
-
-/* 权限：原生 select 去掉外观，图标与箭头自绘 */
-.perm {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 6px;
-  border-radius: 7px;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-/* 完全访问：唯一需要警示的权限档 */
-.perm.elevated {
-  color: var(--warning);
-}
-
-.perm:hover {
-  background: rgb(32 38 55 / 6%);
-}
-
-.perm > svg {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.perm select {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.perm select:focus {
-  outline: none;
-}
-
-.perm .chev {
-  width: 12px;
-  height: 12px;
-  opacity: 0.7;
 }
 
 /* 模型选择 */
@@ -872,84 +742,10 @@ watch(
   transform: translateY(0);
 }
 
-.model-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 200px;
-  height: 26px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.model-btn:hover,
-.model-btn[aria-expanded='true'] {
-  background: rgb(32 38 55 / 6%);
-  color: var(--ink);
-}
-
-.model-btn-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 选择模型按钮里的下箭头（菜单内的箭头由全局 .menu-row .chev 负责） */
-.model-btn .chev {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 /* 弹出面板：贴住按钮向上展开，右边缘对齐 */
 .model-menu {
   right: 0;
   bottom: calc(100% + 10px);
   width: 300px;
-}
-
-/* 发送 */
-.send {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-left: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
-  cursor: pointer;
-  transition: background-color 150ms ease, opacity 150ms ease;
-}
-
-.send svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.send:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.send:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 </style>

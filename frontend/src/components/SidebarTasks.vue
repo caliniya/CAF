@@ -221,33 +221,6 @@ onUnmounted(() => {
   background: var(--tonal);
 }
 
-.task-item {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0 30px 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 13.5px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.task-row.active .task-item {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-/* 滚动容器会裁掉外扩的 outline，这里改成向内画 */
-.task-item:focus-visible,
-.task-more:focus-visible {
-  outline-offset: -2px;
-}
-
 .task-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -259,38 +232,6 @@ onUnmounted(() => {
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
-}
-
-.task-more {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease;
-}
-
-.task-more svg {
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
-}
-
-.task-row:hover .task-more,
-.task-more:focus-visible,
-.task-more[aria-expanded='true'] {
-  opacity: 1;
-}
-
-.task-more:hover {
-  background: rgb(32 38 55 / 8%);
-  color: var(--ink);
 }
 
 .task-rename {
@@ -313,34 +254,6 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.task-rename button {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.task-rename button:hover {
-  background: var(--outline);
-  color: var(--ink);
-}
-
-.task-rename svg {
-  width: 13px;
-  height: 13px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .task-flyout {
   position: fixed;
   z-index: 1000;
@@ -351,26 +264,5 @@ onUnmounted(() => {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 8px 24px rgb(32 38 55 / 14%);
-}
-
-.task-flyout button {
-  width: 100%;
-  min-height: 30px;
-  padding: 5px 9px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.task-flyout button:hover {
-  background: var(--tonal);
-}
-
-.task-flyout button.danger {
-  color: var(--danger);
 }
 </style>

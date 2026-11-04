@@ -1,7 +1,481 @@
-button:hover{
-    background-color: var(--muted);
+button {
+  cursor: pointer;
 }
 
-button:checked{
-    background-color: var(--ink);
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* 滚动容器会把外扩的 outline 裁掉，按钮统一向内画 */
+button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---------- 侧边栏：新建对话 ---------- */
+.new-chat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.new-chat svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.new-chat:hover:not(:disabled) {
+  background: var(--tonal);
+}
+
+.new-chat:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- 侧边栏：底部设置 ---------- */
+.foot-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.foot-btn svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.foot-btn:hover,
+.foot-btn.active {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* ---------- 会话列表项 ---------- */
+.task-item {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 30px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.task-row.active .task-item {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---------- 会话项的三点按钮 ---------- */
+.task-more {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.task-more svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.task-row:hover .task-more,
+.task-more:focus-visible,
+.task-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.task-more:hover {
+  background: rgb(32 38 55 / 8%);
+  color: var(--ink);
+}
+
+/* ---------- 会话项重命名的确认 / 取消 ---------- */
+.task-rename button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.task-rename button:hover {
+  background: var(--outline);
+  color: var(--ink);
+}
+
+.task-rename svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- 会话右键菜单里的按钮 ---------- */
+.task-flyout button {
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+}
+
+.task-flyout button:hover {
+  background: var(--tonal);
+}
+
+.task-flyout button.danger {
+  color: var(--danger);
+}
+
+/* ---------- 输入框顶部：上下文标签 ---------- */
+.ctx-pill,
+.ctx-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.ctx-pill svg,
+.ctx-add svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ctx-pill:hover,
+.ctx-add:hover {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
+}
+
+/* ---------- 输入框工具行：图标按钮 ---------- */
+.bar-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.bar-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.bar-icon:hover {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
+}
+
+/* ---------- 输入框工具行：权限（label 包着原生 select） ---------- */
+.perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 7px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* 完全访问：唯一需要警示的权限档 */
+.perm.elevated {
+  color: var(--warning);
+}
+
+.perm:hover {
+  background: rgb(32 38 55 / 6%);
+}
+
+.perm > svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.perm select {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.perm select:focus {
+  outline: none;
+}
+
+.perm .chev {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+
+/* ---------- 输入框工具行：选择模型 ---------- */
+.model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 200px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.model-btn:hover,
+.model-btn[aria-expanded='true'] {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
+}
+
+.model-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-btn .chev {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- 输入框工具行：发送 ---------- */
+.send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  transition: background-color 150ms ease, opacity 150ms ease;
+}
+
+.send svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.send:disabled {
+  opacity: 0.35;
+}
+
+/* ---------- 消息下方：分支切换与重新生成 ---------- */
+.branch button,
+.regen {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.branch button:hover,
+.regen:hover {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* ---------- 通用按钮基线 ----------
+   尺寸和结构在 .btn，配色交给变体；新按钮优先复用，别重新写一套 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--tonal);
+  border-color: transparent;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 主按钮 */
+.btn-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* 轻量按钮：无边框，颜色靠文字 */
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+/* 小号 */
+.btn-sm {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12.5px;
+}
+
+/* 危险操作：实心，用于最终确认 */
+.btn-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 85%, #000);
+}
+
+/* 危险操作：描边，用于入口（不至于太抢眼） */
+.btn-danger-outline {
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  background: transparent;
+  color: var(--danger);
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }

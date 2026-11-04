@@ -78,25 +78,38 @@ function toggleSettings() {
         <span class="brand-version">v0.1.0</span>
       </div>
 
-      <button type="button" class="new-chat" :disabled="chat.sending" @click="newConversation">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        <span>新建对话</span>
-      </button>
+      <!-- 主界面：新建对话 + 会话列表 -->
+      <template v-if="!inSettings">
+        <button type="button" class="new-chat" :disabled="chat.sending" @click="newConversation">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          <span>新建对话</span>
+        </button>
 
-      <SidebarTasks />
+        <SidebarTasks />
+      </template>
+
+      <!-- 设置：分区导航 -->
+      <nav v-else class="nav" aria-label="设置">
+        <RouterLink to="/settings/models" class="nav-item">模型配置</RouterLink>
+        <RouterLink to="/settings/general" class="nav-item">通用设置</RouterLink>
+      </nav>
 
       <div class="sidebar-foot">
         <button type="button" class="foot-btn" :class="{ active: inSettings }" @click="toggleSettings">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <svg v-if="inSettings" viewBox="0 0 24 24" aria-hidden="true">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
             <path
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
             />
           </svg>
-          <span>设置</span>
+          <span>{{ inSettings ? '返回对话' : '设置' }}</span>
         </button>
       </div>
 
@@ -178,78 +191,39 @@ function toggleSettings() {
   color: var(--muted);
 }
 
-.new-chat {
+/* ===== 设置区的分区导航 ===== */
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
   height: 34px;
   padding: 0 10px;
-  border: 0;
   border-radius: 8px;
-  background: transparent;
   color: var(--ink);
   font-size: 13.5px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 120ms ease;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
-.new-chat svg {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-}
-
-.new-chat:hover:not(:disabled) {
+.nav-item:hover {
   background: var(--tonal);
 }
 
-.new-chat:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.nav-item.router-link-active {
+  background: var(--tonal);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .sidebar-foot {
   margin-top: auto;
   padding-top: 10px;
-}
-
-.foot-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 13.5px;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.foot-btn svg {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.foot-btn:hover,
-.foot-btn.active {
-  background: var(--tonal);
-  color: var(--accent);
 }
 
 .main {
