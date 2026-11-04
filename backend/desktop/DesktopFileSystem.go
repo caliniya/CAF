@@ -7,7 +7,7 @@ import (
 	"github.com/caliniya/caf/platform"
 )
 
-//paltform.FilePlatform接口的桌面实现
+// paltform.FilePlatform接口的桌面实现(其实就是调用go原生)
 type DesktopFileSystem struct {
 }
 

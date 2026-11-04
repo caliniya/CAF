@@ -4,54 +4,54 @@ import "encoding/json"
 
 // ChatMessage 是一条对话消息。
 type ChatMessage struct {
-	Role string // "system" | "user" | "assistant" | "tool"
+	Role string `json:"role"` // "system" | "user" | "assistant" | "tool"
 
-	Content string
+	Content string `json:"content,omitempty"`
 
 	// 思考内容：支持思考的模型会分两路输出，
-	Reasoning string
+	Reasoning string `json:"reasoning,omitempty"`
 
 	// assistant 发起的工具调用；一条消息可能同时携带 Content 和多个 ToolCalls。
-	ToolCalls []ToolCall
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 
 	// Role == "tool" 时有效：本次结果对应哪一次调用（与 ToolCall.ID 对齐）。
-	ToolCallID string
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 // ToolCall 是一次工具调用。Arguments 是 JSON 对象的字符串形式
 type ToolCall struct {
-	ID        string
-	Name      string
-	Arguments string
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // Tool 是提供给模型的工具声明
 // 原样进入请求体，由模型决定是否调用。
 type Tool struct {
-	Name        string
-	Description string
-	Parameters  map[string]any
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Parameters  map[string]any `json:"parameters,omitempty"`
 }
 
 // ChatRequest 是一次对话请求（协议无关）。
 // MaxTokens/Temperature 为零值时表示不发送该字段。
 type ChatRequest struct {
-	Model     string
-	Messages  []ChatMessage
-	Tools     []Tool
-	Thinking  string
-	MaxTokens int
+	Model     string        `json:"model"`
+	Messages  []ChatMessage `json:"messages"`
+	Tools     []Tool        `json:"tools,omitempty"`
+	Thinking  string        `json:"thinking,omitempty"`
+	MaxTokens int           `json:"max_tokens,omitempty"`
 
 	//通常来说这条没用
-	Temperature float64
+	Temperature float64 `json:"temperature,omitempty"`
 }
 
 type Delta struct {
-	Content   string
-	Reasoning string
-	ToolCalls []ToolCall
-	Usage     *TokenUsage
-	Done      bool
+	Content   string      `json:"content,omitempty"`
+	Reasoning string      `json:"reasoning,omitempty"`
+	ToolCalls []ToolCall  `json:"tool_calls,omitempty"`
+	Usage     *TokenUsage `json:"usage,omitempty"`
+	Done      bool        `json:"done,omitempty"`
 }
 
 // TokenUsage 是模型服务返回的本次请求 token 用量。
@@ -63,8 +63,8 @@ type TokenUsage struct {
 
 // StreamError 表示服务端在流中返回的错误对象。
 type StreamError struct {
-	Message string
-	Code    any
+	Message string `json:"message"`
+	Code    any    `json:"code,omitempty"`
 }
 
 func (e *StreamError) Error() string {

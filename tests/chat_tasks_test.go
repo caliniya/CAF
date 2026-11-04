@@ -44,6 +44,9 @@ func TestChatTaskPersistenceUsesConfigIDAndTreeBranches(t *testing.T) {
 	if task.ConfigID != "provider-1" || task.Model != "model-1" || task.Tree == nil {
 		t.Fatalf("unexpected task defaults: %+v", task)
 	}
+	if task.Tree.Root == nil || task.Tree.Root.Next == nil {
+		t.Fatal("new chat tree root branches should be an empty array")
+	}
 
 	user := task.Tree.Start(apiImpl.ChatMessage{Role: "user", Content: "hello"})
 	first := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "assistant", Content: "first"})

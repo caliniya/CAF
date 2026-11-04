@@ -147,19 +147,20 @@ export const useChatStore = defineStore('chat', {
       const session = this.session
       this.messages = []
       const root = session?.tree?.root
-      if (!root || root.choice < 0 || root.choice >= root.next.length) return
-      let node = root.next[root.choice]
+      const rootNodes = root?.next ?? []
+      if (!root || root.choice < 0 || root.choice >= rootNodes.length) return
+      let node = rootNodes[root.choice]
       let parentId = ''
       while (node) {
-        const siblings = parentId ? this.findNode(parentId)?.next ?? [] : root.next
+        const siblings = parentId ? this.findNode(parentId)?.next ?? [] : rootNodes
         const branchIndex = parentId ? this.findNode(parentId)?.choice ?? 0 : root.choice
         for (const message of node.child ?? []) {
-          const role = message.Role === 'user' ? 'user' : 'assistant'
+          const role = message.role === 'user' ? 'user' : 'assistant'
           this.messages.push({
             role,
-            content: message.Content ?? '',
-            reasoning: message.Reasoning,
-            tools: (message.ToolCalls ?? []).map((tool) => ({ name: tool.Name, status: 'done' as const })),
+            content: message.content ?? '',
+            reasoning: message.reasoning,
+            tools: (message.tool_calls ?? []).map((tool) => ({ name: tool.name, status: 'done' as const })),
             nodeId: node.id,
             parentId,
             branchIndex,
@@ -167,14 +168,15 @@ export const useChatStore = defineStore('chat', {
           })
         }
         parentId = node.id
-        if (!node.next?.length || node.choice < 0 || node.choice >= node.next.length) break
-        node = node.next[node.choice]
+        const nextNodes = node.next ?? []
+        if (!nextNodes.length || node.choice < 0 || node.choice >= nextNodes.length) break
+        node = nextNodes[node.choice]
       }
     },
     findNode(id: string) {
       const root = this.session?.tree?.root
       if (!root) return undefined
-      const pending = [...root.next]
+      const pending = [...(root.next ?? [])]
       const seen = new Set<object>()
       while (pending.length) {
         const node = pending.pop()!

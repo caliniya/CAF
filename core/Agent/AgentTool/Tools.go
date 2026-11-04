@@ -2,6 +2,15 @@ package agenttool
 
 var Tools []Tool
 
-func Add(t Tool) {
-	Tools = append(Tools, t)
+var ToolSets map[string]ToolSet
+
+func Add(t ToolSet) {
+	if ToolSets == nil {
+		ToolSets = make(map[string]ToolSet)
+	}
+	ToolSets[t.Name] = t
+}
+
+func Sync() {
+
 }

@@ -60,20 +60,20 @@ export interface ChatSummary {
 export interface ChatTreeNode {
   id: string
   choice: number
-  next: ChatTreeNode[]
-  child: StoredChatMessage[]
+  next: ChatTreeNode[] | null
+  child: StoredChatMessage[] | null
 }
 
 export interface ChatTree {
-  root: { choice: number; next: ChatTreeNode[]; name: string }
+  root: { choice: number; next: ChatTreeNode[] | null; name: string } | null
 }
 
 export interface StoredChatMessage {
-  Role: string
-  Content: string
-  Reasoning?: string
-  ToolCalls?: { ID: string; Name: string; Arguments: string }[]
-  ToolCallID?: string
+  role: string
+  content: string
+  reasoning?: string
+  tool_calls?: { id: string; name: string; arguments: string }[]
+  tool_call_id?: string
 }
 
 export interface ChatTask extends ChatSummary {

@@ -555,6 +555,37 @@ input[type="checkbox"], input[type="radio"], input[type="range"] {
   margin-top: 24px;
 }
 
+.new-chat-wrap {
+  position: relative;
+  display: block;
+}
+
+.new-chat-wrap[data-tooltip]::after {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 50%;
+  padding: 6px 9px;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  content: attr(data-tooltip);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%);
+  transition: opacity 40ms linear;
+}
+
+.new-chat-wrap[data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
 .sidebar-foot {
   display: grid;
   gap: 10px;

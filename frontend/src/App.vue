@@ -16,6 +16,7 @@ const pageTitle = computed(() => (route.meta.title as string | undefined) ?? 'CA
 const mode = computed(() => (route.meta.mode as string | undefined) ?? 'chat')
 
 async function newConversation() {
+  if (!chat.messages.length || chat.sending) return
   try {
     await chat.createChat()
     await router.push('/chat')
@@ -35,13 +36,19 @@ async function newConversation() {
 
       <!-- 主界面模式：新建对话 + 任务列表 -->
       <template v-if="mode === 'chat'">
-        <button
-          type="button"
-          class="btn new-chat"
-          @click="newConversation"
+        <span
+          class="new-chat-wrap"
+          :data-tooltip="!chat.messages.length ? '当前对话已是最新' : chat.sending ? '正在发送中' : undefined"
         >
-          ＋ 新建对话
-        </button>
+          <button
+            type="button"
+            class="btn new-chat"
+            :disabled="!chat.messages.length || chat.sending"
+            @click="newConversation"
+          >
+            ＋ 新建对话
+          </button>
+        </span>
         <SidebarTasks />
       </template>
 

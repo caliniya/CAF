@@ -261,5 +261,6 @@ func CreateTree(name string) *ChatTree {
 	return &ChatTree{
 		Root: &TreeRoot{
 			Name: name,
+			Next: []*ChatNode{},
 		}}
 }
