@@ -5,6 +5,7 @@ import {
   GetChatModelContextWindow,
   GetChat,
   ListChats,
+  RenameChat,
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
@@ -66,9 +67,11 @@ export const useChatStore = defineStore('chat', {
     reset() {
       this.session = null
       this.messages = []
+      this.draft = ''
       this.error = ''
       this.sending = false
       this.usage = null
+      this.contextWindow = null
     },
     async loadContextWindow() {
       const requestId = ++contextWindowRequestId
@@ -190,6 +193,9 @@ export const useChatStore = defineStore('chat', {
     async loadChats() {
       this.chats = await ListChats()
     },
+    startNewChat() {
+      this.reset()
+    },
     async createChat() {
       const configs = useConfigsStore()
       const session = await CreateChat(configs.enables?.ID ?? '', configs.enabledModel, '')
@@ -213,6 +219,11 @@ export const useChatStore = defineStore('chat', {
       await DeleteChat(id)
       this.chats = this.chats.filter((chat) => chat.id !== id)
       if (this.session?.id === id) this.reset()
+    },
+    async renameChat(id: string, title: string) {
+      const session = await RenameChat(id, title)
+      if (this.session?.id === id) this.session = session
+      await this.loadChats()
     },
     async selectBranch(parentId: string, choice: number) {
       if (!this.session) return

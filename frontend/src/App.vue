@@ -17,12 +17,8 @@ const mode = computed(() => (route.meta.mode as string | undefined) ?? 'chat')
 
 async function newConversation() {
   if (!chat.messages.length || chat.sending) return
-  try {
-    await chat.createChat()
-    await router.push('/chat')
-  } catch (err) {
-    chat.error = String(err)
-  }
+  chat.startNewChat()
+  await router.push('/chat')
 }
 </script>
 
