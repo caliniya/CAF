@@ -181,26 +181,24 @@ button:focus-visible {
   color: var(--danger);
 }
 
-/* ---------- 输入框顶部：上下文标签 ---------- */
-.ctx-pill,
-.ctx-add {
+/* ---------- 输入框上方：工作区标签 ---------- */
+.ctx-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 26px;
-  padding: 0 7px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.ctx-pill svg,
-.ctx-add svg {
-  width: 14px;
-  height: 14px;
+.ctx-pill svg {
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.7;
@@ -208,18 +206,28 @@ button:focus-visible {
   stroke-linejoin: round;
 }
 
-.ctx-pill:hover,
-.ctx-add:hover {
+.ctx-pill:hover:not(:disabled) {
   background: rgb(32 38 55 / 6%);
   color: var(--ink);
+}
+
+.ctx-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ctx-pill .chev {
+  width: 12px;
+  height: 12px;
+  opacity: 0.8;
 }
 
 /* ---------- 输入框工具行：图标按钮 ---------- */
 .bar-icon {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 7px;
@@ -247,8 +255,8 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 26px;
-  padding: 0 6px;
+  height: 28px;
+  padding: 0 7px;
   border-radius: 7px;
   color: var(--muted);
   cursor: pointer;
@@ -280,7 +288,7 @@ button:focus-visible {
   border: 0;
   background: transparent;
   color: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -299,14 +307,14 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 200px;
-  height: 26px;
-  padding: 0 7px;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 13px;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
@@ -337,9 +345,9 @@ button:focus-visible {
 .send {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-left: 4px;
+  width: 34px;
+  height: 34px;
+  margin-left: 6px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -349,8 +357,8 @@ button:focus-visible {
 }
 
 .send svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;

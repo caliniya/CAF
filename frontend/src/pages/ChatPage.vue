@@ -166,17 +166,9 @@ watch(
 <template>
   <section class="chat">
     <div ref="scroller" class="chat-body">
-      <div
-        v-for="(m, i) in chat.messages"
-        :key="`${m.nodeId}:${i}`"
-        class="msg"
-        :class="m.role"
-      >
-        <details
-          v-if="m.role === 'assistant' && m.reasoning"
-          class="reasoning"
-          :open="chat.sending && i === chat.messages.length - 1"
-        >
+      <div v-for="(m, i) in chat.messages" :key="`${m.nodeId}:${i}`" class="msg" :class="m.role">
+        <details v-if="m.role === 'assistant' && m.reasoning" class="reasoning"
+          :open="chat.sending && i === chat.messages.length - 1">
           <summary>已深度思考</summary>
           <div class="reasoning-body">{{ m.reasoning }}</div>
         </details>
@@ -189,11 +181,8 @@ watch(
         </div>
 
         <div class="msg-body">
-          {{ m.content }}<span
-            v-if="chat.sending && m.role === 'assistant' && i === chat.messages.length - 1"
-            class="cursor"
-            aria-hidden="true"
-          >▍</span>
+          {{ m.content }}<span v-if="chat.sending && m.role === 'assistant' && i === chat.messages.length - 1"
+            class="cursor" aria-hidden="true">▍</span>
         </div>
 
         <div v-if="m.branchCount && m.branchCount > 1" class="branch">
@@ -202,12 +191,8 @@ watch(
           <button type="button" aria-label="下一个分支" @click="selectBranch(m, 1)">›</button>
         </div>
 
-        <button
-          v-if="m.role === 'assistant' && m.nodeId && !chat.sending"
-          type="button"
-          class="regen"
-          @click="chat.regenerate(m)"
-        >
+        <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button" class="regen"
+          @click="chat.regenerate(m)">
           重新生成
         </button>
       </div>
@@ -216,253 +201,174 @@ watch(
     <p v-if="chat.error" class="chat-error">{{ chat.error }}</p>
 
     <div class="composer-wrap">
-      <div class="composer">
-        <div class="composer-context">
-          <button type="button" class="ctx-pill">
+      <!-- 工作区条：对话为空时才出现，视觉上压在输入框后面 -->
+      <div class="composer-frame">
+        <div class="workspace-bar" :class="{ 'is-hidden': chat.messages.length }" :inert="chat.messages.length > 0">
+          <button type="button" class="ctx-pill" title="切换工作区">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             </svg>
             <span>CAF</span>
-          </button>
-          <button type="button" class="ctx-add" title="添加上下文" aria-label="添加上下文">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
+            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9" />
             </svg>
           </button>
         </div>
 
-        <textarea
-          v-model="chat.draft"
-          class="composer-input"
-          rows="1"
-          placeholder="向 CAF 提问"
-          @keydown.enter.exact="onComposerEnter"
-        ></textarea>
+        <div class="composer">
+          <textarea v-model="chat.draft" class="composer-input" rows="1" placeholder="按 Shift 发送消息 , Ctrl + Shift 换行"
+            @keydown.enter.exact="onComposerEnter"></textarea>
 
-        <div class="composer-bar">
-          <button type="button" class="bar-icon" title="附件" aria-label="附件">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-
-          <label class="perm" :class="{ elevated: chat.permission === '完全访问' }">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
-            </svg>
-            <select v-model="chat.permission" aria-label="权限">
-              <option>只读</option>
-              <option>标准</option>
-              <option>完全访问</option>
-            </select>
-            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </label>
-
-          <span class="bar-spacer"></span>
-
-          <!-- 上下文占用：仅在有对话内容时出现，悬停看完整数值 -->
-          <span
-            v-if="chat.messages.length"
-            class="ctx"
-            :data-tooltip="chat.ctxTooltip"
-            :aria-label="chat.ctxTooltip"
-            tabindex="0"
-          >
-            <svg class="ctx-ring" viewBox="0 0 20 20" aria-hidden="true">
-              <circle class="ctx-ring-bg" cx="10" cy="10" r="8" />
-              <circle
-                class="ctx-ring-fill"
-                :class="{ unknown: chat.ctxPercent === null }"
-                cx="10"
-                cy="10"
-                r="8"
-                :style="{ strokeDashoffset: 50.27 * (1 - (chat.ctxPercent ?? 0) / 100) }"
-              />
-            </svg>
-          </span>
-
-          <div ref="modelMenuAnchor" class="model-anchor">
-            <button
-              type="button"
-              class="model-btn"
-              :aria-expanded="modelMenuOpen"
-              aria-haspopup="menu"
-              @click="modelMenuOpen = !modelMenuOpen"
-            >
-              <span class="model-btn-label">{{ activeModel || '选择模型' }}</span>
-              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9" />
+          <div class="composer-bar">
+            <button type="button" class="bar-icon" title="附件" aria-label="附件">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
 
-            <div v-if="modelMenuOpen" class="menu model-menu" role="menu">
-              <!-- 提供商 -->
-              <div class="menu-slot">
-                <button
-                  type="button"
-                  class="menu-row"
-                  :aria-expanded="openFlyout === 'provider'"
-                  @click="toggleFlyout('provider', $event)"
-                >
-                  <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                    <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
-                  </svg>
-                  <span class="menu-row-name">
-                    {{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}
-                  </span>
-                  <span class="tag">API</span>
-                  <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                    <polyline points="9 6 15 12 9 18" />
-                  </svg>
-                </button>
+            <label class="perm" :class="{ elevated: chat.permission === '完全访问' }">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
+              </svg>
+              <select v-model="chat.permission" aria-label="权限">
+                <option>只读</option>
+                <option>标准</option>
+                <option>完全访问</option>
+              </select>
+              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </label>
 
-                <div
-                  v-if="openFlyout === 'provider'"
-                  class="flyout"
-                  :class="{ 'flyout--flip': flyoutFlip }"
-                  role="menu"
-                >
-                  <button
-                    v-for="config in configs.configs"
-                    :key="config.ID"
-                    type="button"
-                    class="menu-row"
-                    :class="{ on: config.ID === activeConfig?.ID }"
-                    @click="selectConfig(config.ID)"
-                  >
+            <span class="bar-spacer"></span>
+
+            <!-- 上下文占用：仅在有对话内容时出现，悬停看完整数值 -->
+            <span v-if="chat.messages.length" class="ctx" :data-tooltip="chat.ctxTooltip" :aria-label="chat.ctxTooltip"
+              tabindex="0">
+              <svg class="ctx-ring" viewBox="0 0 20 20" aria-hidden="true">
+                <circle class="ctx-ring-bg" cx="10" cy="10" r="8" />
+                <circle class="ctx-ring-fill" :class="{ unknown: chat.ctxPercent === null }" cx="10" cy="10" r="8"
+                  :style="{ strokeDashoffset: 50.27 * (1 - (chat.ctxPercent ?? 0) / 100) }" />
+              </svg>
+            </span>
+
+            <div ref="modelMenuAnchor" class="model-anchor">
+              <button type="button" class="model-btn" :aria-expanded="modelMenuOpen" aria-haspopup="menu"
+                @click="modelMenuOpen = !modelMenuOpen">
+                <span class="model-btn-label">{{ activeModel || '选择模型' }}</span>
+                <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              <div v-if="modelMenuOpen" class="menu model-menu" role="menu">
+                <!-- 提供商 -->
+                <div class="menu-slot">
+                  <button type="button" class="menu-row" :aria-expanded="openFlyout === 'provider'"
+                    @click="toggleFlyout('provider', $event)">
                     <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
                       <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
                     </svg>
-                    <span class="menu-row-name">{{ config.Name || config.ServerAddress }}</span>
+                    <span class="menu-row-name">
+                      {{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}
+                    </span>
                     <span class="tag">API</span>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </button>
+
+                  <div v-if="openFlyout === 'provider'" class="flyout" :class="{ 'flyout--flip': flyoutFlip }"
+                    role="menu">
+                    <button v-for="config in configs.configs" :key="config.ID" type="button" class="menu-row"
+                      :class="{ on: config.ID === activeConfig?.ID }" @click="selectConfig(config.ID)">
+                      <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                        <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
+                      </svg>
+                      <span class="menu-row-name">{{ config.Name || config.ServerAddress }}</span>
+                      <span class="tag">API</span>
+                      <span class="menu-spacer"></span>
+                      <svg v-if="config.ID === activeConfig?.ID" class="check" viewBox="0 0 24 24" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                    <span v-if="!configs.configs.length" class="menu-empty">尚未配置提供商</span>
+                    <div class="menu-sep"></div>
+                    <RouterLink class="menu-row" to="/settings/models" @click="modelMenuOpen = false">
+                      管理模型
+                    </RouterLink>
+                  </div>
+                </div>
+
+                <!-- 模型：点开二级菜单选 -->
+                <div class="menu-slot">
+                  <button type="button" class="menu-row" :aria-expanded="openFlyout === 'model'"
+                    @click="toggleFlyout('model', $event)">
+                    <span class="menu-row-label">模型</span>
                     <span class="menu-spacer"></span>
-                    <svg
-                      v-if="config.ID === activeConfig?.ID"
-                      class="check"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
+                    <span class="menu-value">{{ activeModelName }}</span>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                      <polyline points="9 6 15 12 9 18" />
                     </svg>
                   </button>
-                  <span v-if="!configs.configs.length" class="menu-empty">尚未配置提供商</span>
-                  <div class="menu-sep"></div>
-                  <RouterLink class="menu-row" to="/settings/models" @click="modelMenuOpen = false">
-                    管理模型
-                  </RouterLink>
+
+                  <div v-if="openFlyout === 'model'" class="flyout" :class="{ 'flyout--flip': flyoutFlip }" role="menu">
+                    <button v-for="model in activeConfig?.Model ?? []" :key="model.id" type="button" class="menu-item"
+                      :class="{ on: model.id === activeModel }" @click="selectModel(model.id)">
+                      <span class="menu-item-name">{{ model.name || model.id }}</span>
+                      <span v-if="model.input_modalities?.includes('image')" class="tag">视觉</span>
+                      <svg v-if="model.id === activeModel" class="check" viewBox="0 0 24 24" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                    <span v-if="!activeConfig?.Model?.length" class="menu-empty">暂无模型</span>
+                  </div>
                 </div>
-              </div>
 
-              <!-- 模型：点开二级菜单选 -->
-              <div class="menu-slot">
-                <button
-                  type="button"
-                  class="menu-row"
-                  :aria-expanded="openFlyout === 'model'"
-                  @click="toggleFlyout('model', $event)"
-                >
-                  <span class="menu-row-label">模型</span>
-                  <span class="menu-spacer"></span>
-                  <span class="menu-value">{{ activeModelName }}</span>
-                  <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                    <polyline points="9 6 15 12 9 18" />
-                  </svg>
-                </button>
-
-                <div
-                  v-if="openFlyout === 'model'"
-                  class="flyout"
-                  :class="{ 'flyout--flip': flyoutFlip }"
-                  role="menu"
-                >
-                  <button
-                    v-for="model in activeConfig?.Model ?? []"
-                    :key="model.id"
-                    type="button"
-                    class="menu-item"
-                    :class="{ on: model.id === activeModel }"
-                    @click="selectModel(model.id)"
-                  >
-                    <span class="menu-item-name">{{ model.name || model.id }}</span>
-                    <span v-if="model.input_modalities?.includes('image')" class="tag">视觉</span>
-                    <svg
-                      v-if="model.id === activeModel"
-                      class="check"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
+                <!-- 思考强度：点开二级菜单选档位 -->
+                <div class="menu-slot">
+                  <button type="button" class="menu-row" :aria-expanded="openFlyout === 'effort'"
+                    @click="toggleFlyout('effort', $event)">
+                    <span class="menu-row-label">思考强度</span>
+                    <span class="menu-spacer"></span>
+                    <span class="menu-value">{{ effortLabel }}</span>
+                    <kbd class="menu-kbd">Ctrl+T</kbd>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                      <polyline points="9 6 15 12 9 18" />
                     </svg>
                   </button>
-                  <span v-if="!activeConfig?.Model?.length" class="menu-empty">暂无模型</span>
+
+                  <div v-if="openFlyout === 'effort'" class="flyout flyout--narrow"
+                    :class="{ 'flyout--flip': flyoutFlip }" role="menu">
+                    <button v-for="(step, index) in effortSteps" :key="step.value" type="button" class="menu-row"
+                      :class="{ on: index === effortIndex }" @click="pickEffort(index)">
+                      <span class="menu-row-name">{{ step.label }}</span>
+                      <svg v-if="index === effortIndex" class="check" viewBox="0 0 24 24" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+
+                <div class="menu-sep"></div>
+
+                <RouterLink class="menu-row" to="/settings/models" @click="modelMenuOpen = false">
+                  模型配置
+                </RouterLink>
               </div>
-
-              <!-- 思考强度：点开二级菜单选档位 -->
-              <div class="menu-slot">
-                <button
-                  type="button"
-                  class="menu-row"
-                  :aria-expanded="openFlyout === 'effort'"
-                  @click="toggleFlyout('effort', $event)"
-                >
-                  <span class="menu-row-label">思考强度</span>
-                  <span class="menu-spacer"></span>
-                  <span class="menu-value">{{ effortLabel }}</span>
-                  <kbd class="menu-kbd">Ctrl+T</kbd>
-                  <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                    <polyline points="9 6 15 12 9 18" />
-                  </svg>
-                </button>
-
-                <div
-                  v-if="openFlyout === 'effort'"
-                  class="flyout flyout--narrow"
-                  :class="{ 'flyout--flip': flyoutFlip }"
-                  role="menu"
-                >
-                  <button
-                    v-for="(step, index) in effortSteps"
-                    :key="step.value"
-                    type="button"
-                    class="menu-row"
-                    :class="{ on: index === effortIndex }"
-                    @click="pickEffort(index)"
-                  >
-                    <span class="menu-row-name">{{ step.label }}</span>
-                    <svg v-if="index === effortIndex" class="check" viewBox="0 0 24 24" aria-hidden="true">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div class="menu-sep"></div>
-
-              <RouterLink class="menu-row" to="/settings/models" @click="modelMenuOpen = false">
-                模型配置
-              </RouterLink>
             </div>
-          </div>
 
-          <button
-            type="button"
-            class="send"
-            :disabled="!chat.draft.trim() || chat.sending"
-            aria-label="发送"
-            @click="chat.send()"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <line x1="12" y1="19" x2="12" y2="6" />
-              <polyline points="6 12 12 6 18 12" />
-            </svg>
-          </button>
+            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending" aria-label="发送"
+              @click="chat.send()">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <line x1="12" y1="19" x2="12" y2="6" />
+                <polyline points="6 12 12 6 18 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -485,9 +391,9 @@ watch(
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 868px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 24px 24px 8px;
+  padding: 24px 28px 8px;
   overflow-y: auto;
 }
 
@@ -593,10 +499,10 @@ watch(
 }
 
 .chat-error {
-  max-width: 868px;
+  max-width: 1100px;
   width: 100%;
   margin: 0 auto;
-  padding: 8px 24px;
+  padding: 8px 28px;
   color: var(--danger);
   font-size: 13px;
 }
@@ -604,18 +510,46 @@ watch(
 /* ===== 输入框：始终贴底 ===== */
 .composer-wrap {
   width: 100%;
-  max-width: 868px;
-  margin: 0 auto 16px;
-  padding: 0 24px;
+  max-width: 1100px;
+  margin: 0 auto 18px;
+  padding: 0 28px;
+}
+
+/* 工作区条浮在输入框上沿之外，不占布局：它隐藏时输入框不会跳动 */
+.composer-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-bar {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px 2px;
+  border-radius: 10px 10px 0 0;
+  background: var(--page);
+  white-space: nowrap;
+  transition: opacity 120ms ease;
+}
+
+/* 有对话后只淡出，元素仍在但不可交互，也不影响布局 */
+.workspace-bar.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 9px 10px 7px;
+  gap: 8px;
+  padding: 12px 12px 9px;
   border: 1px solid transparent;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--page);
   transition: border-color 150ms ease, background-color 150ms ease;
 }
@@ -625,23 +559,16 @@ watch(
   background: var(--surface);
 }
 
-.composer-context {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-left: 2px;
-}
-
 .composer-input {
   width: 100%;
-  min-height: 26px;
-  max-height: 200px;
-  padding: 0 4px;
+  min-height: 44px;
+  max-height: 240px;
+  padding: 2px 4px;
   border: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.7;
   resize: none;
   field-sizing: content;
 }
@@ -675,16 +602,16 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   color: var(--muted);
   cursor: help;
   border-radius: 50%;
 }
 
 .ctx-ring {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   /* 让 0% 从 12 点方向开始 */
   transform: rotate(-90deg);
 }
@@ -702,7 +629,8 @@ watch(
 .ctx-ring-fill {
   stroke: var(--accent);
   stroke-linecap: round;
-  stroke-dasharray: 50.27; /* 2πr，r=8 */
+  stroke-dasharray: 50.27;
+  /* 2πr，r=8 */
   transition: stroke-dashoffset 300ms ease;
 }
 

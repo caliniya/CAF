@@ -115,6 +115,9 @@ watch(
 }
 
 .head {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
   padding-bottom: 18px;
 }
 
@@ -135,6 +138,7 @@ watch(
   gap: 16px;
   width: 100%;
   max-width: 680px;
+  margin: 0 auto;
 }
 
 .group {

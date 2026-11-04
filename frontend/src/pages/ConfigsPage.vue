@@ -189,12 +189,8 @@ function contextLabel(model: Model) {
     <div class="board">
       <!-- 左：供应商列表 -->
       <aside class="list">
-        <div
-          v-for="(config, index) in store.configs"
-          :key="config.ID"
-          class="row"
-          :class="{ active: index === activeIndex }"
-        >
+        <div v-for="(config, index) in store.configs" :key="config.ID" class="row"
+          :class="{ active: index === activeIndex }">
           <button type="button" class="row-main" @click="activeIndex = index">
             <span class="avatar">{{ initial(config.Name || config.ServerAddress) }}</span>
             <span class="row-text">
@@ -227,14 +223,9 @@ function contextLabel(model: Model) {
               <p class="mono sub">{{ activeConfig.ServerAddress }}</p>
             </div>
             <div class="actions">
-              <button
-                type="button"
-                class="btn btn-sm"
-                :disabled="isInUse(activeIndex)"
-                :title="isInUse(activeIndex) ? '已经是全局默认配置' : '设为全局默认配置'"
-                @click="enableConfig"
-              >
-                {{ isInUse(activeIndex) ? '已启用' : '启用此配置' }}
+              <button type="button" class="btn btn-sm" :disabled="isInUse(activeIndex)"
+                :title="isInUse(activeIndex) ? '已经是全局默认配置' : '设为全局默认配置'" @click="enableConfig">
+                {{ isInUse(activeIndex) ? '已启用配置' : '启用此配置' }}
               </button>
               <button type="button" class="btn btn-sm" @click="openEdit(activeIndex)">编辑</button>
             </div>
@@ -242,22 +233,13 @@ function contextLabel(model: Model) {
 
           <p class="section-label">模型</p>
           <div class="models">
-            <button
-              v-for="model in activeConfig.Model ?? []"
-              :key="model.id"
-              type="button"
-              class="model"
+            <button v-for="model in activeConfig.Model ?? []" :key="model.id" type="button" class="model"
               :class="{ on: model.id === activeConfig.EnabledModel, dim: !isInUse(activeIndex) }"
-              @click="useModel(model.id)"
-            >
+              @click="useModel(model.id)">
               <span class="model-name">{{ model.name || model.id }}</span>
               <span v-if="contextLabel(model)" class="model-meta">{{ contextLabel(model) }}</span>
-              <svg
-                v-if="model.id === activeConfig.EnabledModel && isInUse(activeIndex)"
-                class="check"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
+              <svg v-if="model.id === activeConfig.EnabledModel && isInUse(activeIndex)" class="check"
+                viewBox="0 0 24 24" aria-hidden="true">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </button>
@@ -307,13 +289,8 @@ function contextLabel(model: Model) {
                 <span v-for="id in selected" :key="id" class="chip">{{ id }}</span>
                 <span v-if="!selected.length" class="muted">尚未添加模型</span>
               </div>
-              <button
-                type="button"
-                class="btn btn-sm"
-                :disabled="!canProbe || probing"
-                :title="canProbe ? '' : '先填写 Base URL 和 API Key'"
-                @click="probe"
-              >
+              <button type="button" class="btn btn-sm" :disabled="!canProbe || probing"
+                :title="canProbe ? '' : '先填写 Base URL 和 API Key'" @click="probe">
                 {{ probing ? '探测中…' : '自动探测' }}
               </button>
             </div>
@@ -323,12 +300,7 @@ function contextLabel(model: Model) {
         </div>
 
         <footer class="dialog-foot">
-          <button
-            v-if="editing"
-            type="button"
-            class="btn btn-danger-outline btn-sm"
-            @click="askDelete"
-          >
+          <button v-if="editing" type="button" class="btn btn-danger-outline btn-sm" @click="askDelete">
             删除此配置
           </button>
           <span class="foot-spacer"></span>
@@ -356,12 +328,8 @@ function contextLabel(model: Model) {
     </div>
   </Teleport>
 
-  <ModelSelectionDialog
-    :open="pickerOpen"
-    :models="discovered"
-    @confirm="acceptSelection"
-    @cancel="pickerOpen = false"
-  />
+  <ModelSelectionDialog :open="pickerOpen" :models="discovered" @confirm="acceptSelection"
+    @cancel="pickerOpen = false" />
 </template>
 
 <style scoped>
@@ -712,7 +680,7 @@ function contextLabel(model: Model) {
   gap: 6px;
 }
 
-.field > span {
+.field>span {
   color: var(--ink);
   font-size: 12.5px;
   font-weight: 500;
