@@ -4,18 +4,20 @@ import (
 	"time"
 
 	netclient "github.com/caliniya/caf/NetClient"
+	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
 
 type ChatTask struct {
-	ID        string               `json:"id"`
-	Title     string               `json:"title"`
-	ConfigID  string               `json:"configId"`
-	Model     string               `json:"model"`
-	Tree      *chatstruct.ChatTree `json:"tree"`
-	CreatedAt time.Time            `json:"createdAt"`
-	UpdatedAt time.Time            `json:"updatedAt"`
-	Client    *netclient.APIClient `json:"-"`
+	ID         string                    `json:"id"`
+	Title      string                    `json:"title"`
+	ConfigID   string                    `json:"configId"`
+	Model      string                    `json:"model"`
+	Tree       *chatstruct.ChatTree      `json:"tree"`
+	CreatedAt  time.Time                 `json:"createdAt"`
+	UpdatedAt  time.Time                 `json:"updatedAt"`
+	Client     *netclient.APIClient      `json:"-"`
+	ToolConfig *agenttool.ChatToolConfig `json:"toolConfig,omitempty"`
 }
 
 type ChatSummary struct {

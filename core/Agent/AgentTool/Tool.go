@@ -1,11 +1,10 @@
 package agenttool
 
+//方便内部使用的元结构体,内嵌使用
 type ToolMeta struct {
 	Name        string
 	Description string
-
-	//写规范点注意
-	Parameters map[string]any
+	Parameters  map[string]any
 }
 
 type Tool interface {
@@ -18,7 +17,7 @@ type Tool interface {
 type ToolSet struct {
 	Name        string
 	Description string
-	Tools       map[string]ToolKit
+	ToolKits    map[string]ToolKit
 }
 
 // 接口
@@ -33,7 +32,8 @@ type ToolsSet interface {
 	DisEnable() error
 
 	Get(string) ToolKit
-	List() map[string]ToolKit
+	ListMap() map[string]ToolKit
+	List() []ToolKit
 }
 
 // 一个大工具集的小模块
@@ -43,4 +43,7 @@ type ToolKit interface {
 
 	Name() string
 	Description() string
+
+	ListName() map[string]Tool
+	List() []Tool
 }

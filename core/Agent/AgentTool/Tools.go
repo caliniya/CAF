@@ -1,24 +1,42 @@
 package agenttool
 
-import apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+import (
+	"errors"
 
-var Tools []Tool
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+)
 
+// 这里的是全局性的
+var Tools map[string]Tool
 var ToolSets map[string]ToolSet
-
 var ToolList map[string]apiImpl.Tool
 
 func Init() {
-	Tools = []Tool{}
+	Tools = map[string]Tool{}
 	ToolSets = map[string]ToolSet{}
 	ToolList = map[string]apiImpl.Tool{}
 }
 
-func Add(t ToolSet) {
+func Add(t ToolSet) error {
 	if ToolSets == nil {
-		ToolSets = make(map[string]ToolSet)
+		return errors.New("要加载的工具集为nil")
 	}
+
 	ToolSets[t.Name] = t
+
+	for _, kit := range t.ToolKits {
+		for _, tool := range kit.List() {
+			name := tool.Meta().Name
+
+			if _, exists := Tools[name]; exists {
+				return errors.New("重复的工具: " + name)
+			}
+
+			Tools[name] = tool
+		}
+	}
+	Sync()
+	return nil
 }
 
 func Sync() {
