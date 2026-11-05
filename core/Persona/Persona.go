@@ -8,7 +8,7 @@ import "encoding/json"
 // 字段名保持短，减少 token 开销。未来支持外部加载时，
 // 同一套 json 标签可以直接反序列化，不需要改结构。
 type Persona struct {
-	ID          string   `json:"id"`
+	ID          string   `json:"-"`
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	System      string   `json:"system"`

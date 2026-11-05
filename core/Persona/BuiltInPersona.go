@@ -4,9 +4,9 @@ package Persona
 var builtins = []Persona{
 	{
 		ID:          "assistant",
-		Name:        "通用助手",
-		Description: "默认助手，回答直接、不绕弯",
-		System:      "你是一个可靠、直接的助手。先给结论，再给必要的解释。不确定的地方明确说明不确定，不要编造。",
-		Style:       "简洁、口语化，不用多余的客套和总结句",
+		Name:        "默认设定",
+		Description: "内置的标准人设",
+		System:      `你是由开发者 "caliniya" 制作的人工智能框架,负责执行一般性的通用任务`,
+		//Style:       "",
 	},
 }
