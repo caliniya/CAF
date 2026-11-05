@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import {
   CreateChat,
   DeleteChat,
+  EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
   ListChats,
@@ -288,6 +289,22 @@ export const useChatStore = defineStore('chat', {
       this.syncEffort()
       await this.loadContextWindow()
       await this.loadChats()
+    },
+    // 编辑用户消息：后端在该节点的父节点下挂新分支并重新生成，原分支保留
+    async editMessage(message: ChatMessage, text: string) {
+      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending) return
+      if (!text.trim() || text.trim() === message.content) return
+      this.error = ''
+      this.sending = true
+      try {
+        await EditChatMessage(this.session.id, message.nodeId, text.trim(), this.effort)
+        await this.reloadSession()
+      } catch (err) {
+        this.error = String(err)
+        await this.reloadSession().catch(() => undefined)
+      } finally {
+        this.sending = false
+      }
     },
     async regenerate(message: ChatMessage) {
       if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending) return

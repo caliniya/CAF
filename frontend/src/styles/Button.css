@@ -368,20 +368,45 @@ button:focus-visible {
 }
 
 /* ---------- 消息下方：分支切换与重新生成 ---------- */
-.branch button,
-.regen {
+.branch button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  min-width: 26px;
-  min-height: 26px;
-  padding: 2px 7px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 15px;
   transition: background-color 120ms ease, color 120ms ease;
+}
+
+/* 重新生成：圆形图标按钮 */
+.regen {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.regen svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .branch button:hover,
@@ -479,4 +504,38 @@ button:focus-visible {
 .btn-danger-outline:hover:not(:disabled) {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+/* ---------- 消息下方的图标按钮（编辑 / 复制） ---------- */
+.msg-action {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.msg-action:hover {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.msg-action.copied {
+  color: var(--success);
+}
+
+.msg-action svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }

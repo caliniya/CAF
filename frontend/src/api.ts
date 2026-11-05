@@ -49,6 +49,7 @@ interface CoreBindings {
   SetChatToolConfig(id: string, raw: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
+  EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
 }
 
@@ -202,6 +203,9 @@ export function SetChatBranch(id: string, parentId: string, choice: number): Pro
 }
 export function SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void> {
   return bridge().then((c) => c.SendChatMessage(id, text, reasoningEffort))
+}
+export function EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void> {
+  return bridge().then((c) => c.EditChatMessage(id, nodeId, text, reasoningEffort))
 }
 export function RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void> {
   return bridge().then((c) => c.RegenerateChatMessage(id, nodeId, reasoningEffort))

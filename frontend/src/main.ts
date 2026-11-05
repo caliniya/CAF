@@ -5,5 +5,6 @@ import router from './router'
 import './style.css'
 import './styles/Button.css'
 import './styles/menu.css'
+import './styles/markdown.css'
 
 createApp(App).use(createPinia()).use(router).mount('#app')

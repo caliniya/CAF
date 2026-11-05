@@ -1,0 +1,186 @@
+/* ===== Markdown 渲染 =====
+   v-html 注入的元素不带 scoped 属性，所以这套样式必须放在全局。 */
+
+.msg-body.markdown-body {
+  white-space: normal;
+  line-height: 1.7;
+}
+
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body p {
+  margin: 0 0 10px;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.markdown-body h1 { font-size: 1.45em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.15em; }
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 { font-size: 1em; }
+
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.markdown-body li {
+  margin: 3px 0;
+}
+
+.markdown-body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--tonal);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.markdown-body pre {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--outline);
+  border-radius: 9px;
+  background: var(--page);
+  overflow-x: auto;
+}
+
+.markdown-body pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--outline);
+  color: var(--muted);
+}
+
+.markdown-body table {
+  width: 100%;
+  margin: 0 0 10px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 6px 10px;
+  border: 1px solid var(--outline);
+  text-align: left;
+}
+
+.markdown-body th {
+  background: var(--page);
+  font-weight: 600;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--outline);
+}
+
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* 流式光标跟在最后一个字符后面 */
+.markdown-body .cursor {
+  animation: markdown-blink 1s steps(2, start) infinite;
+  color: var(--accent);
+}
+
+@keyframes markdown-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ===== 代码块：语言标签 + 复制按钮 ===== */
+.markdown-body .code-block {
+  margin: 0 0 10px;
+  border: 1px solid var(--outline);
+  border-radius: 9px;
+  background: var(--page);
+  overflow: hidden;
+}
+
+/* 头部与代码区共用 code-block 的底色，不再另铺一层白 */
+.markdown-body .code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: transparent;
+}
+
+.markdown-body .code-lang {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.markdown-body .code-copy {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.markdown-body .code-copy:hover {
+  border-color: transparent;
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.markdown-body .code-copy.copied {
+  border-color: transparent;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* 让代码块外层负责边框和背景，覆盖通用 pre 样式 */
+.markdown-body .code-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

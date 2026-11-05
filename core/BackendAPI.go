@@ -839,6 +839,66 @@ func (c *Core) RegenerateChatMessage(id, nodeID, reasoningEffort string) error {
 	return c.runChatNode(id, session, config, directory, newReply, requestMessages, reasoningEffort)
 }
 
+// EditChatMessage 编辑当前分支上的一条用户消息。
+// 不改动原节点，而是在它的父节点下挂一条新用户消息形成新分支，原分支仍可切回。
+func (c *Core) EditChatMessage(id, nodeID, text, reasoningEffort string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("消息不能为空")
+	}
+	session, config, directory, err := c.beginChatSend(id)
+	if err != nil {
+		return err
+	}
+	defer c.endChatSend(id)
+
+	// ParentOf 对抽象根的直接子节点返回 (nil, true)，nil 表示挂在 Root 下
+	parent, found := session.Tree.ParentOf(nodeID)
+	if !found {
+		return errors.New("找不到这条消息的父节点")
+	}
+	target := session.Tree.FindNode(nodeID)
+	if target == nil || !hasUserMessage(target) {
+		return errors.New("只能编辑用户消息")
+	}
+	if parent != nil {
+		path, err := session.Tree.CurrentPath()
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(path, func(node *chatstruct.ChatNode) bool { return node == parent }) {
+			return errors.New("只能编辑当前分支上的消息")
+		}
+	}
+
+	parentID := ""
+	if parent != nil {
+		parentID = parent.ID
+	}
+	userNode := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "user", Content: text})
+	if err := session.Tree.AddNext(parentID, userNode); err != nil {
+		return err
+	}
+	requestMessages, err := session.Tree.MessagesThrough(userNode.ID)
+	if err != nil {
+		return err
+	}
+	replyNode := chatstruct.CreateChatNode()
+	if err := session.Tree.AddNext(userNode.ID, replyNode); err != nil {
+		return err
+	}
+	return c.runChatNode(id, session, config, directory, replyNode, requestMessages, reasoningEffort)
+}
+
+func hasUserMessage(node *chatstruct.ChatNode) bool {
+	for _, message := range node.Child {
+		if message.Role == "user" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasAssistantMessage(node *chatstruct.ChatNode) bool {
 	for _, message := range node.Child {
 		if message.Role == "assistant" {

@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
+import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
 const configs = useConfigsStore()
@@ -258,11 +259,24 @@ function closeMenusOnOutside(event: PointerEvent) {
   permFlyoutOpen.value = false
 }
 
-// Enter 发送；输入法组合输入（拼音候选）期间不能当作发送。
-function onComposerEnter(event: KeyboardEvent) {
-  if (event.isComposing || event.keyCode === 229) return
+// Enter 发送；带修饰键的 Enter（Shift、Ctrl+Shift 等）统一插入换行。
+// 浏览器对 Ctrl+Shift+Enter 默认没有行为，所以这里手动插入，不依赖默认行为。
+function onComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
+  const modifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
+  if (!modifier) {
+    event.preventDefault()
+    chat.send()
+    return
+  }
   event.preventDefault()
-  chat.send()
+  const el = event.currentTarget as HTMLTextAreaElement
+  const start = el.selectionStart
+  const end = el.selectionEnd
+  chat.draft = chat.draft.slice(0, start) + '\n' + chat.draft.slice(end)
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = start + 1
+  })
 }
 
 async function selectBranch(message: (typeof chat.messages)[number], direction: number) {
@@ -289,6 +303,91 @@ onUnmounted(() => {
   offs.forEach((off) => off())
 })
 
+// 一段新的流式输出开始时清掉上一帧缓存
+watch(() => chat.sending, (sending) => {
+  if (sending) resetStreaming()
+})
+
+// 代码块复制：v-html 生成的按钮无法直接绑 Vue 事件，用事件委托处理
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 自定义协议下 clipboard API 可能不可用，走下面的兜底
+  }
+  const area = document.createElement('textarea')
+  area.value = text
+  area.style.position = 'fixed'
+  area.style.opacity = '0'
+  document.body.appendChild(area)
+  area.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(area)
+  return ok
+}
+
+async function onBodyClick(event: MouseEvent) {
+  if (!(event.target instanceof Element)) return
+  const button = event.target.closest<HTMLButtonElement>('.code-copy')
+  if (!button) return
+  const code = button.closest('.code-block')?.querySelector('pre code')?.textContent ?? ''
+  if (!code) return
+  const ok = await copyText(code)
+  button.textContent = ok ? '已复制' : '复制失败'
+  button.classList.toggle('copied', ok)
+  window.setTimeout(() => {
+    button.textContent = '复制'
+    button.classList.remove('copied')
+  }, 1600)
+}
+
+// ===== 编辑用户消息 =====
+const editingNodeId = ref('')
+const editDraft = ref('')
+
+function startEdit(message: (typeof chat.messages)[number]) {
+  if (!message.nodeId || chat.sending) return
+  editingNodeId.value = message.nodeId
+  editDraft.value = message.content
+}
+
+function cancelEdit() {
+  editingNodeId.value = ''
+  editDraft.value = ''
+}
+
+async function submitEdit(message: (typeof chat.messages)[number]) {
+  const text = editDraft.value.trim()
+  if (!text || text === message.content) {
+    cancelEdit()
+    return
+  }
+  await chat.editMessage(message, text)
+  cancelEdit()
+}
+
+async function copyMessage(message: (typeof chat.messages)[number], event: MouseEvent) {
+  // currentTarget 在 await 之后会被浏览器清空，先存引用
+  const button = event.currentTarget as HTMLElement
+  const ok = await copyText(message.content)
+  button.classList.toggle('copied', ok)
+  window.setTimeout(() => button.classList.remove('copied'), 1600)
+}
+
+// 用户消息保持纯文本；助手消息渲染 Markdown。
+// 只有正在生成的最后一条走流式解析，其余全部读缓存。
+function bodyHtml(message: (typeof chat.messages)[number], index: number): string {
+  const streaming =
+    chat.sending && message.role === 'assistant' && index === chat.messages.length - 1
+  if (streaming) {
+    return renderStreaming(message.content) + '<span class="cursor" aria-hidden="true">▍</span>'
+  }
+  return renderDone(`${message.nodeId ?? 'draft'}:${index}`, message.content)
+}
+
 watch(
   () => [chat.session?.id, chat.session?.configId, chat.session?.model],
   () => chat.loadContextWindow(),
@@ -299,7 +398,7 @@ watch(
 watch(
   () => {
     const last = chat.messages[chat.messages.length - 1]
-    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.reasoning?.length ?? 0}:${last?.tools?.length ?? 0}`
+    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.reasoning?.length ?? 0}:${last?.tools?.length ?? 0}:${chat.error.length}`
   },
   async () => {
     await nextTick()
@@ -311,7 +410,8 @@ watch(
 
 <template>
   <section class="chat">
-    <div ref="scroller" class="chat-body">
+    <div ref="scroller" class="chat-body" @click="onBodyClick">
+      <div class="chat-list">
       <div v-for="(m, i) in chat.messages" :key="`${m.nodeId}:${i}`" class="msg" :class="m.role">
         <details v-if="m.role === 'assistant' && m.reasoning" class="reasoning"
           :open="chat.sending && i === chat.messages.length - 1">
@@ -326,25 +426,54 @@ watch(
           <span class="tool-name">{{ tc.name }}</span>
         </div>
 
-        <div class="msg-body">
-          {{ m.content }}<span v-if="chat.sending && m.role === 'assistant' && i === chat.messages.length - 1"
-            class="cursor" aria-hidden="true">▍</span>
-        </div>
+        <!-- 编辑中的用户消息 -->
+        <template v-if="m.role === 'user' && m.nodeId && editingNodeId === m.nodeId">
+          <textarea v-model="editDraft" class="msg-edit-input" rows="2"
+            @keydown.esc.prevent="cancelEdit" @keydown.enter.exact.prevent="submitEdit(m)"></textarea>
+          <div class="msg-edit-actions">
+            <button type="button" class="btn btn-ghost btn-sm" @click="cancelEdit">取消</button>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="!editDraft.trim()"
+              @click="submitEdit(m)">保存并重新生成</button>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="m.role === 'user'" class="msg-body">{{ m.content }}</div>
+          <div v-else class="msg-body markdown-body" v-html="bodyHtml(m, i)"></div>
+        </template>
 
-        <div v-if="m.branchCount && m.branchCount > 1" class="branch">
-          <button type="button" aria-label="上一个分支" @click="selectBranch(m, -1)">‹</button>
-          <span>{{ (m.branchIndex ?? 0) + 1 }} / {{ m.branchCount }}</span>
-          <button type="button" aria-label="下一个分支" @click="selectBranch(m, 1)">›</button>
+        <!-- 操作栏：编辑 / 复制 / 重新生成 / 分支切换统一一行，鼠标靠近才显示 -->
+        <div v-if="editingNodeId !== m.nodeId" class="msg-actions">
+          <button v-if="m.role === 'user' && m.nodeId && !chat.sending" type="button"
+            class="msg-action hover-only" title="编辑" aria-label="编辑" @click="startEdit(m)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20l4.5-1 10-10-3.5-3.5-10 10z" />
+              <path d="M14.5 5.5l4 4" />
+            </svg>
+          </button>
+          <button v-if="m.content" type="button" class="msg-action hover-only" title="复制"
+            aria-label="复制" @click="copyMessage(m, $event)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="12" height="12" rx="2" />
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+            </svg>
+          </button>
+          <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button"
+            class="regen hover-only" title="重新生成" aria-label="重新生成" @click="chat.regenerate(m)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
+          <div v-if="m.branchCount && m.branchCount > 1" class="branch hover-only">
+            <button type="button" aria-label="上一个分支" @click="selectBranch(m, -1)">‹</button>
+            <span>{{ (m.branchIndex ?? 0) + 1 }} / {{ m.branchCount }}</span>
+            <button type="button" aria-label="下一个分支" @click="selectBranch(m, 1)">›</button>
+          </div>
         </div>
-
-        <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button" class="regen"
-          @click="chat.regenerate(m)">
-          重新生成
-        </button>
+      </div>
+      <p v-if="chat.error" class="chat-error">{{ chat.error }}</p>
       </div>
     </div>
-
-    <p v-if="chat.error" class="chat-error">{{ chat.error }}</p>
 
     <div class="composer-wrap">
       <!-- 工作区条：对话为空时才出现，视觉上压在输入框后面 -->
@@ -362,8 +491,9 @@ watch(
         </div>
 
         <div class="composer">
-          <textarea v-model="chat.draft" class="composer-input" rows="1" placeholder="按 Shift 发送消息 , Ctrl + Shift 换行"
-            @keydown.enter.exact="onComposerEnter"></textarea>
+          <textarea v-model="chat.draft" class="composer-input" rows="1"
+            placeholder="Enter 发送 · Shift+Enter / Ctrl+Shift+Enter 换行"
+            @keydown="onComposerKeydown"></textarea>
 
           <div class="composer-bar">
             <button type="button" class="bar-icon" title="附件" aria-label="附件">
@@ -618,17 +748,40 @@ watch(
 }
 
 /* 消息区：唯一滚动容器 */
+/* 滚动容器铺满宽度，滚动条贴到窗口右侧；内容宽度由内层限制 */
 .chat-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
   flex: 1;
   min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+}
+
+.chat-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.chat-body::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  background-clip: content-box;
+}
+
+.chat-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  background-clip: content-box;
+}
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
   padding: 24px 28px 48px;
-  overflow-y: auto;
 }
 
 /* ===== 消息 ===== */
@@ -645,11 +798,12 @@ watch(
 
 .msg-body {
   max-width: 100%;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
+/* 只有用户消息需要保留原文换行；助手消息交给 markdown.css */
 .msg.user .msg-body {
+  white-space: pre-wrap;
   max-width: 78%;
   padding: 9px 14px;
   border-radius: 12px;
@@ -657,14 +811,53 @@ watch(
   color: var(--ink);
 }
 
-.cursor {
-  animation: blink 1s steps(2, start) infinite;
+/* ===== 消息操作栏 ===== */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
 }
 
-@keyframes blink {
-  to {
-    visibility: hidden;
-  }
+/* 分支切换与其它按钮同排，间距略大一点 */
+.msg-actions .branch {
+  margin-left: 2px;
+}
+
+/* 编辑、复制只在鼠标靠近消息时出现 */
+.msg-actions .hover-only {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.msg:hover .msg-actions .hover-only,
+.msg-actions .hover-only:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.msg-edit-input {
+  width: min(520px, 100%);
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.msg-edit-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--tonal);
+}
+
+.msg-edit-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .reasoning {
@@ -732,13 +925,16 @@ watch(
   font-size: 12px;
 }
 
+/* 错误提示作为消息流的一部分，不再占输入框上方的位置 */
 .chat-error {
-  max-width: 1100px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 8px 28px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
   font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 /* ===== 输入框：始终贴底 ===== */
@@ -750,10 +946,11 @@ watch(
 }
 
 /* 托盘常驻：灰底包住输入框，文件夹标签只在托盘上沿露出来 */
+/* 托盘：顶部工作区横栏 + 下面白底输入框，横栏铺满整个宽度 */
 .composer-frame {
-  position: relative;
   display: flex;
   flex-direction: column;
+  gap: 5px;
   padding: 6px;
   border: 1px solid var(--outline);
   border-radius: 16px;
@@ -761,17 +958,11 @@ watch(
 }
 
 .workspace-bar {
-  position: absolute;
-  left: 10px;
-  bottom: calc(100% - 1px);
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 4px 1px;
-  border: 1px solid var(--outline);
-  border-bottom: 0;
-  border-radius: 9px 9px 0 0;
-  background: var(--page);
+  height: 28px;
+  padding: 0 4px;
   white-space: nowrap;
 }
 
