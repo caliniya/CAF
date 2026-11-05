@@ -32,6 +32,7 @@ func InitFileTool() *FileTool {
 	return &FileTool{ToolKitMeta: &AgentTool.ToolKitMeta{
 		Name:        "文件操作工具",
 		Description: "标准工具集的一部分,提供文件操作能力",
+		Enabled:     true,
 		Tools: map[string]AgentTool.Tool{
 			ReadFileTool.Name: &ReadFileTool,
 		},

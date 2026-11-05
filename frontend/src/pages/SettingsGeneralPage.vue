@@ -209,38 +209,4 @@ watch(
   cursor: not-allowed;
 }
 
-/* 开关：checkbox 改造 */
-.switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 36px;
-  height: 20px;
-  margin: 0;
-  border-radius: 999px;
-  background: var(--outline);
-  appearance: none;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.switch::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 22%);
-  transition: transform 150ms ease;
-}
-
-.switch:checked {
-  background: var(--accent);
-}
-
-.switch:checked::after {
-  transform: translateX(16px);
-}
 </style>

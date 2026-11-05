@@ -10,9 +10,11 @@ import {
   SendChatMessage,
   SetChatBranch,
   SetChatReasoningEffort,
+  SetChatToolConfig,
   UpdateChatModel,
   type ChatTask as StoredChatTask,
   type ChatSummary,
+  type ChatToolConfig,
   type ChatDeltaEvent,
   type ChatToolEvent,
   type TokenUsage,
@@ -47,6 +49,8 @@ export const useChatStore = defineStore('chat', {
     error: '',
     usage: null as TokenUsage | null,
     contextWindow: null as number | null,
+    // 对话还没创建时先攒着，createChat 成功后写进新会话（一次性）
+    pendingToolConfig: null as ChatToolConfig | null,
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
     permission: '标准',
     // 默认「中」，与后端 NewChatTask 的默认值一致
@@ -224,6 +228,10 @@ export const useChatStore = defineStore('chat', {
     startNewChat() {
       this.reset()
     },
+    // 对话创建前在工具配置弹窗里改的设置，先存在这里
+    setPendingToolConfig(config: ChatToolConfig | null) {
+      this.pendingToolConfig = config
+    },
     async createChat() {
       const configs = useConfigsStore()
       const session = await CreateChat(configs.enables?.ID ?? '', configs.enabledModel, '')
@@ -232,6 +240,12 @@ export const useChatStore = defineStore('chat', {
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
       if (this.effort !== 'high') {
         this.session = await SetChatReasoningEffort(session.id, this.effort)
+      }
+      // 把对话开始前攒下的工具配置写进新会话，写完即清空（只作用于这一次）
+      if (this.pendingToolConfig) {
+        const pending = this.pendingToolConfig
+        this.session = await SetChatToolConfig(session.id, JSON.stringify(pending))
+        this.pendingToolConfig = null
       }
       await this.loadChats()
       return this.session

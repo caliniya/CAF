@@ -45,6 +45,8 @@ interface CoreBindings {
   DeleteChat(id: string): Promise<void>
   UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask>
   SetChatReasoningEffort(id: string, effort: string): Promise<ChatTask>
+  ListToolSets(): Promise<ToolSetDescriptor[]>
+  SetChatToolConfig(id: string, raw: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
@@ -82,6 +84,28 @@ export interface ChatTask extends ChatSummary {
   createdAt: string
   // 每个对话各自的思考强度，由后端持久化在会话文件里
   reasoningEffort?: string
+  toolConfig?: ChatToolConfig
+}
+
+export interface ToolKitDescriptor {
+  id: string
+  name: string
+  description: string
+  defaultEnabled: boolean
+  tools: string[]
+}
+
+export interface ToolSetDescriptor {
+  id: string
+  name: string
+  description: string
+  defaultEnabled: boolean
+  kits: ToolKitDescriptor[]
+}
+
+// 对话级覆盖：只写显式设置的 ToolKit，未写的项继承全局默认
+export interface ChatToolConfig {
+  sets?: Record<string, { kits?: Record<string, boolean> }>
 }
 
 export interface ModelProbeResult {
@@ -166,6 +190,12 @@ export function UpdateChatModel(id: string, configId: string, model: string): Pr
 }
 export function SetChatReasoningEffort(id: string, effort: string): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatReasoningEffort(id, effort))
+}
+export function ListToolSets(): Promise<ToolSetDescriptor[]> {
+  return bridge().then((c) => c.ListToolSets())
+}
+export function SetChatToolConfig(id: string, raw: string): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatToolConfig(id, raw))
 }
 export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatBranch(id, parentId, choice))

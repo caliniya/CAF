@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool } from '../api'
+import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 
@@ -55,10 +55,103 @@ function pickPermission(level: string) {
   permMenuOpen.value = false
 }
 
-function openTools() {
+const toolSets = ref<ToolSetDescriptor[]>([])
+const toolOverrides = ref<Record<string, boolean>>({})
+const toolsLoading = ref(false)
+const expandedSets = ref<Record<string, boolean>>({})
+
+// 用 \0 作分隔符，工具集/工具名里不可能出现
+function toolKey(setID: string, kitID: string) {
+  return `${setID}\u0000${kitID}`
+}
+
+function readOverrides() {
+  // 有会话读会话里的；没有就读「对话开始前」攒下的配置
+  const sets = chat.session?.toolConfig?.sets ?? chat.pendingToolConfig?.sets ?? {}
+  const result: Record<string, boolean> = {}
+  for (const [setID, info] of Object.entries(sets)) {
+    for (const [kitID, on] of Object.entries(info.kits ?? {})) {
+      result[toolKey(setID, kitID)] = on
+    }
+  }
+  toolOverrides.value = result
+}
+
+async function openTools() {
   permMenuOpen.value = false
   permFlyoutOpen.value = false
   toolsOpen.value = true
+  toolsLoading.value = true
+  try {
+    toolSets.value = await ListToolSets()
+    readOverrides()
+    const expanded: Record<string, boolean> = {}
+    for (const set of toolSets.value) expanded[set.id] = true
+    expandedSets.value = expanded
+  } catch (err) {
+    chat.error = String(err)
+    toolSets.value = []
+    toolOverrides.value = {}
+  } finally {
+    toolsLoading.value = false
+  }
+}
+
+function toggleSet(setID: string) {
+  expandedSets.value = { ...expandedSets.value, [setID]: !expandedSets.value[setID] }
+}
+
+function toolEnabled(setID: string, kitID: string, fallback: boolean) {
+  const key = toolKey(setID, kitID)
+  return key in toolOverrides.value ? toolOverrides.value[key] : fallback
+}
+
+// 整个工具集的开关状态：全开 / 全关 / 混合
+function setState(set: ToolSetDescriptor): 'on' | 'off' | 'mixed' {
+  if (!set.kits.length) return 'off'
+  const flags = set.kits.map((kit) => toolEnabled(set.id, kit.id, kit.defaultEnabled))
+  if (flags.every(Boolean)) return 'on'
+  if (flags.every((value) => !value)) return 'off'
+  return 'mixed'
+}
+
+// 工具集总开关 = 批量写入它下面所有 ToolKit，落地仍是 kit 粒度
+function setAllKits(set: ToolSetDescriptor, on: boolean) {
+  const next = { ...toolOverrides.value }
+  for (const kit of set.kits) next[toolKey(set.id, kit.id)] = on
+  void saveOverrides(next)
+}
+
+async function saveOverrides(next: Record<string, boolean>) {
+  toolOverrides.value = next
+  const sets: Record<string, { kits: Record<string, boolean> }> = {}
+  for (const [key, on] of Object.entries(next)) {
+    const [setID, kitID] = key.split('\u0000')
+    if (!setID || !kitID) continue
+    if (!sets[setID]) sets[setID] = { kits: {} }
+    sets[setID].kits[kitID] = on
+  }
+  const config = Object.keys(next).length ? { sets } : null
+  const id = chat.session?.id
+  if (!id) {
+    // 对话还没创建：先攒着，createChat 成功后写进新会话
+    chat.setPendingToolConfig(config)
+    return
+  }
+  try {
+    const session = await SetChatToolConfig(id, JSON.stringify(config ?? {}))
+    if (chat.session?.id === id) chat.session = session
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
+function setToolKit(setID: string, kitID: string, on: boolean) {
+  void saveOverrides({ ...toolOverrides.value, [toolKey(setID, kitID)]: on })
+}
+
+function resetToolConfig() {
+  void saveOverrides({})
 }
 
 // 同一时刻只允许一个二级菜单展开：provider = 服务商，model = 模型，effort = 思考强度
@@ -460,12 +553,57 @@ watch(
     <div v-if="toolsOpen" class="overlay" @click.self="toolsOpen = false">
       <div class="tools-dialog" role="dialog" aria-modal="true">
         <header class="tools-head">
-          <h2>工具配置</h2>
+          <div>
+            <h2>工具配置</h2>
+            <p class="tools-sub">
+              {{ chat.session ? '改动只作用于当前对话' : '为即将开始的对话预设工具' }}
+            </p>
+          </div>
           <button type="button" class="btn btn-ghost btn-sm" @click="toolsOpen = false">关闭</button>
         </header>
+
         <div class="tools-body">
-          <p>当前对话的工具设置（暂未实现）</p>
+          <p v-if="toolsLoading" class="tools-empty">正在加载工具…</p>
+          <p v-else-if="!toolSets.length" class="tools-empty">没有加载到工具集</p>
+
+          <div v-else class="tool-groups">
+            <section v-for="set in toolSets" :key="set.id" class="tool-group">
+              <div class="tool-group-head">
+                <button type="button" class="tool-expand" :aria-expanded="!!expandedSets[set.id]"
+                  @click="toggleSet(set.id)">
+                  <svg class="chev" :class="{ collapsed: !expandedSets[set.id] }" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span class="tool-set-name">{{ set.name }}</span>
+                  <span class="tool-count">{{ set.kits.length }} 个模块</span>
+                </button>
+                <input type="checkbox" class="switch" :checked="setState(set) !== 'off'"
+                  :indeterminate.prop="setState(set) === 'mixed'" :aria-label="`${set.name} 全部模块`"
+                  @change="setAllKits(set, ($event.target as HTMLInputElement).checked)" />
+              </div>
+              <p class="tool-desc">{{ set.description }}</p>
+
+              <!-- 展开后才显示子模块；不列出模块里有哪些工具 -->
+              <div v-if="expandedSets[set.id]" class="tool-kits">
+                <label v-for="kit in set.kits" :key="kit.id" class="tool-row">
+                  <span class="tool-text">
+                    <span class="tool-name">{{ kit.name }}</span>
+                    <span class="tool-desc">{{ kit.description }}</span>
+                  </span>
+                  <input type="checkbox" class="switch"
+                    :checked="toolEnabled(set.id, kit.id, kit.defaultEnabled)" :aria-label="kit.name"
+                    @change="setToolKit(set.id, kit.id, ($event.target as HTMLInputElement).checked)" />
+                </label>
+              </div>
+            </section>
+          </div>
         </div>
+
+        <footer class="tools-foot">
+          <button type="button" class="btn btn-ghost btn-sm" @click="resetToolConfig">恢复默认</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="toolsOpen = false">完成</button>
+        </footer>
       </div>
     </div>
   </Teleport>
@@ -795,8 +933,8 @@ watch(
 .tools-dialog {
   display: flex;
   flex-direction: column;
-  width: min(520px, 100%);
-  min-height: 240px;
+  width: min(560px, 100%);
+  height: min(560px, 82vh);
   border-radius: 14px;
   background: var(--surface);
   box-shadow: 0 24px 70px rgb(22 29 50 / 26%);
@@ -805,8 +943,9 @@ watch(
 
 .tools-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 16px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--outline);
 }
@@ -816,12 +955,135 @@ watch(
   font-weight: 600;
 }
 
+.tools-sub {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .tools-body {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  padding: 20px;
+  min-height: 0;
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.tools-empty {
+  padding: 32px 0;
   color: var(--muted);
   font-size: 13px;
+  text-align: center;
+}
+
+.tool-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-group {
+  padding: 12px 14px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+}
+
+.tool-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* 展开/折叠按钮：占满左侧，整行可点 */
+.tool-expand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.tool-expand:hover .tool-set-name {
+  color: var(--accent);
+}
+
+.tool-expand .chev {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 150ms ease;
+}
+
+.tool-expand .chev.collapsed {
+  transform: rotate(-90deg);
+}
+
+.tool-set-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.tool-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+.tool-desc {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.tool-kits {
+  margin-top: 10px;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 0;
+  border-top: 1px solid var(--outline);
+  cursor: pointer;
+}
+
+.tool-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-name {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.tool-text .tool-desc {
+  margin-top: 0;
+}
+
+.tools-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-top: 1px solid var(--outline);
 }
 </style>

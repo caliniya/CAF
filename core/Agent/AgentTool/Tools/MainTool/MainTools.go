@@ -47,6 +47,7 @@ func InitMainTool() *MainTools {
 		ToolSetMeta: &agenttool.ToolSetMeta{
 			Name:        "主工具集",
 			Description: "内置的标准工具集",
+			Enabled:     true,
 			ToolKits: map[string]agenttool.ToolKit{
 				FileTool.Name: FileTool,
 			},

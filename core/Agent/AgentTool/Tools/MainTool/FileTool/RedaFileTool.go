@@ -31,6 +31,7 @@ func (t *ReadFile) Load() {
 		},
 		"required": []string{"path"},
 	}
+	t.ToolMeta.Enabled = true
 }
 
 func (t *ReadFile) Meta() *agenttool.ToolMeta {

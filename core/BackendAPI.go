@@ -15,6 +15,7 @@ import (
 
 	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
@@ -644,6 +645,125 @@ func (c *Core) SetChatReasoningEffort(id, effort string) (*chat.ChatTask, error)
 	return session, nil
 }
 
+// ===== 对话级工具启用配置 =====
+// 最小启停单位是 ToolKit，不是单个 Tool。
+
+type ToolKitDescriptor struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	DefaultEnabled bool     `json:"defaultEnabled"`
+	Tools          []string `json:"tools"`
+}
+
+type ToolSetDescriptor struct {
+	ID             string              `json:"id"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	DefaultEnabled bool                `json:"defaultEnabled"`
+	Kits           []ToolKitDescriptor `json:"kits"`
+}
+
+// ListToolSets 返回启动期注册的所有工具集，供前端渲染开关。
+func (c *Core) ListToolSets() []ToolSetDescriptor {
+	out := make([]ToolSetDescriptor, 0, len(agenttool.ToolSets))
+	for setID, set := range agenttool.ToolSets {
+		meta := set.Meta()
+		item := ToolSetDescriptor{
+			ID: setID, Name: meta.Name, Description: meta.Description,
+			DefaultEnabled: meta.Enabled, Kits: []ToolKitDescriptor{},
+		}
+		for kitID, kit := range meta.ToolKits {
+			kitMeta := kit.Meta()
+			names := make([]string, 0, len(kitMeta.Tools))
+			for _, tool := range kit.List() {
+				if tm := tool.Meta(); tm != nil {
+					names = append(names, tm.Name)
+				}
+			}
+			sort.Strings(names)
+			item.Kits = append(item.Kits, ToolKitDescriptor{
+				ID: kitID, Name: kitMeta.Name, Description: kitMeta.Description,
+				DefaultEnabled: meta.Enabled && kitMeta.Enabled,
+				Tools:          names,
+			})
+		}
+		sort.Slice(item.Kits, func(i, j int) bool { return item.Kits[i].ID < item.Kits[j].ID })
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// SetChatToolConfig 把对话级覆盖写入会话文件。raw 是 ChatToolConfig 的 JSON；
+// 传 "{}" 表示清空覆盖，全部回退到全局默认。
+func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	if c.chatSending[id] {
+		return nil, errors.New("对话正在生成中，暂时无法修改工具配置")
+	}
+	var cfg agenttool.ChatToolConfig
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+			return nil, err
+		}
+	}
+	cfg.Normalize()
+	directory, err := c.chatDirectory()
+	if err != nil {
+		return nil, err
+	}
+	session, err := c.readChatLocked(directory, id)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Sets == nil {
+		session.ToolConfig = nil
+	} else {
+		session.ToolConfig = &cfg
+	}
+	session.UpdatedAt = time.Now().UTC()
+	if err := c.saveChatLocked(directory, session); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+// enabledTools 按「对话覆盖 → 全局默认 → 代码默认」解析每个 ToolKit，
+// 把启用 kit 下的工具转成请求可直接携带的 apiImpl.Tool。
+func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
+	if session == nil {
+		return nil
+	}
+	var enabled []apiImpl.Tool
+	for setID, set := range agenttool.ToolSets {
+		meta := set.Meta()
+		for kitID, kit := range meta.ToolKits {
+			on, explicit := session.ToolConfig.Kit(setID, kitID)
+			if !explicit && c.Configs != nil {
+				on, explicit = c.Configs.ToolNormalConfig.Kit(setID, kitID)
+			}
+			if !explicit {
+				on = meta.Enabled && kit.Meta().Enabled
+			}
+			if !on {
+				continue
+			}
+			for _, tool := range kit.List() {
+				tm := tool.Meta()
+				if tm == nil || !tm.Enabled {
+					continue
+				}
+				if converted, ok := agenttool.ToolList[tm.Name]; ok {
+					enabled = append(enabled, converted)
+				}
+			}
+		}
+	}
+	return enabled
+}
+
 func (c *Core) SendChatMessage(id, text, reasoningEffort string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -803,7 +923,12 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	session.Client = entry.Client
 	c.chatMu.Unlock()
 
-	request := apiImpl.ChatRequest{Model: session.Model, Messages: messages, Thinking: reasoningEffort}
+	request := apiImpl.ChatRequest{
+		Model:    session.Model,
+		Messages: messages,
+		Thinking: reasoningEffort,
+		Tools:    c.enabledTools(session),
+	}
 	generated := apiImpl.ChatMessage{Role: "assistant"}
 	streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 		if delta.Content != "" {
