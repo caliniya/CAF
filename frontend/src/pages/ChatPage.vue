@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
-import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Shield } from '@lucide/vue'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Shield, UserRound } from '@lucide/vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -20,6 +20,18 @@ const permMenuOpen = ref(false)
 const permFlyoutOpen = ref(false)
 const permFlyoutFlip = ref(false)
 const toolsOpen = ref(false)
+
+// ===== 人设 =====
+const personaMenuOpen = ref(false)
+const personaAnchor = ref<HTMLElement | null>(null)
+const personaLocked = computed(() => !!chat.session)
+const currentPersonaId = computed(() => chat.session?.tree?.root?.personaId || chat.pendingPersonaId)
+const currentPersona = computed(() => chat.personas.find((item) => item.id === currentPersonaId.value))
+
+function pickPersona(id: string) {
+  chat.setPendingPersona(id)
+  personaMenuOpen.value = false
+}
 
 // 两个一级菜单互斥，避免同时弹开
 function toggleModelMenu() {
@@ -253,11 +265,13 @@ async function selectModel(model: string) {
 
 function closeMenusOnOutside(event: PointerEvent) {
   const target = event.target as Node
-  if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)) return
+  if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
+    || personaAnchor.value?.contains(target)) return
   modelMenuOpen.value = false
   openFlyout.value = ''
   permMenuOpen.value = false
   permFlyoutOpen.value = false
+  personaMenuOpen.value = false
 }
 
 // Enter 发送；带修饰键的 Enter（Shift、Ctrl+Shift 等）统一插入换行。
@@ -296,6 +310,7 @@ onMounted(() => {
   onChatDelta((delta) => chat.applyDelta(delta)).then((off) => offs.push(off))
   onChatTool((tool) => chat.applyTool(tool)).then((off) => offs.push(off))
   if (!configs.loaded) configs.load()
+  chat.loadPersonas().catch((err) => { chat.error = String(err) })
   if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
 onUnmounted(() => {
@@ -491,6 +506,28 @@ watch(
             <span>CAF</span>
             <ChevronDown class="chev" :size="12" :stroke-width="2" />
           </button>
+
+          <!-- 人设：建对话时确定，之后锁定 -->
+          <div ref="personaAnchor" class="persona-anchor">
+            <button type="button" class="persona-btn" :class="{ locked: personaLocked }"
+              :disabled="personaLocked"
+              :title="personaLocked ? '人设在对话开始时确定，新建对话可切换' : '选择本次对话的人设'"
+              @click="personaMenuOpen = !personaMenuOpen">
+              <UserRound :size="13" :stroke-width="2" />
+              <span>{{ currentPersona?.name ?? '人设' }}</span>
+              <ChevronDown v-if="!personaLocked" class="chev" :size="11" :stroke-width="2" />
+            </button>
+
+            <div v-if="personaMenuOpen && !personaLocked" class="menu persona-menu" role="menu">
+              <button v-for="item in chat.personas" :key="item.id" type="button" class="menu-row"
+                :class="{ on: item.id === currentPersonaId }" :title="item.description"
+                @click="pickPersona(item.id)">
+                <span class="menu-row-name">{{ item.name }}</span>
+                <span class="menu-spacer"></span>
+                <Check v-if="item.id === currentPersonaId" class="check" :size="14" :stroke-width="2" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="composer">
@@ -1022,6 +1059,19 @@ watch(
   height: 28px;
   padding: 0 4px;
   white-space: nowrap;
+}
+
+.persona-anchor {
+  position: relative;
+  margin-left: auto;
+}
+
+.persona-menu {
+  right: 0;
+  left: auto;
+  top: calc(100% + 6px);
+  bottom: auto;
+  width: 190px;
 }
 
 .composer {

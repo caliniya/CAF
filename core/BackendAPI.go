@@ -18,6 +18,7 @@ import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
+	persona "github.com/caliniya/caf/core/Persona"
 )
 
 func (c *Core) StartLogin() (int, error) {
@@ -429,7 +430,12 @@ func (c *Core) ListChats() ([]chat.ChatSummary, error) {
 	return index.Chats, nil
 }
 
-func (c *Core) CreateChat(configID, model, title string) (*chat.ChatTask, error) {
+// ListPersonas 返回可用的人设列表（当前全部是代码内置的）。
+func (c *Core) ListPersonas() []persona.Persona {
+	return persona.List()
+}
+
+func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatTask, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	if c == nil || c.Configs == nil {
@@ -456,7 +462,10 @@ func (c *Core) CreateChat(configID, model, title string) (*chat.ChatTask, error)
 		title = "新建对话"
 	}
 	now := time.Now().UTC()
-	session := chat.NewChatTask(newID(), title, configID, model, chatstruct.CreateTree(title))
+	tree := chatstruct.CreateTree(title)
+	// 人设建树时确定，之后所有分支共享；找不到就回落到默认
+	tree.Root.PersonaID = persona.Resolve(personaID).ID
+	session := chat.NewChatTask(newID(), title, configID, model, tree)
 	session.CreatedAt = now
 	session.UpdatedAt = now
 	directory, err := c.chatDirectory()
@@ -991,7 +1000,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 
 	tools := c.enabledTools(session)
 	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
-	history := append([]apiImpl.ChatMessage{}, messages...)
+	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
+	history := make([]apiImpl.ChatMessage, 0, len(messages)+1)
+	if session.Tree != nil && session.Tree.Root != nil {
+		active := persona.Resolve(session.Tree.Root.PersonaID)
+		if prompt, promptErr := active.Prompt(); promptErr == nil {
+			history = append(history, apiImpl.ChatMessage{Role: "system", Content: prompt})
+		}
+	}
+	history = append(history, messages...)
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
 

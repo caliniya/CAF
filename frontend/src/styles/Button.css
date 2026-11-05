@@ -506,6 +506,41 @@ button:focus-visible {
   background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
+/* ---------- 人设选择（输入框上方的横栏里） ---------- */
+.persona-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.persona-btn:hover:not(:disabled) {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
+}
+
+/* 对话已开始：人设锁定，只做展示 */
+.persona-btn.locked {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.75;
+}
+
+.persona-btn svg {
+  flex-shrink: 0;
+}
+
+.persona-btn .chev {
+  opacity: 0.7;
+}
+
 /* ---------- 消息下方的图标按钮（编辑 / 复制） ---------- */
 .msg-action {
   display: grid;

@@ -17,6 +17,8 @@ type TreeRoot struct {
 	Choice int         `json:"choice"`
 	Next   []*ChatNode `json:"next"`
 	Name   string      `json:"name"`
+	// PersonaID 是这棵对话树的人设，建树时确定，所有分支共享
+	PersonaID string `json:"personaId,omitempty"`
 }
 
 // ToChatRequest 将当前分支转换为模型请求。

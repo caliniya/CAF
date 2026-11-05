@@ -39,7 +39,8 @@ interface CoreBindings {
   DeleteConfig(index: number): Promise<Configs>
   StartLogin(): Promise<number>
   ListChats(): Promise<ChatSummary[]>
-  CreateChat(configId: string, model: string, title: string): Promise<ChatTask>
+  CreateChat(configId: string, model: string, title: string, personaId: string): Promise<ChatTask>
+  ListPersonas(): Promise<Persona[]>
   GetChat(id: string): Promise<ChatTask>
   RenameChat(id: string, title: string): Promise<ChatTask>
   DeleteChat(id: string): Promise<void>
@@ -69,7 +70,18 @@ export interface ChatTreeNode {
 }
 
 export interface ChatTree {
-  root: { choice: number; next: ChatTreeNode[] | null; name: string } | null
+  root: { choice: number; next: ChatTreeNode[] | null; name: string; personaId?: string } | null
+}
+
+// 人设：后端把人设序列化成 JSON 作为 system 消息，这里只用于选择器展示
+export interface Persona {
+  id: string
+  name: string
+  description?: string
+  system: string
+  personality?: string[]
+  style?: string
+  scenario?: string
 }
 
 export interface StoredChatMessage {
@@ -178,8 +190,11 @@ export function DeleteConfig(index: number): Promise<Configs> {
 }
 
 export function ListChats(): Promise<ChatSummary[]> { return bridge().then((c) => c.ListChats()) }
-export function CreateChat(configId = '', model = '', title = ''): Promise<ChatTask> {
-  return bridge().then((c) => c.CreateChat(configId, model, title))
+export function CreateChat(configId = '', model = '', title = '', personaId = ''): Promise<ChatTask> {
+  return bridge().then((c) => c.CreateChat(configId, model, title, personaId))
+}
+export function ListPersonas(): Promise<Persona[]> {
+  return bridge().then((c) => c.ListPersonas())
 }
 export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c) => c.GetChat(id)) }
 export function RenameChat(id: string, title: string): Promise<ChatTask> {

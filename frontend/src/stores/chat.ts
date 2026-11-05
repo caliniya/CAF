@@ -6,6 +6,7 @@ import {
   GetChatModelContextWindow,
   GetChat,
   ListChats,
+  ListPersonas,
   RenameChat,
   RegenerateChatMessage,
   SendChatMessage,
@@ -18,6 +19,7 @@ import {
   type ChatToolConfig,
   type ChatDeltaEvent,
   type ChatToolEvent,
+  type Persona,
   type TokenUsage,
 } from '../api'
 import { useConfigsStore } from './configs'
@@ -54,6 +56,9 @@ export const useChatStore = defineStore('chat', {
     contextWindow: null as number | null,
     // 对话还没创建时先攒着，createChat 成功后写进新会话（一次性）
     pendingToolConfig: null as ChatToolConfig | null,
+    // 人设在建树时确定；pendingPersonaId 只作用于下一个新建对话
+    personas: [] as Persona[],
+    pendingPersonaId: '',
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
     permission: '标准',
     // 默认「中」，与后端 NewChatTask 的默认值一致
@@ -276,9 +281,22 @@ export const useChatStore = defineStore('chat', {
     setPendingToolConfig(config: ChatToolConfig | null) {
       this.pendingToolConfig = config
     },
+    setPendingPersona(id: string) {
+      this.pendingPersonaId = id
+    },
+    async loadPersonas() {
+      if (this.personas.length) return
+      this.personas = await ListPersonas()
+      if (!this.pendingPersonaId) this.pendingPersonaId = this.personas[0]?.id ?? ''
+    },
     async createChat() {
       const configs = useConfigsStore()
-      const session = await CreateChat(configs.enables?.ID ?? '', configs.enabledModel, '')
+      const session = await CreateChat(
+        configs.enables?.ID ?? '',
+        configs.enabledModel,
+        '',
+        this.pendingPersonaId,
+      )
       this.session = session
       this.rebuildMessages()
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
