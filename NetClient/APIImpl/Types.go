@@ -1,4 +1,4 @@
-package apiImpl
+package APIImpl
 
 import "encoding/json"
 

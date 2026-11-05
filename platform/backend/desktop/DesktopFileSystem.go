@@ -1,10 +1,10 @@
-package desktopBackend
+package DesktopBackend
 
 import (
 	"io/fs"
 	"os"
 
-	"github.com/caliniya/caf/platform"
+	platform "github.com/caliniya/caf/platform"
 )
 
 // paltform.FilePlatform接口的桌面实现(其实就是调用go原生)

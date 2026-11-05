@@ -1,4 +1,4 @@
-package chatstruct
+package ChatStruct
 
 import (
 	"errors"

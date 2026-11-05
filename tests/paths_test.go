@@ -1,11 +1,11 @@
-package tests
+package Tests
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/caliniya/caf/platform"
+	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 

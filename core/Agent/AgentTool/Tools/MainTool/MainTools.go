@@ -1,4 +1,4 @@
-package maintool
+package MainTool
 
 import agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 

@@ -1,4 +1,4 @@
-package apiImpl
+package APIImpl
 
 // OpenAIRequest 表示 OpenAI Responses API 的请求体。
 type OpenAIRequest struct {

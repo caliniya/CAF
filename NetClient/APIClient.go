@@ -1,4 +1,4 @@
-package netclient
+package NetClient
 
 import (
 	"bufio"

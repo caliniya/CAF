@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/caliniya/caf/core"
+	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
 

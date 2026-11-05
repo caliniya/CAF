@@ -1,4 +1,4 @@
-package platform
+package Platform
 
 var MainConfigFile ConfigFile
 

@@ -1,4 +1,4 @@
-package tests
+package Tests
 
 // Chat Completions 协议编码测试:锁定内部结构 → 线格式的映射行为。
 

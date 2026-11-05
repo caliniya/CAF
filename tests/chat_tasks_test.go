@@ -1,4 +1,4 @@
-package tests
+package Tests
 
 import (
 	"encoding/json"
@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	"github.com/caliniya/caf/core"
+	core "github.com/caliniya/caf/core"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
-	"github.com/caliniya/caf/platform"
+	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 

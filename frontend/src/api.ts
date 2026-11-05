@@ -87,12 +87,17 @@ export interface ModelProbeResult {
 }
 
 // window.go 由 Wails 运行时注入，时机可能晚于页面脚本，短暂轮询等待。
+// 包名改为 Core 后绑定路径变成 go.Core.Core；同时保留 go.core.Core 兼容旧产物。
 async function bridge(): Promise<CoreBindings> {
   for (let i = 0; i < 50; i++) {
     const w = window as unknown as {
-      go?: { core?: { Core?: CoreBindings } }
+      go?: {
+        Core?: { Core?: CoreBindings }
+        core?: { Core?: CoreBindings }
+      }
     }
-    if (w.go?.core?.Core) return w.go.core.Core
+    const bindings = w.go?.Core?.Core ?? w.go?.core?.Core
+    if (bindings) return bindings
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error('Wails 绑定尚未就绪')

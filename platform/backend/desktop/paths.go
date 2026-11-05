@@ -1,11 +1,11 @@
-package desktopBackend
+package DesktopBackend
 
 import (
 	"errors"
 	"os"
 	"path/filepath"
 
-	"github.com/caliniya/caf/platform"
+	platform "github.com/caliniya/caf/platform"
 )
 
 func DiscoverPaths(dataOverride string) (platform.Paths, error) {

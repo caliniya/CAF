@@ -1,4 +1,4 @@
-package desktopBackend
+package DesktopBackend
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"github.com/LagrangeDev/LagrangeGo/client"
 	"github.com/LagrangeDev/LagrangeGo/client/auth"
 	"github.com/LagrangeDev/LagrangeGo/client/sign"
-	"github.com/caliniya/caf/core"
-	"github.com/caliniya/caf/platform"
+	core "github.com/caliniya/caf/core"
+	platform "github.com/caliniya/caf/platform"
 )
 
 // qq平台在桌面的实现

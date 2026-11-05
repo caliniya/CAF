@@ -1,4 +1,4 @@
-package agenttool
+package AgentTool
 
 //方便内部使用的元结构体,内嵌使用
 type ToolMeta struct {

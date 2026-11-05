@@ -1,10 +1,10 @@
-package core
+package Core
 
 import (
 	"sync"
 
 	chat "github.com/caliniya/caf/core/Chat"
-	"github.com/caliniya/caf/platform"
+	platform "github.com/caliniya/caf/platform"
 )
 
 var Platform *Core

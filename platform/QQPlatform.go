@@ -1,4 +1,4 @@
-package platform
+package Platform
 
 import (
 	"github.com/LagrangeDev/LagrangeGo/client"

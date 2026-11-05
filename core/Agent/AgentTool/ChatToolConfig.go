@@ -1,4 +1,4 @@
-package agenttool
+package AgentTool
 
 // ChatToolConfig 是工具启停策略：纯数据、可序列化。
 // 同一类型用于两处——ChatTask.ToolConfig（对话级）与 Configs.ToolNormalConfig（全局默认）。

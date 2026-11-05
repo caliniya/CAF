@@ -1,4 +1,4 @@
-package tests
+package Tests
 
 import (
 	"os"
@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	"github.com/caliniya/caf/core"
-	"github.com/caliniya/caf/platform"
+	core "github.com/caliniya/caf/core"
+	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
