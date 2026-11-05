@@ -952,6 +952,12 @@ func (c *Core) endChatSend(id string) {
 	c.chatMu.Unlock()
 }
 
+// 一轮工具调用后模型会带着结果重新请求，限制轮数防止模型无限调用。
+const maxToolRounds = 10
+
+// 单个工具的执行上限，避免读大文件之类的操作把会话卡死。
+const toolTimeout = 30 * time.Second
+
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
 	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
@@ -983,41 +989,115 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	session.Client = entry.Client
 	c.chatMu.Unlock()
 
-	request := apiImpl.ChatRequest{
-		Model:    session.Model,
-		Messages: messages,
-		Thinking: reasoningEffort,
-		Tools:    c.enabledTools(session),
-	}
-	generated := apiImpl.ChatMessage{Role: "assistant"}
-	streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
-		if delta.Content != "" {
-			generated.Content += delta.Content
+	tools := c.enabledTools(session)
+	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
+	history := append([]apiImpl.ChatMessage{}, messages...)
+	produced := make([]apiImpl.ChatMessage, 0, 4)
+	reply.Child = produced
+
+	for round := 0; round <= maxToolRounds; round++ {
+		assistant := apiImpl.ChatMessage{Role: "assistant"}
+		request := apiImpl.ChatRequest{
+			Model:    session.Model,
+			Messages: history,
+			Thinking: reasoningEffort,
+			Tools:    tools,
 		}
-		if delta.Reasoning != "" {
-			generated.Reasoning += delta.Reasoning
+		streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
+			if delta.Content != "" {
+				assistant.Content += delta.Content
+			}
+			if delta.Reasoning != "" {
+				assistant.Reasoning += delta.Reasoning
+			}
+			if len(delta.ToolCalls) > 0 {
+				assistant.ToolCalls = append(assistant.ToolCalls, delta.ToolCalls...)
+			}
+			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
+				EmitJSON(EventChatDelta, map[string]any{
+					"chatId": id, "nodeId": reply.ID, "content": delta.Content,
+					"reasoning": delta.Reasoning, "usage": delta.Usage,
+				})
+			}
+		})
+		produced = append(produced, assistant)
+		reply.Child = produced
+		if streamErr != nil {
+			c.saveReplyLocked(directory, session)
+			return streamErr
 		}
-		if len(delta.ToolCalls) > 0 {
-			generated.ToolCalls = append(generated.ToolCalls, delta.ToolCalls...)
+
+		// 没有工具调用说明这一轮就是最终回复
+		if len(assistant.ToolCalls) == 0 {
+			break
 		}
-		if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
-			EmitJSON(EventChatDelta, map[string]any{
-				"chatId": id, "nodeId": reply.ID, "content": delta.Content,
-				"reasoning": delta.Reasoning, "usage": delta.Usage,
+
+		history = append(history, assistant)
+		for _, call := range assistant.ToolCalls {
+			EmitJSON(EventChatTool, map[string]string{
+				"chatId": id, "nodeId": reply.ID, "name": call.Name, "event": "start",
 			})
+			output, callErr := executeToolCall(call)
+			if callErr != nil {
+				EmitJSON(EventChatTool, map[string]string{
+					"chatId": id, "nodeId": reply.ID, "name": call.Name,
+					"event": "fail", "error": callErr.Error(),
+				})
+				// 工具失败不能中断整轮，回一条 tool 消息让模型自己处理
+				output = "工具执行失败：" + callErr.Error()
+			} else {
+				EmitJSON(EventChatTool, map[string]string{
+					"chatId": id, "nodeId": reply.ID, "name": call.Name, "event": "done",
+				})
+			}
+			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output}
+			history = append(history, toolMsg)
+			produced = append(produced, toolMsg)
+			reply.Child = produced
 		}
-		for _, tool := range delta.ToolCalls {
-			EmitJSON(EventChatTool, map[string]string{"chatId": id, "nodeId": reply.ID, "name": tool.Name, "event": "start"})
-			EmitJSON(EventChatTool, map[string]string{"chatId": id, "nodeId": reply.ID, "name": tool.Name, "event": "done"})
+
+		session.UpdatedAt = time.Now().UTC()
+		if err := c.saveReplyLocked(directory, session); err != nil {
+			return err
 		}
-	})
-	reply.Child = []apiImpl.ChatMessage{generated}
-	session.UpdatedAt = time.Now().UTC()
-	c.chatMu.Lock()
-	saveErr := c.saveChatLocked(directory, session)
-	c.chatMu.Unlock()
-	if streamErr != nil {
-		return streamErr
 	}
-	return saveErr
+
+	return c.saveReplyLocked(directory, session)
+}
+
+// executeToolCall 按名字取工具实例、解析参数并执行，带超时保护。
+func executeToolCall(call apiImpl.ToolCall) (string, error) {
+	tool := agenttool.Tools[call.Name]
+	if tool == nil {
+		return "", fmt.Errorf("未找到工具 %q", call.Name)
+	}
+	args := map[string]any{}
+	if raw := strings.TrimSpace(call.Arguments); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &args); err != nil {
+			return "", fmt.Errorf("参数解析失败：%w", err)
+		}
+	}
+
+	type result struct {
+		output string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		output, err := tool.Fun(args)
+		done <- result{output: output, err: err}
+	}()
+
+	select {
+	case r := <-done:
+		return r.output, r.err
+	case <-time.After(toolTimeout):
+		return "", errors.New("执行超时")
+	}
+}
+
+func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask) error {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	return c.saveChatLocked(directory, session)
 }

@@ -349,10 +349,17 @@ async function onBodyClick(event: MouseEvent) {
 const editingNodeId = ref('')
 const editDraft = ref('')
 
-function startEdit(message: (typeof chat.messages)[number]) {
+async function startEdit(message: (typeof chat.messages)[number]) {
   if (!message.nodeId || chat.sending) return
   editingNodeId.value = message.nodeId
   editDraft.value = message.content
+  // 等 DOM 换成 textarea 后立刻聚焦，否则要点第二次才能输入
+  await nextTick()
+  const input = document.querySelector<HTMLTextAreaElement>('.msg-edit-input')
+  if (input) {
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length)
+  }
 }
 
 function cancelEdit() {
@@ -399,7 +406,7 @@ watch(
 watch(
   () => {
     const last = chat.messages[chat.messages.length - 1]
-    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.reasoning?.length ?? 0}:${last?.tools?.length ?? 0}:${chat.error.length}`
+    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${chat.error.length}`
   },
   async () => {
     await nextTick()
@@ -414,18 +421,26 @@ watch(
     <div ref="scroller" class="chat-body" @click="onBodyClick">
       <div class="chat-list">
       <div v-for="(m, i) in chat.messages" :key="`${m.nodeId}:${i}`" class="msg" :class="m.role">
-        <details v-if="m.role === 'assistant' && m.reasoning" class="reasoning"
+        <!-- 模型工作过程：思考 + 中间轮次的文本 + 工具调用，最终回复在外面 -->
+        <details v-if="m.role === 'assistant' && m.process?.length" class="process"
           :open="chat.sending && i === chat.messages.length - 1">
-          <summary>已深度思考</summary>
-          <div class="reasoning-body">{{ m.reasoning }}</div>
+          <summary>模型工作过程</summary>
+          <div class="process-body">
+            <template v-for="(item, pi) in m.process" :key="pi">
+              <!-- 每轮思考单独可折叠；生成中自动展开，结束后交给用户控制 -->
+              <details v-if="item.kind === 'reasoning'" class="process-reason"
+                :open="chat.sending && i === chat.messages.length - 1 ? true : undefined">
+                <summary>思考</summary>
+                <p class="process-reasoning">{{ item.content }}</p>
+              </details>
+              <p v-else-if="item.kind === 'text'" class="process-text">{{ item.content }}</p>
+              <div v-else class="process-tool">
+                <span class="process-dot" :class="item.status" aria-hidden="true"></span>
+                执行 {{ item.name }}
+              </div>
+            </template>
+          </div>
         </details>
-
-        <div v-for="(tc, ti) in m.tools ?? []" :key="ti" class="tool-card">
-          <span class="tool-icon" :class="tc.status" aria-hidden="true">
-            {{ tc.status === 'run' ? '⟳' : '✓' }}
-          </span>
-          <span class="tool-name">{{ tc.name }}</span>
-        </div>
 
         <!-- 编辑中的用户消息 -->
         <template v-if="m.role === 'user' && m.nodeId && editingNodeId === m.nodeId">
@@ -790,6 +805,7 @@ watch(
 .msg-edit-input {
   width: min(520px, 100%);
   min-height: 72px;
+  max-height: 260px;
   padding: 10px 12px;
   border: 1px solid var(--accent);
   border-radius: 10px;
@@ -798,6 +814,20 @@ watch(
   font-size: 14px;
   line-height: 1.6;
   resize: vertical;
+  /* 高度跟随内容，减少切换编辑态时的跳动 */
+  field-sizing: content;
+  animation: edit-in 120ms ease;
+}
+
+@keyframes edit-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .msg-edit-input:focus {
@@ -810,61 +840,139 @@ watch(
   gap: 8px;
 }
 
-.reasoning {
+/* ===== 模型工作过程 ===== */
+.process {
   width: 100%;
-  border-left: 2px solid var(--outline);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--tonal) 45%, transparent);
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--page);
+  font-size: 12.5px;
 }
 
-.reasoning summary {
-  padding: 5px 10px;
+.process summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
   color: var(--muted);
-  font-size: 12.5px;
   cursor: pointer;
+  list-style: none;
   user-select: none;
 }
 
-.reasoning-body {
-  padding: 0 12px 9px;
+.process summary::-webkit-details-marker {
+  display: none;
+}
+
+.process summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 150ms ease;
+}
+
+.process[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 12px 12px;
+}
+
+/* 单轮思考：可折叠，默认收起 */
+.process-reason summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.process-reason summary::-webkit-details-marker {
+  display: none;
+}
+
+.process-reason summary::before {
+  content: '▸';
+  font-size: 10px;
+  transition: transform 150ms ease;
+}
+
+.process-reason[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.process-reason[open] .process-reasoning {
+  margin-top: 5px;
+}
+
+.process-reasoning {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--outline);
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.tool-card {
-  display: inline-flex;
+.process-text {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.process-tool {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 10px;
-  border: 1px solid var(--outline);
-  border-radius: 8px;
-  font-size: 12.5px;
-}
-
-.tool-icon {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 11px;
-}
-
-.tool-icon.run {
-  background: var(--tonal);
-  color: var(--accent);
-}
-
-.tool-icon.done {
-  background: #e3f5e9;
-  color: #1e7d3c;
-}
-
-.tool-name {
+  gap: 6px;
+  color: var(--muted);
   font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.process-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.process-dot.run {
+  background: var(--accent);
+  animation: process-pulse 1.1s ease-in-out infinite;
+}
+
+.process-dot.done {
+  background: #1e7d3c;
+}
+
+.process-dot.fail {
+  background: var(--danger);
+}
+
+@keyframes process-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .branch {

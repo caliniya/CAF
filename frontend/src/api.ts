@@ -231,7 +231,8 @@ export interface ChatToolEvent {
   chatId?: string
   nodeId?: string
   name: string
-  event: 'start' | 'done'
+  event: 'start' | 'done' | 'fail'
+  error?: string
 }
 
 function parseEvent<T>(data: unknown): T {

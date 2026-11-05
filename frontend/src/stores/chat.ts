@@ -24,16 +24,18 @@ import { useConfigsStore } from './configs'
 
 let contextWindowRequestId = 0
 
-export interface ToolCard {
-  name: string
-  status: 'run' | 'done'
+// 一次回复里的「工作过程」：思考、模型中间说的话、工具调用
+export interface ProcessItem {
+  kind: 'reasoning' | 'text' | 'tool'
+  content?: string
+  name?: string
+  status?: 'run' | 'done' | 'fail'
 }
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
-  reasoning?: string
-  tools?: ToolCard[]
+  process?: ProcessItem[]
   nodeId?: string
   parentId?: string
   branchIndex?: number
@@ -123,7 +125,14 @@ export const useChatStore = defineStore('chat', {
       const last = this.messages[this.messages.length - 1]
       if (!last || last.role !== 'assistant') return
       if (delta.reasoning) {
-        last.reasoning = (last.reasoning ?? '') + delta.reasoning
+        // 思考内容直接进工作过程，作为其中一段
+        last.process = last.process ?? []
+        const tail = last.process[last.process.length - 1]
+        if (tail?.kind === 'reasoning') {
+          tail.content = (tail.content ?? '') + delta.reasoning
+        } else {
+          last.process.push({ kind: 'reasoning', content: delta.reasoning })
+        }
       }
       if (delta.content) {
         last.content += delta.content
@@ -133,14 +142,22 @@ export const useChatStore = defineStore('chat', {
       if (tool.chatId && tool.chatId !== this.session?.id) return
       const last = this.messages[this.messages.length - 1]
       if (!last || last.role !== 'assistant') return
-      last.tools = last.tools ?? []
+      last.process = last.process ?? []
+
       if (tool.event === 'start') {
-        last.tools.push({ name: tool.name, status: 'run' })
+        // 模型决定调工具时，它已经说出口的话属于「工作过程」，正文让给最终回复
+        if (last.content.trim()) {
+          last.process.push({ kind: 'text', content: last.content })
+          last.content = ''
+        }
+        last.process.push({ kind: 'tool', name: tool.name, status: 'run' })
         return
       }
-      for (let i = last.tools.length - 1; i >= 0; i--) {
-        if (last.tools[i].name === tool.name && last.tools[i].status === 'run') {
-          last.tools[i].status = 'done'
+
+      for (let i = last.process.length - 1; i >= 0; i--) {
+        const item = last.process[i]
+        if (item.kind === 'tool' && item.name === tool.name && item.status === 'run') {
+          item.status = tool.event === 'fail' ? 'fail' : 'done'
           return
         }
       }
@@ -190,19 +207,45 @@ export const useChatStore = defineStore('chat', {
       while (node) {
         const siblings = parentId ? this.findNode(parentId)?.next ?? [] : rootNodes
         const branchIndex = parentId ? this.findNode(parentId)?.choice ?? 0 : root.choice
-        for (const message of node.child ?? []) {
-          const role = message.role === 'user' ? 'user' : 'assistant'
+        const meta = { nodeId: node.id, parentId, branchIndex, branchCount: siblings.length }
+        const children = node.child ?? []
+
+        for (const message of children) {
+          // 用户消息节点只有一条
+          if (message.role === 'user') {
+            this.messages.push({ role: 'user', content: message.content ?? '', ...meta })
+          }
+        }
+
+        // 助手节点：child 里是 [assistant(可能带 tool_calls), tool, tool, assistant...]
+        // 最后一条 assistant 是正式回复，之前的都归入「工作过程」
+        const assistantChildren = children.filter((item) => item.role === 'assistant')
+        if (assistantChildren.length) {
+          const final = assistantChildren[assistantChildren.length - 1]
+          const finalIndex = children.lastIndexOf(final)
+          const process: ProcessItem[] = []
+
+          for (let ci = 0; ci < finalIndex; ci++) {
+            const item = children[ci]
+            if (item.role === 'tool') continue
+            // 每轮思考单独成段：轮与轮之间会被工具调用隔开
+            if (item.reasoning) process.push({ kind: 'reasoning', content: item.reasoning })
+            if ((item.content ?? '').trim()) process.push({ kind: 'text', content: item.content })
+            for (const call of item.tool_calls ?? []) {
+              process.push({ kind: 'tool', name: call.name, status: 'done' })
+            }
+          }
+          // 最终轮的思考排在最终回复之前
+          if (final.reasoning) process.push({ kind: 'reasoning', content: final.reasoning })
+
           this.messages.push({
-            role,
-            content: message.content ?? '',
-            reasoning: message.reasoning,
-            tools: (message.tool_calls ?? []).map((tool) => ({ name: tool.name, status: 'done' as const })),
-            nodeId: node.id,
-            parentId,
-            branchIndex,
-            branchCount: siblings.length,
+            role: 'assistant',
+            content: final.content ?? '',
+            process: process.length ? process : undefined,
+            ...meta,
           })
         }
+
         parentId = node.id
         const nextNodes = node.next ?? []
         if (!nextNodes.length || node.choice < 0 || node.choice >= nextNodes.length) break
@@ -312,8 +355,7 @@ export const useChatStore = defineStore('chat', {
       this.messages = this.messages.slice(0, index + 1)
       const pending = this.messages[index]
       pending.content = ''
-      pending.reasoning = ''
-      pending.tools = []
+      pending.process = []
       this.error = ''
       this.sending = true
       try {
