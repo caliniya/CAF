@@ -8,23 +8,23 @@ import (
 
 // 这里的是全局性的
 var Tools map[string]Tool
-var ToolSets map[string]ToolSet
+var ToolSets map[string]ToolsSet
 var ToolList map[string]apiImpl.Tool
 
 func Init() {
 	Tools = map[string]Tool{}
-	ToolSets = map[string]ToolSet{}
+	ToolSets = map[string]ToolsSet{}
 	ToolList = map[string]apiImpl.Tool{}
 }
 
-func Add(t ToolSet) error {
+func Add(t ToolsSet) error {
 	if ToolSets == nil {
 		return errors.New("要加载的工具集为nil")
 	}
 
-	ToolSets[t.Name] = t
+	ToolSets[t.Meta().Name] = t
 
-	for _, kit := range t.ToolKits {
+	for _, kit := range t.Meta().ToolKits {
 		for _, tool := range kit.List() {
 			name := tool.Meta().Name
 

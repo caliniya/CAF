@@ -1,4 +1,4 @@
-package filetool
+package FileToolInMainTool
 
 import (
 	"errors"

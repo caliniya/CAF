@@ -58,6 +58,9 @@ func (c *ChatToolConfig) remove(setID, kitID string) {
 	delete(set.Kits, kitID)
 	if len(set.Kits) == 0 {
 		delete(c.Sets, setID)
+		if len(c.Sets) == 0 {
+			c.Sets = nil
+		}
 		return
 	}
 	c.Sets[setID] = set

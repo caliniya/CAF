@@ -5,6 +5,8 @@ type ToolMeta struct {
 	Name        string
 	Description string
 	Parameters  map[string]any
+
+	Enabled bool
 }
 
 type Tool interface {
@@ -14,35 +16,37 @@ type Tool interface {
 }
 
 // 某种工具集的表示
-type ToolSet struct {
+type ToolSetMeta struct {
 	Name        string
 	Description string
 	ToolKits    map[string]ToolKit
+
+	Enabled bool
 }
 
 // 接口
 type ToolsSet interface {
-	Name() string
-	Description() string
+	Load()
 
-	EnableSet(string) error
-	DisEnableSet(string) error
-
-	Enable() error
-	DisEnable() error
+	Meta() ToolSetMeta
 
 	Get(string) ToolKit
 	ListMap() map[string]ToolKit
 	List() []ToolKit
 }
 
+type ToolKitMeta struct {
+	Name        string
+	Description string
+
+	Tools map[string]Tool
+
+	Enabled bool
+}
+
 // 一个大工具集的小模块
 type ToolKit interface {
-	Enable() error
-	DisEnable() error
-
-	Name() string
-	Description() string
+	Meta() ToolKitMeta
 
 	ListName() map[string]Tool
 	List() []Tool
