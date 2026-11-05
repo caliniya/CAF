@@ -12,11 +12,10 @@ type ToolMeta struct {
 }
 
 type Tool interface {
-	Load()
 	Meta() *ToolMeta
 	Fun(map[string]any) (string, error)
 
-	ToType() APIImpl.Tool
+	ToType() *APIImpl.Tool
 }
 
 // 某种工具集的表示

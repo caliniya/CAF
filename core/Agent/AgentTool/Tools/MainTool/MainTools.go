@@ -1,6 +1,9 @@
 package MainTool
 
-import agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+import (
+	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	FileToolInMainTool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/FileTool"
+)
 
 //import agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 
@@ -35,4 +38,18 @@ func (m *MainTools) Load() {
 // Meta implements [agenttool.ToolsSet].
 func (m *MainTools) Meta() agenttool.ToolSetMeta {
 	return *m.ToolSetMeta
+}
+
+func InitMainTool() *MainTools {
+	FileTool := FileToolInMainTool.InitFileTool()
+
+	return &MainTools{
+		ToolSetMeta: &agenttool.ToolSetMeta{
+			Name:        "主工具集",
+			Description: "内置的标准工具集",
+			ToolKits: map[string]agenttool.ToolKit{
+				FileTool.Name: FileTool,
+			},
+		},
+	}
 }
