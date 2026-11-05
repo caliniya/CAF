@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Shield } from '@lucide/vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -445,24 +446,15 @@ watch(
         <div v-if="editingNodeId !== m.nodeId" class="msg-actions">
           <button v-if="m.role === 'user' && m.nodeId && !chat.sending" type="button"
             class="msg-action hover-only" title="编辑" aria-label="编辑" @click="startEdit(m)">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 20l4.5-1 10-10-3.5-3.5-10 10z" />
-              <path d="M14.5 5.5l4 4" />
-            </svg>
+            <Pencil :size="17" :stroke-width="2" />
           </button>
           <button v-if="m.content" type="button" class="msg-action hover-only" title="复制"
             aria-label="复制" @click="copyMessage(m, $event)">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="8" y="8" width="12" height="12" rx="2" />
-              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-            </svg>
+            <Copy :size="17" :stroke-width="2" />
           </button>
           <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button"
             class="regen hover-only" title="重新生成" aria-label="重新生成" @click="chat.regenerate(m)">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-            </svg>
+            <RotateCw :size="17" :stroke-width="2" />
           </button>
           <div v-if="m.branchCount && m.branchCount > 1" class="branch hover-only">
             <button type="button" aria-label="上一个分支" @click="selectBranch(m, -1)">‹</button>
@@ -480,13 +472,9 @@ watch(
       <div class="composer-frame">
         <div class="workspace-bar">
           <button type="button" class="ctx-pill" title="切换工作区">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
+            <Folder :size="14" :stroke-width="2" />
             <span>CAF</span>
-            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            <ChevronDown class="chev" :size="12" :stroke-width="2" />
           </button>
         </div>
 
@@ -497,22 +485,15 @@ watch(
 
           <div class="composer-bar">
             <button type="button" class="bar-icon" title="附件" aria-label="附件">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Plus :size="16" :stroke-width="2" />
             </button>
 
             <div ref="permMenuAnchor" class="perm-anchor">
               <button type="button" class="perm-trigger" :class="{ elevated: chat.permission === '完全访问' }"
                 :aria-expanded="permMenuOpen" aria-haspopup="menu" @click="togglePermMenu">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
-                </svg>
+                <Shield :size="13" :stroke-width="2" />
                 <span>{{ chat.permission }}</span>
-                <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
+                <ChevronDown class="chev" :size="12" :stroke-width="2" />
               </button>
 
               <div v-if="permMenuOpen" class="menu perm-menu" role="menu">
@@ -522,9 +503,7 @@ watch(
                     <span class="menu-row-label">权限</span>
                     <span class="menu-spacer"></span>
                     <span class="menu-value">{{ chat.permission }}</span>
-                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                      <polyline points="9 6 15 12 9 18" />
-                    </svg>
+                    <ChevronRight class="chev" :size="12" :stroke-width="2" />
                   </button>
 
                   <div v-if="permFlyoutOpen" class="flyout flyout--narrow"
@@ -532,10 +511,7 @@ watch(
                     <button v-for="level in PERMISSIONS" :key="level" type="button" class="menu-row"
                       :class="{ on: chat.permission === level }" @click="pickPermission(level)">
                       <span class="menu-row-name">{{ level }}</span>
-                      <svg v-if="chat.permission === level" class="check" viewBox="0 0 24 24"
-                        aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+              <Check v-if="chat.permission === level" class="check" :size="14" :stroke-width="2" />
                     </button>
                   </div>
                 </div>
@@ -561,9 +537,7 @@ watch(
               <button type="button" class="model-btn" :aria-expanded="modelMenuOpen" aria-haspopup="menu"
                 @click="toggleModelMenu">
                 <span class="model-btn-label">{{ activeModel || '选择模型' }}</span>
-                <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
+                <ChevronDown class="chev" :size="12" :stroke-width="2" />
               </button>
 
               <div v-if="modelMenuOpen" class="menu model-menu" role="menu">
@@ -571,33 +545,23 @@ watch(
                 <div class="menu-slot">
                   <button type="button" class="menu-row" :aria-expanded="openFlyout === 'provider'"
                     @click="toggleFlyout('provider', $event)">
-                    <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                      <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
-                    </svg>
+                    <Box class="row-icon" :size="16" :stroke-width="1.6" />
                     <span class="menu-row-name">
                       {{ activeConfig?.Name || activeConfig?.ServerAddress || '未选择提供商' }}
                     </span>
                     <span class="tag">API</span>
-                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                      <polyline points="9 6 15 12 9 18" />
-                    </svg>
+                    <ChevronRight class="chev" :size="12" :stroke-width="2" />
                   </button>
 
                   <div v-if="openFlyout === 'provider'" class="flyout" :class="{ 'flyout--flip': flyoutFlip }"
                     role="menu">
                     <button v-for="config in configs.configs" :key="config.ID" type="button" class="menu-row"
                       :class="{ on: config.ID === activeConfig?.ID }" @click="selectConfig(config.ID)">
-                      <svg class="row-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-                        <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
-                      </svg>
+                      <Box class="row-icon" :size="16" :stroke-width="1.6" />
                       <span class="menu-row-name">{{ config.Name || config.ServerAddress }}</span>
                       <span class="tag">API</span>
                       <span class="menu-spacer"></span>
-                      <svg v-if="config.ID === activeConfig?.ID" class="check" viewBox="0 0 24 24" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+              <Check v-if="config.ID === activeConfig?.ID" class="check" :size="14" :stroke-width="2" />
                     </button>
                     <span v-if="!configs.configs.length" class="menu-empty">尚未配置提供商</span>
                     <div class="menu-sep"></div>
@@ -614,9 +578,7 @@ watch(
                     <span class="menu-row-label">模型</span>
                     <span class="menu-spacer"></span>
                     <span class="menu-value">{{ activeModelName }}</span>
-                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                      <polyline points="9 6 15 12 9 18" />
-                    </svg>
+                    <ChevronRight class="chev" :size="12" :stroke-width="2" />
                   </button>
 
                   <div v-if="openFlyout === 'model'" class="flyout" :class="{ 'flyout--flip': flyoutFlip }" role="menu">
@@ -624,9 +586,7 @@ watch(
                       :class="{ on: model.id === activeModel }" @click="selectModel(model.id)">
                       <span class="menu-item-name">{{ model.name || model.id }}</span>
                       <span v-if="model.input_modalities?.includes('image')" class="tag">视觉</span>
-                      <svg v-if="model.id === activeModel" class="check" viewBox="0 0 24 24" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+              <Check v-if="model.id === activeModel" class="check" :size="14" :stroke-width="2" />
                     </button>
                     <span v-if="!activeConfig?.Model?.length" class="menu-empty">暂无模型</span>
                   </div>
@@ -640,9 +600,7 @@ watch(
                     <span class="menu-spacer"></span>
                     <span class="menu-value">{{ effortLabel }}</span>
                     <kbd class="menu-kbd">Ctrl+T</kbd>
-                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                      <polyline points="9 6 15 12 9 18" />
-                    </svg>
+                    <ChevronRight class="chev" :size="12" :stroke-width="2" />
                   </button>
 
                   <div v-if="openFlyout === 'effort'" class="flyout flyout--narrow"
@@ -650,9 +608,7 @@ watch(
                     <button v-for="(step, index) in effortSteps" :key="step.value" type="button" class="menu-row"
                       :class="{ on: index === effortIndex }" @click="pickEffort(index)">
                       <span class="menu-row-name">{{ step.label }}</span>
-                      <svg v-if="index === effortIndex" class="check" viewBox="0 0 24 24" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
+              <Check v-if="index === effortIndex" class="check" :size="14" :stroke-width="2" />
                     </button>
                   </div>
                 </div>
@@ -667,10 +623,7 @@ watch(
 
             <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending" aria-label="发送"
               @click="chat.send()">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <line x1="12" y1="19" x2="12" y2="6" />
-                <polyline points="6 12 12 6 18 12" />
-              </svg>
+              <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
           </div>
         </div>
@@ -701,10 +654,7 @@ watch(
               <div class="tool-group-head">
                 <button type="button" class="tool-expand" :aria-expanded="!!expandedSets[set.id]"
                   @click="toggleSet(set.id)">
-                  <svg class="chev" :class="{ collapsed: !expandedSets[set.id] }" viewBox="0 0 24 24"
-                    aria-hidden="true">
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  <ChevronDown class="chev" :class="{ collapsed: !expandedSets[set.id] }" :size="13" :stroke-width="2" />
                   <span class="tool-set-name">{{ set.name }}</span>
                   <span class="tool-count">{{ set.kits.length }} 个模块</span>
                 </button>
