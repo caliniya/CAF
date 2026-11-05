@@ -10,9 +10,8 @@ import (
 )
 
 type Configs struct {
-	ALLConfig     *[]Config `json:"config"`
-	EnablesConfig *Config
-	// ToolNormalConfig 是全局默认的工具启停策略；nil 表示没有任何覆盖。
+	ALLConfig        *[]Config `json:"config"`
+	EnablesConfig    *Config
 	ToolNormalConfig *agenttool.ChatToolConfig `json:"toolNormalConfig,omitempty"`
 }
 

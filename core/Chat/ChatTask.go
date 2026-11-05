@@ -9,15 +9,16 @@ import (
 )
 
 type ChatTask struct {
-	ID         string                    `json:"id"`
-	Title      string                    `json:"title"`
-	ConfigID   string                    `json:"configId"`
-	Model      string                    `json:"model"`
-	Tree       *chatstruct.ChatTree      `json:"tree"`
-	CreatedAt  time.Time                 `json:"createdAt"`
-	UpdatedAt  time.Time                 `json:"updatedAt"`
-	Client     *netclient.APIClient      `json:"-"`
-	ToolConfig *agenttool.ChatToolConfig `json:"toolConfig,omitempty"`
+	ID              string                    `json:"id"`
+	Title           string                    `json:"title"`
+	ConfigID        string                    `json:"configId"`
+	Model           string                    `json:"model"`
+	ReasoningEffort string                    `json:"reasoningEffort,omitempty"`
+	Tree            *chatstruct.ChatTree      `json:"tree"`
+	CreatedAt       time.Time                 `json:"createdAt"`
+	UpdatedAt       time.Time                 `json:"updatedAt"`
+	Client          *netclient.APIClient      `json:"-"`
+	ToolConfig      *agenttool.ChatToolConfig `json:"toolConfig,omitempty"`
 }
 
 type ChatSummary struct {
@@ -35,7 +36,8 @@ func NewChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *
 	now := time.Now().UTC()
 	return &ChatTask{
 		ID: id, Title: title, ConfigID: configID, Model: model,
-		Tree: tree, CreatedAt: now, UpdatedAt: now,
+		ReasoningEffort: "high",
+		Tree:            tree, CreatedAt: now, UpdatedAt: now,
 	}
 }
 

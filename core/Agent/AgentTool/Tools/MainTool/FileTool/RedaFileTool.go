@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/caliniya/caf/NetClient/APIImpl"
 	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
@@ -62,4 +63,12 @@ func (t *ReadFile) Fun(arg map[string]any) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func (t ReadFile) ToType() *APIImpl.Tool {
+	return &APIImpl.Tool{
+		Name:        t.Name,
+		Description: t.Description,
+		Parameters:  t.Parameters,
+	}
 }

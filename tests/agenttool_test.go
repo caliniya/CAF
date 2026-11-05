@@ -3,6 +3,7 @@ package Tests
 import (
 	"testing"
 
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
 
@@ -18,6 +19,10 @@ func (t *listEnableTestTool) Meta() *agenttool.ToolMeta {
 
 func (t *listEnableTestTool) Fun(map[string]any) (string, error) {
 	return "", nil
+}
+
+func (t *listEnableTestTool) ToType() apiImpl.Tool {
+	return apiImpl.Tool{}
 }
 
 func TestListEnable(t *testing.T) {

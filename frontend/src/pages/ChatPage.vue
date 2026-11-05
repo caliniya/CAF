@@ -11,6 +11,56 @@ const scroller = ref<HTMLElement | null>(null)
 const modelMenuAnchor = ref<HTMLElement | null>(null)
 const modelMenuOpen = ref(false)
 
+// ===== 权限菜单 =====
+const PERMISSIONS = ['只读', '标准', '完全访问'] as const
+const permMenuAnchor = ref<HTMLElement | null>(null)
+const permMenuOpen = ref(false)
+const permFlyoutOpen = ref(false)
+const permFlyoutFlip = ref(false)
+const toolsOpen = ref(false)
+
+// 两个一级菜单互斥，避免同时弹开
+function toggleModelMenu() {
+  modelMenuOpen.value = !modelMenuOpen.value
+  if (modelMenuOpen.value) {
+    permMenuOpen.value = false
+    permFlyoutOpen.value = false
+  } else {
+    openFlyout.value = ''
+  }
+}
+
+function togglePermMenu() {
+  permMenuOpen.value = !permMenuOpen.value
+  if (!permMenuOpen.value) permFlyoutOpen.value = false
+  if (permMenuOpen.value) {
+    modelMenuOpen.value = false
+    openFlyout.value = ''
+  }
+}
+
+function togglePermFlyout(event: MouseEvent) {
+  if (permFlyoutOpen.value) {
+    permFlyoutOpen.value = false
+    return
+  }
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  permFlyoutFlip.value = bounds.right + 148 > window.innerWidth - 8
+  permFlyoutOpen.value = true
+}
+
+function pickPermission(level: string) {
+  chat.permission = level
+  permFlyoutOpen.value = false
+  permMenuOpen.value = false
+}
+
+function openTools() {
+  permMenuOpen.value = false
+  permFlyoutOpen.value = false
+  toolsOpen.value = true
+}
+
 // 同一时刻只允许一个二级菜单展开：provider = 服务商，model = 模型，effort = 思考强度
 const openFlyout = ref<'' | 'provider' | 'model' | 'effort'>('')
 // 二级菜单往右展开会超出窗口时，翻到左侧
@@ -55,11 +105,12 @@ const effortSteps = [
 const effortIndex = computed({
   get: () => {
     const index = effortSteps.findIndex((step) => step.value === chat.effort)
-    return index < 0 ? 0 : index
+    // 找不到时回落到「中」，而不是「关闭」
+    return index < 0 ? 2 : index
   },
   set: (index: number) => {
     const step = effortSteps[Math.round(index)]
-    if (step) chat.effort = step.value
+    if (step) chat.setEffort(step.value)
   },
 })
 
@@ -105,11 +156,13 @@ async function selectModel(model: string) {
   }
 }
 
-function closeModelMenuOnOutside(event: PointerEvent) {
-  if (modelMenuAnchor.value && !modelMenuAnchor.value.contains(event.target as Node)) {
-    modelMenuOpen.value = false
-    openFlyout.value = ''
-  }
+function closeMenusOnOutside(event: PointerEvent) {
+  const target = event.target as Node
+  if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)) return
+  modelMenuOpen.value = false
+  openFlyout.value = ''
+  permMenuOpen.value = false
+  permFlyoutOpen.value = false
 }
 
 // Enter 发送；输入法组合输入（拼音候选）期间不能当作发送。
@@ -130,7 +183,7 @@ async function selectBranch(message: (typeof chat.messages)[number], direction: 
 }
 
 onMounted(() => {
-  document.addEventListener('pointerdown', closeModelMenuOnOutside)
+  document.addEventListener('pointerdown', closeMenusOnOutside)
   document.addEventListener('keydown', onGlobalKeydown)
   onChatDelta((delta) => chat.applyDelta(delta)).then((off) => offs.push(off))
   onChatTool((tool) => chat.applyTool(tool)).then((off) => offs.push(off))
@@ -138,7 +191,7 @@ onMounted(() => {
   if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
 onUnmounted(() => {
-  document.removeEventListener('pointerdown', closeModelMenuOnOutside)
+  document.removeEventListener('pointerdown', closeMenusOnOutside)
   document.removeEventListener('keydown', onGlobalKeydown)
   offs.forEach((off) => off())
 })
@@ -227,19 +280,47 @@ watch(
               </svg>
             </button>
 
-            <label class="perm" :class="{ elevated: chat.permission === '完全访问' }">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
-              </svg>
-              <select v-model="chat.permission" aria-label="权限">
-                <option>只读</option>
-                <option>标准</option>
-                <option>完全访问</option>
-              </select>
-              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </label>
+            <div ref="permMenuAnchor" class="perm-anchor">
+              <button type="button" class="perm-trigger" :class="{ elevated: chat.permission === '完全访问' }"
+                :aria-expanded="permMenuOpen" aria-haspopup="menu" @click="togglePermMenu">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z" />
+                </svg>
+                <span>{{ chat.permission }}</span>
+                <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              <div v-if="permMenuOpen" class="menu perm-menu" role="menu">
+                <div class="menu-slot">
+                  <button type="button" class="menu-row" :aria-expanded="permFlyoutOpen"
+                    @click="togglePermFlyout">
+                    <span class="menu-row-label">权限</span>
+                    <span class="menu-spacer"></span>
+                    <span class="menu-value">{{ chat.permission }}</span>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </button>
+
+                  <div v-if="permFlyoutOpen" class="flyout flyout--narrow"
+                    :class="{ 'flyout--flip': permFlyoutFlip }" role="menu">
+                    <button v-for="level in PERMISSIONS" :key="level" type="button" class="menu-row"
+                      :class="{ on: chat.permission === level }" @click="pickPermission(level)">
+                      <span class="menu-row-name">{{ level }}</span>
+                      <svg v-if="chat.permission === level" class="check" viewBox="0 0 24 24"
+                        aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="menu-sep"></div>
+                <button type="button" class="menu-footer" @click="openTools">工具配置</button>
+              </div>
+            </div>
 
             <span class="bar-spacer"></span>
 
@@ -255,7 +336,7 @@ watch(
 
             <div ref="modelMenuAnchor" class="model-anchor">
               <button type="button" class="model-btn" :aria-expanded="modelMenuOpen" aria-haspopup="menu"
-                @click="modelMenuOpen = !modelMenuOpen">
+                @click="toggleModelMenu">
                 <span class="model-btn-label">{{ activeModel || '选择模型' }}</span>
                 <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
                   <polyline points="6 9 12 15 18 9" />
@@ -373,6 +454,21 @@ watch(
       </div>
     </div>
   </section>
+
+  <!-- 当前对话的工具设置（占位） -->
+  <Teleport to="body">
+    <div v-if="toolsOpen" class="overlay" @click.self="toolsOpen = false">
+      <div class="tools-dialog" role="dialog" aria-modal="true">
+        <header class="tools-head">
+          <h2>工具配置</h2>
+          <button type="button" class="btn btn-ghost btn-sm" @click="toolsOpen = false">关闭</button>
+        </header>
+        <div class="tools-body">
+          <p>当前对话的工具设置（暂未实现）</p>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -672,5 +768,60 @@ watch(
   right: 0;
   bottom: calc(100% + 10px);
   width: 300px;
+}
+
+/* ===== 权限菜单 ===== */
+.perm-anchor {
+  position: relative;
+}
+
+.perm-menu {
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: 210px;
+}
+
+/* ===== 工具配置弹窗（占位） ===== */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(22 29 50 / 42%);
+}
+
+.tools-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  min-height: 240px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgb(22 29 50 / 26%);
+  overflow: hidden;
+}
+
+.tools-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--outline);
+}
+
+.tools-head h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tools-body {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 13px;
 }
 </style>

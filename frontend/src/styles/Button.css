@@ -250,28 +250,34 @@ button:focus-visible {
   color: var(--ink);
 }
 
-/* ---------- 输入框工具行：权限（label 包着原生 select） ---------- */
-.perm {
+/* ---------- 输入框工具行：权限（点击展开菜单） ---------- */
+.perm-trigger {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 28px;
   padding: 0 7px;
+  border: 0;
   border-radius: 7px;
+  background: transparent;
   color: var(--muted);
-  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.perm-trigger:hover,
+.perm-trigger[aria-expanded='true'] {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
 }
 
 /* 完全访问：唯一需要警示的权限档 */
-.perm.elevated {
+.perm-trigger.elevated,
+.perm-trigger.elevated[aria-expanded='true'] {
   color: var(--warning);
 }
 
-.perm:hover {
-  background: rgb(32 38 55 / 6%);
-}
-
-.perm > svg {
+.perm-trigger > svg {
   width: 13px;
   height: 13px;
   flex-shrink: 0;
@@ -282,24 +288,11 @@ button:focus-visible {
   stroke-linejoin: round;
 }
 
-.perm select {
-  appearance: none;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.perm select:focus {
-  outline: none;
-}
-
-.perm .chev {
+.perm-trigger .chev {
   width: 12px;
   height: 12px;
   opacity: 0.7;
+  stroke-width: 2;
 }
 
 /* ---------- 输入框工具行：选择模型 ---------- */

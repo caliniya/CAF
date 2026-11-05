@@ -611,6 +611,39 @@ func (c *Core) GetChatModelContextWindow(id string) (int, error) {
 	return 0, fmt.Errorf("模型列表中未找到 %q", task.Model)
 }
 
+// normalizeReasoningEffort 把非法值收敛成默认的 "high"（中），避免脏数据写进会话文件。
+func normalizeReasoningEffort(effort string) string {
+	switch effort {
+	case "none", "low", "high", "max":
+		return effort
+	default:
+		return "high"
+	}
+}
+
+// SetChatReasoningEffort 把思考强度保存到对话里，切换或重开对话时会读回。
+func (c *Core) SetChatReasoningEffort(id, effort string) (*chat.ChatTask, error) {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	if c.chatSending[id] {
+		return nil, errors.New("对话正在生成中，暂时无法修改思考强度")
+	}
+	directory, err := c.chatDirectory()
+	if err != nil {
+		return nil, err
+	}
+	session, err := c.readChatLocked(directory, id)
+	if err != nil {
+		return nil, err
+	}
+	session.ReasoningEffort = normalizeReasoningEffort(effort)
+	session.UpdatedAt = time.Now().UTC()
+	if err := c.saveChatLocked(directory, session); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
 func (c *Core) SendChatMessage(id, text, reasoningEffort string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -740,6 +773,8 @@ func (c *Core) endChatSend(id string) {
 }
 
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
+	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
+	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
 	session.UpdatedAt = time.Now().UTC()
 	c.chatMu.Lock()
 	err := c.saveChatLocked(directory, session)

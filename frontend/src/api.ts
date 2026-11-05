@@ -44,6 +44,7 @@ interface CoreBindings {
   RenameChat(id: string, title: string): Promise<ChatTask>
   DeleteChat(id: string): Promise<void>
   UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask>
+  SetChatReasoningEffort(id: string, effort: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
@@ -79,6 +80,8 @@ export interface StoredChatMessage {
 export interface ChatTask extends ChatSummary {
   tree: ChatTree
   createdAt: string
+  // 每个对话各自的思考强度，由后端持久化在会话文件里
+  reasoningEffort?: string
 }
 
 export interface ModelProbeResult {
@@ -160,6 +163,9 @@ export function RenameChat(id: string, title: string): Promise<ChatTask> {
 export function DeleteChat(id: string): Promise<void> { return bridge().then((c) => c.DeleteChat(id)) }
 export function UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask> {
   return bridge().then((c) => c.UpdateChatModel(id, configId, model))
+}
+export function SetChatReasoningEffort(id: string, effort: string): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatReasoningEffort(id, effort))
 }
 export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatBranch(id, parentId, choice))

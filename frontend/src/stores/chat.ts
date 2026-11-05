@@ -9,6 +9,7 @@ import {
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
+  SetChatReasoningEffort,
   UpdateChatModel,
   type ChatTask as StoredChatTask,
   type ChatSummary,
@@ -48,7 +49,8 @@ export const useChatStore = defineStore('chat', {
     contextWindow: null as number | null,
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
     permission: '标准',
-    effort: 'none' as 'none' | 'low' | 'high' | 'max',
+    // 默认「中」，与后端 NewChatTask 的默认值一致
+    effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
     ctxPercent(state): number | null {
@@ -72,6 +74,32 @@ export const useChatStore = defineStore('chat', {
       this.sending = false
       this.usage = null
       this.contextWindow = null
+      // 新建对话回到默认档位，不再沿用上一个对话的设置
+      this.effort = 'high'
+    },
+    // 从会话数据同步思考强度：切换对话、重新生成、改模型后都会走这里
+    syncEffort() {
+      const saved = this.session?.reasoningEffort
+      // 老会话没有这个字段，按当前默认「中」处理
+      this.effort = saved === 'none' || saved === 'low' || saved === 'high' || saved === 'max'
+        ? saved
+        : 'high'
+    },
+    // 用户在菜单里改档位：立即写回当前对话，切走再回来还能读回
+    async setEffort(effort: 'none' | 'low' | 'high' | 'max') {
+      this.effort = effort
+      const id = this.session?.id
+      if (!id) return
+      try {
+        const session = await SetChatReasoningEffort(id, effort)
+        // 请求期间用户可能已经切到别的对话，别把旧会话盖回来
+        if (this.session?.id === id) {
+          this.session = session
+          this.syncEffort()
+        }
+      } catch (err) {
+        this.error = String(err)
+      }
     },
     async loadContextWindow() {
       const requestId = ++contextWindowRequestId
@@ -201,17 +229,23 @@ export const useChatStore = defineStore('chat', {
       const session = await CreateChat(configs.enables?.ID ?? '', configs.enabledModel, '')
       this.session = session
       this.rebuildMessages()
+      // 后端新会话默认就是 high，只有用户改过档位才需要写回
+      if (this.effort !== 'high') {
+        this.session = await SetChatReasoningEffort(session.id, this.effort)
+      }
       await this.loadChats()
-      return session
+      return this.session
     },
     async openChat(id: string) {
       this.error = ''
       this.session = await GetChat(id)
+      this.syncEffort()
       this.rebuildMessages()
     },
     async reloadSession() {
       if (!this.session) return
       this.session = await GetChat(this.session.id)
+      this.syncEffort()
       this.rebuildMessages()
       await this.loadChats()
     },
@@ -222,17 +256,22 @@ export const useChatStore = defineStore('chat', {
     },
     async renameChat(id: string, title: string) {
       const session = await RenameChat(id, title)
-      if (this.session?.id === id) this.session = session
+      if (this.session?.id === id) {
+        this.session = session
+        this.syncEffort()
+      }
       await this.loadChats()
     },
     async selectBranch(parentId: string, choice: number) {
       if (!this.session) return
       this.session = await SetChatBranch(this.session.id, parentId, choice)
+      this.syncEffort()
       this.rebuildMessages()
     },
     async updateModel(configId: string, model: string) {
       if (!this.session) return
       this.session = await UpdateChatModel(this.session.id, configId, model)
+      this.syncEffort()
       await this.loadContextWindow()
       await this.loadChats()
     },
