@@ -21,8 +21,8 @@ func (t *listEnableTestTool) Fun(map[string]any) (string, error) {
 	return "", nil
 }
 
-func (t *listEnableTestTool) ToType() apiImpl.Tool {
-	return apiImpl.Tool{}
+func (t *listEnableTestTool) ToType() *apiImpl.Tool {
+	return &apiImpl.Tool{}
 }
 
 func TestListEnable(t *testing.T) {

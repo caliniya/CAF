@@ -11,6 +11,7 @@ import (
 	core "github.com/caliniya/caf/core"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
+	persona "github.com/caliniya/caf/core/Persona"
 	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
@@ -37,7 +38,7 @@ func useChatTaskCore(t *testing.T) *core.Core {
 
 func TestChatTaskPersistenceUsesConfigIDAndTreeBranches(t *testing.T) {
 	instance := useChatTaskCore(t)
-	task, err := instance.CreateChat("", "", "")
+	task, err := instance.CreateChat("", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +47,9 @@ func TestChatTaskPersistenceUsesConfigIDAndTreeBranches(t *testing.T) {
 	}
 	if task.Tree.Root == nil || task.Tree.Root.Next == nil {
 		t.Fatal("new chat tree root branches should be an empty array")
+	}
+	if task.Tree.Root.PersonaID != persona.DefaultID {
+		t.Fatalf("new chat should fall back to default persona, got %q", task.Tree.Root.PersonaID)
 	}
 
 	user := task.Tree.Start(apiImpl.ChatMessage{Role: "user", Content: "hello"})
@@ -94,7 +98,7 @@ func TestChatTaskPersistenceUsesConfigIDAndTreeBranches(t *testing.T) {
 
 func TestChatTaskConfigReferenceCanBeUpdated(t *testing.T) {
 	instance := useChatTaskCore(t)
-	task, err := instance.CreateChat("", "", "")
+	task, err := instance.CreateChat("", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
