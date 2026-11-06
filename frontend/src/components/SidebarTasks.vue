@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance } from 'vue'
+import type { ChatSummary } from '../api'
+import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useChatStore } from '../stores/chat'
 
 // 侧边栏展示后端持久化的会话。
@@ -11,6 +13,9 @@ const menuPosition = ref<Record<string, string>>({})
 const renamingId = ref('')
 const renameDraft = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
+const deleteTarget = ref<ChatSummary | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 // v-for 内的字符串 ref 会被收集成数组，改用函数 ref 精确拿到当前正在编辑的输入框。
 function setRenameInput(el: Element | ComponentPublicInstance | null) {
@@ -80,12 +85,24 @@ async function submitRename(id: string, currentTitle: string) {
   }
 }
 
-async function deleteChat(id: string) {
+function requestDelete(item: ChatSummary) {
   openedMenuId.value = ''
+  deleteError.value = ''
+  deleteTarget.value = { ...item }
+}
+
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target || deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await chat.deleteChat(id)
+    await chat.deleteChat(target.id)
+    deleteTarget.value = null
   } catch (err) {
-    error.value = String(err)
+    deleteError.value = String(err)
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -175,11 +192,15 @@ onUnmounted(() => {
       <button type="button" role="menuitem" @click="beginRename(menuItem.id, menuItem.title)">
         重命名
       </button>
-      <button type="button" class="danger" role="menuitem" @click="deleteChat(menuItem.id)">
+      <button type="button" class="danger" role="menuitem" @click="requestDelete(menuItem)">
         删除
       </button>
     </div>
   </Teleport>
+  <ConfirmationDialog :open="!!deleteTarget" title="删除对话"
+    :message="`确定删除「${deleteTarget?.title ?? ''}」吗？删除后无法恢复。`"
+    confirm-label="确认删除" danger :busy="deleting" :error="deleteError"
+    @confirm="confirmDelete" @cancel="deleteTarget = null" />
 </template>
 
 <style scoped>

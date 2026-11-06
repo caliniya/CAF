@@ -15,6 +15,8 @@ type ChatNode struct {
 	Choice int                   `json:"choice"`
 	Next   []*ChatNode           `json:"next"`
 	Child  []apiImpl.ChatMessage `json:"child"`
+	// Usage 保存该回复最后一次模型请求的用量，切换分支或重开时可恢复。
+	Usage *apiImpl.TokenUsage `json:"usage,omitempty"`
 }
 
 // GetEach 按当前选中的分支顺序访问消息。

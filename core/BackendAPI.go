@@ -463,7 +463,7 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 	}
 	now := time.Now().UTC()
 	tree := chatstruct.CreateTree(title)
-	// 人设建树时确定，之后所有分支共享；找不到就回落到默认
+	// 选择初始人设，所有分支共享；找不到就回落到默认。
 	tree.Root.PersonaID = persona.Resolve(personaID).ID
 	session := chat.NewChatTask(newID(), title, configID, model, tree)
 	session.CreatedAt = now
@@ -544,6 +544,39 @@ func (c *Core) DeleteChat(id string) error {
 	}
 	index.Chats = filtered
 	return c.writeJSONLocked(filepath.Join(directory, "index.json"), index)
+}
+
+// SetChatPersona 切换当前对话的人设，后续请求使用新的角色提示词。
+func (c *Core) SetChatPersona(id, personaID string) (*chat.ChatTask, error) {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	if c.chatSending[id] {
+		return nil, errors.New("对话正在生成中，暂时无法切换人设")
+	}
+	selected := persona.Find(personaID)
+	if selected == nil {
+		return nil, fmt.Errorf("人设 %q 不存在", personaID)
+	}
+	directory, err := c.chatDirectory()
+	if err != nil {
+		return nil, err
+	}
+	session, err := c.readChatLocked(directory, id)
+	if err != nil {
+		return nil, err
+	}
+	if session.Tree.Root == nil {
+		session.Tree.Root = &chatstruct.TreeRoot{Name: session.Title}
+	}
+	if session.Tree.Root.PersonaID == selected.ID {
+		return session, nil
+	}
+	session.Tree.Root.PersonaID = selected.ID
+	session.UpdatedAt = time.Now().UTC()
+	if err := c.saveChatLocked(directory, session); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (c *Core) UpdateChatModel(id, configID, model string) (*chat.ChatTask, error) {
@@ -1017,7 +1050,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		request := apiImpl.ChatRequest{
 			Model:    session.Model,
 			Messages: history,
-			Thinking: reasoningEffort,
+			Thinking: session.ReasoningEffort,
 			Tools:    tools,
 		}
 		streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
@@ -1029,6 +1062,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			}
 			if len(delta.ToolCalls) > 0 {
 				assistant.ToolCalls = append(assistant.ToolCalls, delta.ToolCalls...)
+			}
+			if delta.Usage != nil {
+				usage := *delta.Usage
+				reply.Usage = &usage
 			}
 			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
 				EmitJSON(EventChatDelta, map[string]any{

@@ -20,6 +20,15 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 		Messages:        make([]CCChatMessage, 0, len(req.Messages)),
 		ReasoningEffort: req.Thinking,
 	}
+	// DeepSeek 的思考开关与强度分开；首轮也要显式启用，不能依赖历史消息。
+	if strings.Contains(strings.ToLower(req.Model), "deepseek") && req.Thinking != "" {
+		thinkingType := "enabled"
+		if req.Thinking == "none" {
+			thinkingType = "disabled"
+			body.ReasoningEffort = ""
+		}
+		body.Thinking = &CCThinkingConfig{Type: thinkingType}
+	}
 
 	for _, m := range req.Messages {
 		body.Messages = append(body.Messages, api.toCCMessage(m))

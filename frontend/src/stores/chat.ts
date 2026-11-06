@@ -11,6 +11,7 @@ import {
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
+  SetChatPersona,
   SetChatReasoningEffort,
   SetChatToolConfig,
   UpdateChatModel,
@@ -25,6 +26,17 @@ import {
 import { useConfigsStore } from './configs'
 
 let contextWindowRequestId = 0
+
+// 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约一 token。
+function estimateTextTokens(text: string): number {
+  let ascii = 0
+  let nonAscii = 0
+  for (const char of text) {
+    if (char.codePointAt(0)! <= 0x7f) ascii++
+    else nonAscii++
+  }
+  return Math.ceil(ascii / 4) + nonAscii
+}
 
 // 一次回复里的「工作过程」：思考、模型中间说的话、工具调用
 export interface ProcessItem {
@@ -56,7 +68,7 @@ export const useChatStore = defineStore('chat', {
     contextWindow: null as number | null,
     // 对话还没创建时先攒着，createChat 成功后写进新会话（一次性）
     pendingToolConfig: null as ChatToolConfig | null,
-    // 人设在建树时确定；pendingPersonaId 只作用于下一个新建对话
+    // pendingPersonaId 用于新建对话；已有对话的人设单独保存。
     personas: [] as Persona[],
     pendingPersonaId: '',
     // 输入框状态行的界面设置(演示阶段仅前端本地)。
@@ -65,20 +77,65 @@ export const useChatStore = defineStore('chat', {
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
+    ctxUsedTokens(state): number | null {
+      if (state.usage) {
+        return state.usage.total_tokens || state.usage.prompt_tokens + state.usage.completion_tokens
+      }
+      if (!state.messages.length) return null
+
+      const root = state.session?.tree?.root
+      const personaId = state.session ? root?.personaId || 'assistant' : state.pendingPersonaId
+      const activePersona = state.personas.find((item) => item.id === personaId)
+      let tokens = 3
+      if (activePersona) {
+        tokens += 4 + estimateTextTokens(JSON.stringify({
+          name: activePersona.name,
+          description: activePersona.description,
+          system: activePersona.system,
+        }))
+      }
+
+      let node = root?.next?.[root.choice ?? 0]
+      const seen = new Set<string>()
+      while (node && !seen.has(node.id)) {
+        seen.add(node.id)
+        for (const message of node.child ?? []) {
+          tokens += 4 + estimateTextTokens(message.content ?? '') + estimateTextTokens(message.reasoning ?? '')
+          for (const call of message.tool_calls ?? []) {
+            tokens += estimateTextTokens(call.name) + estimateTextTokens(call.arguments)
+          }
+        }
+        node = node.next?.[node.choice]
+      }
+      // 新发送的消息尚未写进树，临时消息也计入估算。
+      for (const message of state.messages) {
+        if (message.nodeId) continue
+        tokens += 4 + estimateTextTokens(message.content)
+        for (const item of message.process ?? []) {
+          if (item.content) tokens += estimateTextTokens(item.content)
+        }
+      }
+      return tokens
+    },
     ctxPercent(state): number | null {
-      if (!state.usage || !state.contextWindow) return null
-      return Math.min(100, (state.usage.total_tokens / state.contextWindow) * 100)
+      const used = this.ctxUsedTokens
+      if (used === null || !state.contextWindow) return null
+      return Math.min(100, (used / state.contextWindow) * 100)
     },
     ctxTooltip(state): string {
-      if (!state.usage) return '尚无服务端 token 用量数据'
-      const used = state.usage.total_tokens.toLocaleString()
-      if (!state.contextWindow) return `本次请求 ${used} tokens · 模型上下文窗口未知`
-      const percent = Math.min(100, (state.usage.total_tokens / state.contextWindow) * 100)
-      return `上下文约 ${percent.toFixed(1)}% · ${used} / ${state.contextWindow.toLocaleString()} tokens`
+      const tokens = this.ctxUsedTokens
+      if (tokens === null) return '尚无上下文用量数据'
+      const used = tokens.toLocaleString()
+      if (!state.contextWindow) {
+        return `${state.usage ? '本次请求' : '对话内容估算'} ${used} tokens · 模型上下文窗口未知`
+      }
+      const percent = this.ctxPercent ?? 0
+      return `${state.usage ? '上下文约' : '上下文估算约'} ${percent.toFixed(1)}% · ${used} / ${state.contextWindow.toLocaleString()} tokens`
     },
   },
   actions: {
     reset() {
+      ++contextWindowRequestId
       this.session = null
       this.messages = []
       this.draft = ''
@@ -116,10 +173,11 @@ export const useChatStore = defineStore('chat', {
     async loadContextWindow() {
       const requestId = ++contextWindowRequestId
       this.contextWindow = null
-      if (!this.session) return
+      const id = this.session?.id
+      if (!id) return
       try {
-        const contextWindow = await GetChatModelContextWindow(this.session.id)
-        if (requestId === contextWindowRequestId) this.contextWindow = contextWindow
+        const contextWindow = await GetChatModelContextWindow(id)
+        if (requestId === contextWindowRequestId && this.session?.id === id) this.contextWindow = contextWindow
       } catch {
         // Compatible providers may not expose DeepSeek's model metadata endpoint.
       }
@@ -170,28 +228,22 @@ export const useChatStore = defineStore('chat', {
     async send() {
       const text = this.draft.trim()
       if (!text || this.sending) return
-
-      if (!this.session) {
-        try {
-          await this.createChat()
-        } catch (err) {
-          this.error = String(err)
-          return
-        }
-      }
-      if (!this.session?.configId || !this.session.model) {
-        this.error = '请先为此对话选择提供商和模型。'
-        return
-      }
-
-      this.error = ''
-      this.usage = null
-      this.draft = ''
-      this.messages.push({ role: 'user', content: text })
-      this.messages.push({ role: 'assistant', content: '' })
+      // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
+      this.error = ''
 
       try {
+        if (!this.session) {
+          await this.createChat()
+        }
+        if (!this.session?.configId || !this.session.model) {
+          this.error = '请先为此对话选择提供商和模型。'
+          return
+        }
+        this.usage = null
+        this.draft = ''
+        this.messages.push({ role: 'user', content: text })
+        this.messages.push({ role: 'assistant', content: '' })
         await SendChatMessage(this.session.id, text, this.effort)
         await this.reloadSession()
       } catch (err) {
@@ -204,12 +256,14 @@ export const useChatStore = defineStore('chat', {
     rebuildMessages() {
       const session = this.session
       this.messages = []
+      this.usage = null
       const root = session?.tree?.root
       const rootNodes = root?.next ?? []
       if (!root || root.choice < 0 || root.choice >= rootNodes.length) return
       let node = rootNodes[root.choice]
       let parentId = ''
       while (node) {
+        this.usage = node.usage ?? null
         const siblings = parentId ? this.findNode(parentId)?.next ?? [] : rootNodes
         const branchIndex = parentId ? this.findNode(parentId)?.choice ?? 0 : root.choice
         const meta = { nodeId: node.id, parentId, branchIndex, branchCount: siblings.length }
@@ -283,6 +337,14 @@ export const useChatStore = defineStore('chat', {
     },
     setPendingPersona(id: string) {
       this.pendingPersonaId = id
+    },
+    async updatePersona(id: string, personaId: string) {
+      const session = await SetChatPersona(id, personaId)
+      if (this.session?.id === id) {
+        this.session = session
+        this.syncEffort()
+      }
+      await this.loadChats()
     },
     async loadPersonas() {
       if (this.personas.length) return

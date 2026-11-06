@@ -4,7 +4,8 @@ import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type Persona, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
-import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
+import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
@@ -23,9 +24,6 @@ const permFlyoutFlip = ref(false)
 const toolsOpen = ref(false)
 
 // ===== 人设 =====
-const personaMenuOpen = ref(false)
-const personaAnchor = ref<HTMLElement | null>(null)
-const personaLocked = computed(() => !!chat.session)
 const currentPersonaId = computed(() =>
   (chat.session ? chat.session.tree?.root?.personaId || 'assistant' : chat.pendingPersonaId)
   || chat.personas[0]?.id || '',
@@ -41,11 +39,41 @@ const settingsPersonaFlyout = ref<HTMLElement | null>(null)
 const settingsPersonaFlip = ref(false)
 const settingsPersonaTop = ref(0)
 const detailsPersona = ref<Persona | null>(null)
+const personaChange = ref<{ chatId: string; persona: Persona } | null>(null)
+const personaChanging = ref(false)
+const personaChangeError = ref('')
 
 function pickPersona(id: string) {
-  if (personaLocked.value) return
+  if (chat.sending || personaChanging.value || id === currentPersonaId.value) return
+  const selected = chat.personas.find((item) => item.id === id)
+  if (!selected) return
+  if (chat.session) {
+    personaChangeError.value = ''
+    personaChange.value = { chatId: chat.session.id, persona: selected }
+    closeMenus()
+    return
+  }
   chat.setPendingPersona(id)
   closeMenus()
+}
+
+async function confirmPersonaChange() {
+  const change = personaChange.value
+  if (!change || personaChanging.value) return
+  if (chat.session?.id !== change.chatId) {
+    personaChange.value = null
+    return
+  }
+  personaChanging.value = true
+  personaChangeError.value = ''
+  try {
+    await chat.updatePersona(change.chatId, change.persona.id)
+    personaChange.value = null
+  } catch (err) {
+    personaChangeError.value = String(err)
+  } finally {
+    personaChanging.value = false
+  }
 }
 
 function closeMenus() {
@@ -53,7 +81,6 @@ function closeMenus() {
   openFlyout.value = ''
   permMenuOpen.value = false
   permFlyoutOpen.value = false
-  personaMenuOpen.value = false
   settingsMenuOpen.value = false
   settingsPersonaOpen.value = false
 }
@@ -69,12 +96,6 @@ function togglePermMenu() {
   const open = !permMenuOpen.value
   closeMenus()
   permMenuOpen.value = open
-}
-
-function togglePersonaMenu() {
-  const open = !personaMenuOpen.value
-  closeMenus()
-  personaMenuOpen.value = open
 }
 
 function toggleSettingsMenu() {
@@ -237,7 +258,7 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (detailsPersona.value) return
+  if (detailsPersona.value || personaChange.value) return
   if (event.key === 'Escape') {
     const settingsWasOpen = settingsMenuOpen.value
     closeMenus()
@@ -283,6 +304,25 @@ const activeModelName = computed(() => {
 })
 
 let offs: (() => void)[] = []
+let pageUnmounted = false
+// 首轮发送前等订阅就绪，避免 Wails runtime 尚未注入时漏掉开头的思考增量。
+const streamReady = Promise.all([
+  onChatDelta((delta) => chat.applyDelta(delta)),
+  onChatTool((tool) => chat.applyTool(tool)),
+]).then((subscriptions) => {
+  if (pageUnmounted) subscriptions.forEach((off) => off())
+  else offs.push(...subscriptions)
+})
+
+async function sendMessage() {
+  await streamReady
+  if (!pageUnmounted) await chat.send()
+}
+
+async function regenerateMessage(message: (typeof chat.messages)[number]) {
+  await streamReady
+  if (!pageUnmounted) await chat.regenerate(message)
+}
 
 async function selectConfig(configId: string) {
   const config = configs.configs.find((item) => item.ID === configId)
@@ -317,10 +357,10 @@ async function selectModel(model: string) {
 }
 
 function closeMenusOnOutside(event: PointerEvent) {
-  if (detailsPersona.value) return
+  if (detailsPersona.value || personaChange.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
-    || personaAnchor.value?.contains(target) || settingsMenuAnchor.value?.contains(target)) return
+    || settingsMenuAnchor.value?.contains(target)) return
   closeMenus()
 }
 
@@ -331,7 +371,7 @@ function onComposerKeydown(event: KeyboardEvent) {
   const modifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
   if (!modifier) {
     event.preventDefault()
-    chat.send()
+    void sendMessage()
     return
   }
   event.preventDefault()
@@ -357,13 +397,12 @@ async function selectBranch(message: (typeof chat.messages)[number], direction: 
 onMounted(() => {
   document.addEventListener('pointerdown', closeMenusOnOutside)
   document.addEventListener('keydown', onGlobalKeydown)
-  onChatDelta((delta) => chat.applyDelta(delta)).then((off) => offs.push(off))
-  onChatTool((tool) => chat.applyTool(tool)).then((off) => offs.push(off))
   if (!configs.loaded) configs.load()
   chat.loadPersonas().catch((err) => { chat.error = String(err) })
   if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
 onUnmounted(() => {
+  pageUnmounted = true
   document.removeEventListener('pointerdown', closeMenusOnOutside)
   document.removeEventListener('keydown', onGlobalKeydown)
   offs.forEach((off) => off())
@@ -438,6 +477,8 @@ async function submitEdit(message: (typeof chat.messages)[number]) {
     cancelEdit()
     return
   }
+  await streamReady
+  if (pageUnmounted) return
   await chat.editMessage(message, text)
   cancelEdit()
 }
@@ -471,7 +512,8 @@ watch(
 watch(
   () => {
     const last = chat.messages[chat.messages.length - 1]
-    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${chat.error.length}`
+    const processLength = last?.process?.reduce((total, item) => total + (item.content?.length ?? 0), 0) ?? 0
+    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${processLength}:${chat.error.length}`
   },
   async () => {
     await nextTick()
@@ -533,7 +575,7 @@ watch(
             <Copy :size="17" :stroke-width="2" />
           </button>
           <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button"
-            class="regen hover-only" title="重新生成" aria-label="重新生成" @click="chat.regenerate(m)">
+            class="regen hover-only" title="重新生成" aria-label="重新生成" @click="regenerateMessage(m)">
             <RotateCw :size="17" :stroke-width="2" />
           </button>
           <div v-if="m.branchCount && m.branchCount > 1" class="branch hover-only">
@@ -557,26 +599,17 @@ watch(
             <ChevronDown class="chev" :size="12" :stroke-width="2" />
           </button>
 
-          <!-- 人设：建对话时确定，之后锁定 -->
-          <div ref="personaAnchor" class="persona-anchor">
-            <button type="button" class="persona-btn" :class="{ locked: personaLocked }"
-              :disabled="personaLocked"
-              :title="personaLocked ? '人设在对话开始时确定，新建对话可切换' : '选择本次对话的人设'"
-              @click="togglePersonaMenu">
+          <!-- 当前人设：只展示，悬停时可打开详情 -->
+          <div class="persona-anchor">
+            <span class="persona-btn">
               <UserRound :size="13" :stroke-width="2" />
               <span>{{ currentPersona?.name ?? '人设' }}</span>
-              <ChevronDown v-if="!personaLocked" class="chev" :size="11" :stroke-width="2" />
+            </span>
+            <button v-if="currentPersona" type="button" class="persona-detail-btn"
+              title="查看人设详情" :aria-label="`查看「${currentPersona.name}」的人设详情`"
+              @click="detailsPersona = currentPersona">
+              <Settings2 :size="16" :stroke-width="2" />
             </button>
-
-            <div v-if="personaMenuOpen && !personaLocked" class="menu persona-menu" role="menu">
-              <button v-for="item in chat.personas" :key="item.id" type="button" class="menu-row"
-                :class="{ on: item.id === currentPersonaId }" :title="item.description"
-                @click="pickPersona(item.id)">
-                <span class="menu-row-name">{{ item.name }}</span>
-                <span class="menu-spacer"></span>
-                <Check v-if="item.id === currentPersonaId" class="check" :size="14" :stroke-width="2" />
-              </button>
-            </div>
           </div>
         </div>
 
@@ -636,10 +669,10 @@ watch(
             </span>
 
             <div ref="settingsMenuAnchor" class="settings-anchor">
-              <button ref="settingsMenuButton" type="button" class="bar-icon chat-settings-btn"
+              <button ref="settingsMenuButton" type="button" class="chat-settings-btn"
                 title="对话设置" aria-label="对话设置" :aria-expanded="settingsMenuOpen"
                 aria-haspopup="menu" aria-controls="chat-settings-menu" @click="toggleSettingsMenu">
-                <Settings2 :size="16" :stroke-width="2" />
+                对话设置
               </button>
 
               <div v-if="settingsMenuOpen" id="chat-settings-menu" class="menu settings-menu"
@@ -659,8 +692,8 @@ watch(
                     <div v-for="item in chat.personas" :key="item.id" class="persona-option"
                       :class="{ on: item.id === currentPersonaId }" role="none">
                       <button type="button" class="persona-option-select" role="menuitemradio"
-                        :aria-checked="item.id === currentPersonaId" :disabled="personaLocked"
-                        :title="personaLocked ? '人设在对话开始时确定，新建对话可切换' : item.description"
+                        :aria-checked="item.id === currentPersonaId" :disabled="chat.sending || personaChanging"
+                        :title="item.description"
                         @click="pickPersona(item.id)">
                         <span class="menu-row-name">{{ item.name }}</span>
                         <Check v-if="item.id === currentPersonaId" class="check" :size="14" :stroke-width="2" />
@@ -668,7 +701,7 @@ watch(
                       <button type="button" class="persona-detail-btn" role="menuitem"
                         title="查看人设详情" :aria-label="`查看「${item.name}」的人设详情`"
                         @click.stop="detailsPersona = item">
-                        <Info :size="15" :stroke-width="2" />
+                        <Settings2 :size="16" :stroke-width="2" />
                       </button>
                     </div>
                     <span v-if="!chat.personas.length" class="menu-empty">暂无人设</span>
@@ -768,7 +801,7 @@ watch(
             </div>
 
             <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending" aria-label="发送"
-              @click="chat.send()">
+              @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
           </div>
@@ -778,6 +811,10 @@ watch(
   </section>
 
   <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
+  <ConfirmationDialog :open="!!personaChange" title="切换人设"
+    :message="`将当前对话的人设切换为「${personaChange?.persona.name ?? ''}」。\n在对话中途切换人设会降低对话质量，是否继续？`"
+    confirm-label="确认切换" :busy="personaChanging" :error="personaChangeError"
+    @confirm="confirmPersonaChange" @cancel="personaChange = null" />
 
   <!-- 当前对话的工具设置（占位） -->
   <Teleport to="body">
@@ -1158,16 +1195,13 @@ watch(
 }
 
 .persona-anchor {
-  position: relative;
+  display: flex;
+  align-items: center;
   margin-left: auto;
 }
 
-.persona-menu {
-  right: 0;
-  left: auto;
-  top: calc(100% + 6px);
-  bottom: auto;
-  width: 190px;
+.persona-anchor .persona-btn {
+  cursor: default;
 }
 
 .composer {
@@ -1228,6 +1262,23 @@ watch(
   flex-shrink: 0;
 }
 
+.chat-settings-btn {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.chat-settings-btn:hover {
+  background: rgb(32 38 55 / 6%);
+  color: var(--ink);
+}
+
 .chat-settings-btn[aria-expanded='true'] {
   background: var(--tonal);
   color: var(--accent);
@@ -1285,7 +1336,8 @@ watch(
 }
 
 .persona-option-select:disabled {
-  cursor: default;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .persona-detail-btn {
@@ -1306,7 +1358,9 @@ watch(
 }
 
 .persona-option:hover .persona-detail-btn,
-.persona-option:focus-within .persona-detail-btn {
+.persona-option:focus-within .persona-detail-btn,
+.persona-anchor:hover .persona-detail-btn,
+.persona-anchor:focus-within .persona-detail-btn {
   opacity: 1;
   pointer-events: auto;
 }

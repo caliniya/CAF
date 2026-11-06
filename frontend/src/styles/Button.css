@@ -521,24 +521,8 @@ button:focus-visible {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.persona-btn:hover:not(:disabled) {
-  background: rgb(32 38 55 / 6%);
-  color: var(--ink);
-}
-
-/* 对话已开始：人设锁定，只做展示 */
-.persona-btn.locked {
-  color: var(--muted);
-  cursor: default;
-  opacity: 0.75;
-}
-
 .persona-btn svg {
   flex-shrink: 0;
-}
-
-.persona-btn .chev {
-  opacity: 0.7;
 }
 
 /* ---------- 消息下方的图标按钮（编辑 / 复制） ---------- */

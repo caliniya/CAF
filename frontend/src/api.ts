@@ -44,6 +44,7 @@ interface CoreBindings {
   GetChat(id: string): Promise<ChatTask>
   RenameChat(id: string, title: string): Promise<ChatTask>
   DeleteChat(id: string): Promise<void>
+  SetChatPersona(id: string, personaId: string): Promise<ChatTask>
   UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask>
   SetChatReasoningEffort(id: string, effort: string): Promise<ChatTask>
   ListToolSets(): Promise<ToolSetDescriptor[]>
@@ -67,13 +68,14 @@ export interface ChatTreeNode {
   choice: number
   next: ChatTreeNode[] | null
   child: StoredChatMessage[] | null
+  usage?: TokenUsage
 }
 
 export interface ChatTree {
   root: { choice: number; next: ChatTreeNode[] | null; name: string; personaId?: string } | null
 }
 
-// 人设：后端把人设序列化成 JSON 作为 system 消息，这里只用于选择器展示
+// 人设：用于选择器和详情展示，后端将它作为 system 消息发送。
 export interface Persona {
   id: string
   name: string
@@ -201,6 +203,9 @@ export function RenameChat(id: string, title: string): Promise<ChatTask> {
   return bridge().then((c) => c.RenameChat(id, title))
 }
 export function DeleteChat(id: string): Promise<void> { return bridge().then((c) => c.DeleteChat(id)) }
+export function SetChatPersona(id: string, personaId: string): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatPersona(id, personaId))
+}
 export function UpdateChatModel(id: string, configId: string, model: string): Promise<ChatTask> {
   return bridge().then((c) => c.UpdateChatModel(id, configId, model))
 }
