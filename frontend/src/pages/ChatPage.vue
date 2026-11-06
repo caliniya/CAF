@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type ToolSetDescriptor } from '../api'
+import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type Persona, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
-import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Shield, UserRound } from '@lucide/vue'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
+import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -25,31 +26,76 @@ const toolsOpen = ref(false)
 const personaMenuOpen = ref(false)
 const personaAnchor = ref<HTMLElement | null>(null)
 const personaLocked = computed(() => !!chat.session)
-const currentPersonaId = computed(() => chat.session?.tree?.root?.personaId || chat.pendingPersonaId)
+const currentPersonaId = computed(() =>
+  (chat.session ? chat.session.tree?.root?.personaId || 'assistant' : chat.pendingPersonaId)
+  || chat.personas[0]?.id || '',
+)
 const currentPersona = computed(() => chat.personas.find((item) => item.id === currentPersonaId.value))
 
+// ===== 对话设置 =====
+const settingsMenuAnchor = ref<HTMLElement | null>(null)
+const settingsMenuButton = ref<HTMLButtonElement | null>(null)
+const settingsMenuOpen = ref(false)
+const settingsPersonaOpen = ref(false)
+const settingsPersonaFlyout = ref<HTMLElement | null>(null)
+const settingsPersonaFlip = ref(false)
+const settingsPersonaTop = ref(0)
+const detailsPersona = ref<Persona | null>(null)
+
 function pickPersona(id: string) {
+  if (personaLocked.value) return
   chat.setPendingPersona(id)
-  personaMenuOpen.value = false
+  closeMenus()
 }
 
-// 两个一级菜单互斥，避免同时弹开
+function closeMenus() {
+  modelMenuOpen.value = false
+  openFlyout.value = ''
+  permMenuOpen.value = false
+  permFlyoutOpen.value = false
+  personaMenuOpen.value = false
+  settingsMenuOpen.value = false
+  settingsPersonaOpen.value = false
+}
+
+// 一级菜单互斥，避免同时弹开
 function toggleModelMenu() {
-  modelMenuOpen.value = !modelMenuOpen.value
-  if (modelMenuOpen.value) {
-    permMenuOpen.value = false
-    permFlyoutOpen.value = false
-  } else {
-    openFlyout.value = ''
-  }
+  const open = !modelMenuOpen.value
+  closeMenus()
+  modelMenuOpen.value = open
 }
 
 function togglePermMenu() {
-  permMenuOpen.value = !permMenuOpen.value
-  if (!permMenuOpen.value) permFlyoutOpen.value = false
-  if (permMenuOpen.value) {
-    modelMenuOpen.value = false
-    openFlyout.value = ''
+  const open = !permMenuOpen.value
+  closeMenus()
+  permMenuOpen.value = open
+}
+
+function togglePersonaMenu() {
+  const open = !personaMenuOpen.value
+  closeMenus()
+  personaMenuOpen.value = open
+}
+
+function toggleSettingsMenu() {
+  const open = !settingsMenuOpen.value
+  closeMenus()
+  settingsMenuOpen.value = open
+}
+
+async function toggleSettingsPersona(event: MouseEvent) {
+  if (settingsPersonaOpen.value) {
+    settingsPersonaOpen.value = false
+    return
+  }
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  settingsPersonaFlip.value = bounds.right + 256 > window.innerWidth - 8
+  settingsPersonaTop.value = 0
+  settingsPersonaOpen.value = true
+  await nextTick()
+  const flyoutBounds = settingsPersonaFlyout.value?.getBoundingClientRect()
+  if (flyoutBounds) {
+    settingsPersonaTop.value = -Math.max(0, flyoutBounds.bottom - window.innerHeight + 8)
   }
 }
 
@@ -191,6 +237,13 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (detailsPersona.value) return
+  if (event.key === 'Escape') {
+    const settingsWasOpen = settingsMenuOpen.value
+    closeMenus()
+    if (settingsWasOpen) settingsMenuButton.value?.focus()
+    return
+  }
   if (!event.ctrlKey || event.key.toLowerCase() !== 't') return
   event.preventDefault()
   effortIndex.value = (effortIndex.value + 1) % effortSteps.length
@@ -264,14 +317,11 @@ async function selectModel(model: string) {
 }
 
 function closeMenusOnOutside(event: PointerEvent) {
+  if (detailsPersona.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
-    || personaAnchor.value?.contains(target)) return
-  modelMenuOpen.value = false
-  openFlyout.value = ''
-  permMenuOpen.value = false
-  permFlyoutOpen.value = false
-  personaMenuOpen.value = false
+    || personaAnchor.value?.contains(target) || settingsMenuAnchor.value?.contains(target)) return
+  closeMenus()
 }
 
 // Enter 发送；带修饰键的 Enter（Shift、Ctrl+Shift 等）统一插入换行。
@@ -512,7 +562,7 @@ watch(
             <button type="button" class="persona-btn" :class="{ locked: personaLocked }"
               :disabled="personaLocked"
               :title="personaLocked ? '人设在对话开始时确定，新建对话可切换' : '选择本次对话的人设'"
-              @click="personaMenuOpen = !personaMenuOpen">
+              @click="togglePersonaMenu">
               <UserRound :size="13" :stroke-width="2" />
               <span>{{ currentPersona?.name ?? '人设' }}</span>
               <ChevronDown v-if="!personaLocked" class="chev" :size="11" :stroke-width="2" />
@@ -584,6 +634,48 @@ watch(
                   :style="{ strokeDashoffset: 50.27 * (1 - (chat.ctxPercent ?? 0) / 100) }" />
               </svg>
             </span>
+
+            <div ref="settingsMenuAnchor" class="settings-anchor">
+              <button ref="settingsMenuButton" type="button" class="bar-icon chat-settings-btn"
+                title="对话设置" aria-label="对话设置" :aria-expanded="settingsMenuOpen"
+                aria-haspopup="menu" aria-controls="chat-settings-menu" @click="toggleSettingsMenu">
+                <Settings2 :size="16" :stroke-width="2" />
+              </button>
+
+              <div v-if="settingsMenuOpen" id="chat-settings-menu" class="menu settings-menu"
+                role="menu" aria-label="对话设置">
+                <div class="menu-slot">
+                  <button type="button" class="menu-row" role="menuitem" :aria-expanded="settingsPersonaOpen"
+                    aria-haspopup="menu" aria-controls="chat-persona-menu" @click="toggleSettingsPersona">
+                    <UserRound class="row-icon" :size="16" :stroke-width="1.6" />
+                    <span class="menu-row-label">角色设定</span>
+                    <span class="menu-row-name settings-persona-name">{{ currentPersona?.name ?? '未选择人设' }}</span>
+                    <ChevronRight class="chev" :size="12" :stroke-width="2" />
+                  </button>
+
+                  <div v-if="settingsPersonaOpen" id="chat-persona-menu" ref="settingsPersonaFlyout"
+                    class="flyout settings-persona-flyout" :class="{ 'flyout--flip': settingsPersonaFlip }"
+                    :style="{ top: `${settingsPersonaTop}px` }" role="menu" aria-label="角色设定">
+                    <div v-for="item in chat.personas" :key="item.id" class="persona-option"
+                      :class="{ on: item.id === currentPersonaId }" role="none">
+                      <button type="button" class="persona-option-select" role="menuitemradio"
+                        :aria-checked="item.id === currentPersonaId" :disabled="personaLocked"
+                        :title="personaLocked ? '人设在对话开始时确定，新建对话可切换' : item.description"
+                        @click="pickPersona(item.id)">
+                        <span class="menu-row-name">{{ item.name }}</span>
+                        <Check v-if="item.id === currentPersonaId" class="check" :size="14" :stroke-width="2" />
+                      </button>
+                      <button type="button" class="persona-detail-btn" role="menuitem"
+                        title="查看人设详情" :aria-label="`查看「${item.name}」的人设详情`"
+                        @click.stop="detailsPersona = item">
+                        <Info :size="15" :stroke-width="2" />
+                      </button>
+                    </div>
+                    <span v-if="!chat.personas.length" class="menu-empty">暂无人设</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <div ref="modelMenuAnchor" class="model-anchor">
               <button type="button" class="model-btn" :aria-expanded="modelMenuOpen" aria-haspopup="menu"
@@ -684,6 +776,8 @@ watch(
       </div>
     </div>
   </section>
+
+  <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
 
   <!-- 当前对话的工具设置（占位） -->
   <Teleport to="body">
@@ -1126,6 +1220,107 @@ watch(
 /* 模型选择 */
 .model-anchor {
   position: relative;
+}
+
+/* 对话设置 */
+.settings-anchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.chat-settings-btn[aria-expanded='true'] {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.settings-menu {
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 280px;
+}
+
+.settings-persona-name {
+  text-align: right;
+}
+
+.settings-persona-flyout {
+  width: 244px;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow-y: auto;
+}
+
+.persona-option {
+  display: flex;
+  align-items: center;
+  height: var(--menu-row-h);
+  border-radius: 8px;
+  color: var(--ink);
+  transition: background-color 120ms ease;
+}
+
+.persona-option:hover,
+.persona-option:focus-within {
+  background: var(--tonal);
+}
+
+.persona-option.on {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.persona-option-select {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.persona-option-select:disabled {
+  cursor: default;
+}
+
+.persona-detail-btn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.persona-option:hover .persona-detail-btn,
+.persona-option:focus-within .persona-detail-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.persona-detail-btn:hover {
+  background: var(--outline);
+  color: var(--ink);
+}
+
+@media (hover: none) {
+  .persona-detail-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* 上下文占用圆环 */
