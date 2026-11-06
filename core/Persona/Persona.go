@@ -12,9 +12,8 @@ type Persona struct {
 	System      string `json:"system"`
 }
 
-// promptPrefix 给 JSON 一个任务框架，否则模型可能把它当成参考资料而不是身份。
-const promptPrefix = "以下是你的角色设定。请完全以这个角色的身份、性格和说话方式回复，" +
-	"不要复述或解释设定本身:\n"
+const promptPrefix = "以下是你的角色设定 : " +
+	"\n"
 
 // Prompt 返回可直接作为 system 消息的文本。
 func (p Persona) Prompt() (string, error) {

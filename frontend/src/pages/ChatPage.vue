@@ -588,7 +588,9 @@ watch(
             <div ref="modelMenuAnchor" class="model-anchor">
               <button type="button" class="model-btn" :aria-expanded="modelMenuOpen" aria-haspopup="menu"
                 @click="toggleModelMenu">
-                <span class="model-btn-label">{{ activeModel || '选择模型' }}</span>
+                <span class="model-btn-label">
+                  {{ activeModel || '选择模型' }}{{ activeModel && chat.effort !== 'none' ? ` ${effortLabel}` : '' }}
+                </span>
                 <ChevronDown class="chev" :size="12" :stroke-width="2" />
               </button>
 
