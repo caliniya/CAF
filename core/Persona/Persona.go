@@ -4,11 +4,9 @@ import "encoding/json"
 
 // Persona 是对话的人设：告诉模型「你是谁」。
 //
-// 存储与传输都用 JSON 本身——发送时直接 Marshal 成 system 内容，
-// 字段名保持短，减少 token 开销。未来支持外部加载时，
-// 同一套 json 标签可以直接反序列化，不需要改结构。
+// 存储与传输使用 JSON；ID 用于界面选择，Prompt 只发送角色内容。
 type Persona struct {
-	ID          string `json:"-"`
+	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	System      string `json:"system"`
@@ -20,7 +18,15 @@ const promptPrefix = "以下是你的角色设定。请完全以这个角色的�
 
 // Prompt 返回可直接作为 system 消息的文本。
 func (p Persona) Prompt() (string, error) {
-	data, err := json.Marshal(p)
+	data, err := json.Marshal(struct {
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+		System      string `json:"system"`
+	}{
+		Name:        p.Name,
+		Description: p.Description,
+		System:      p.System,
+	})
 	if err != nil {
 		return "", err
 	}
