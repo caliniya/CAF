@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
@@ -372,7 +374,34 @@ func (c *Core) readChatLocked(directory, id string) (*chat.ChatTask, error) {
 	if session.Tree == nil {
 		session.Tree = chatstruct.CreateTree(session.Title)
 	}
+	fillToolDisplayNames(session.Tree)
 	return &session, nil
+}
+
+// 旧会话没有保存展示名，按工具 ID 补齐所有分支；已有名称保留。
+func fillToolDisplayNames(tree *chatstruct.ChatTree) {
+	if tree == nil || tree.Root == nil {
+		return
+	}
+	pending := append([]*chatstruct.ChatNode(nil), tree.Root.Next...)
+	seen := make(map[*chatstruct.ChatNode]bool)
+	for len(pending) > 0 {
+		node := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if node == nil || seen[node] {
+			continue
+		}
+		seen[node] = true
+		for i := range node.Child {
+			for j := range node.Child[i].ToolCalls {
+				call := &node.Child[i].ToolCalls[j]
+				if call.DisplayName == "" {
+					call.DisplayName = agenttool.DisplayName(call.Name)
+				}
+			}
+		}
+		pending = append(pending, node.Next...)
+	}
 }
 
 func (c *Core) saveChatLocked(directory string, session *chat.ChatTask) error {
@@ -797,7 +826,7 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 				if tm == nil || !tm.Enabled {
 					continue
 				}
-				if converted, ok := agenttool.ToolList[tm.Name]; ok {
+				if converted, ok := agenttool.ToolList[tm.ID]; ok {
 					enabled = append(enabled, converted)
 				}
 			}
@@ -1003,6 +1032,7 @@ const toolTimeout = 30 * time.Second
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
 	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
+	reply.ReasoningEffort = session.ReasoningEffort
 	session.UpdatedAt = time.Now().UTC()
 	c.chatMu.Lock()
 	err := c.saveChatLocked(directory, session)
@@ -1047,6 +1077,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 
 	for round := 0; round <= maxToolRounds; round++ {
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
+		var roundUsage *apiImpl.TokenUsage
 		request := apiImpl.ChatRequest{
 			Model:    session.Model,
 			Messages: history,
@@ -1061,11 +1092,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				assistant.Reasoning += delta.Reasoning
 			}
 			if len(delta.ToolCalls) > 0 {
+				for i := range delta.ToolCalls {
+					delta.ToolCalls[i].DisplayName = agenttool.DisplayName(delta.ToolCalls[i].Name)
+				}
 				assistant.ToolCalls = append(assistant.ToolCalls, delta.ToolCalls...)
 			}
 			if delta.Usage != nil {
 				usage := *delta.Usage
 				reply.Usage = &usage
+				roundUsage = &usage
 			}
 			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
 				EmitJSON(EventChatDelta, map[string]any{
@@ -1074,6 +1109,12 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				})
 			}
 		})
+		reasoningTokens := "unknown"
+		if roundUsage != nil && roundUsage.CompletionTokensDetails != nil && roundUsage.CompletionTokensDetails.ReasoningTokens != nil {
+			reasoningTokens = fmt.Sprint(*roundUsage.CompletionTokensDetails.ReasoningTokens)
+		}
+		log.Printf("模型回复: chat=%s round=%d reasoning_effort=%s reasoning_chars=%d reasoning_tokens=%s content_chars=%d",
+			id, round+1, reply.ReasoningEffort, utf8.RuneCountInString(assistant.Reasoning), reasoningTokens, utf8.RuneCountInString(assistant.Content))
 		produced = append(produced, assistant)
 		reply.Child = produced
 		if streamErr != nil {
@@ -1089,19 +1130,22 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		history = append(history, assistant)
 		for _, call := range assistant.ToolCalls {
 			EmitJSON(EventChatTool, map[string]string{
-				"chatId": id, "nodeId": reply.ID, "name": call.Name, "event": "start",
+				"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
+				"name": call.DisplayName, "event": "start",
 			})
 			output, callErr := executeToolCall(call)
 			if callErr != nil {
 				EmitJSON(EventChatTool, map[string]string{
-					"chatId": id, "nodeId": reply.ID, "name": call.Name,
+					"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
+					"name":  call.DisplayName,
 					"event": "fail", "error": callErr.Error(),
 				})
 				// 工具失败不能中断整轮，回一条 tool 消息让模型自己处理
 				output = "工具执行失败：" + callErr.Error()
 			} else {
 				EmitJSON(EventChatTool, map[string]string{
-					"chatId": id, "nodeId": reply.ID, "name": call.Name, "event": "done",
+					"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
+					"name": call.DisplayName, "event": "done",
 				})
 			}
 			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output}
@@ -1119,7 +1163,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	return c.saveReplyLocked(directory, session)
 }
 
-// executeToolCall 按名字取工具实例、解析参数并执行，带超时保护。
+// executeToolCall 按 API 函数名（ToolMeta.ID）取工具实例、解析参数并执行，带超时保护。
 func executeToolCall(call apiImpl.ToolCall) (string, error) {
 	tool := agenttool.Tools[call.Name]
 	if tool == nil {

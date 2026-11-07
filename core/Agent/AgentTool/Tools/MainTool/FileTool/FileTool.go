@@ -34,7 +34,7 @@ func InitFileTool() *FileTool {
 		Description: "标准工具集的一部分,提供文件操作能力",
 		Enabled:     true,
 		Tools: map[string]AgentTool.Tool{
-			ReadFileTool.Name: &ReadFileTool,
+			ReadFileTool.ID: &ReadFileTool,
 		},
 	}}
 }

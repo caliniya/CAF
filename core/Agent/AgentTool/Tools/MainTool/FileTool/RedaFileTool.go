@@ -16,7 +16,8 @@ type ReadFile struct {
 }
 
 func (t *ReadFile) Load() {
-	t.ToolMeta.Name = "ReadFile"
+	t.ToolMeta.ID = "ReadFile"
+	t.ToolMeta.Name = "读取文件"
 	t.ToolMeta.Description = `读取指定文件并返回其文本内容。path 是按顺序排列的路径片段；Windows 绝对路径的盘符片段可写为 "C:\"`
 	t.ToolMeta.Parameters = map[string]any{
 		"type": "object",
@@ -68,7 +69,7 @@ func (t *ReadFile) Fun(arg map[string]any) (string, error) {
 
 func (t ReadFile) ToType() *APIImpl.Tool {
 	return &APIImpl.Tool{
-		Name:        t.Name,
+		Name:        t.ID,
 		Description: t.Description,
 		Parameters:  t.Parameters,
 	}

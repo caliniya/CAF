@@ -212,9 +212,10 @@ func TestEncodeRequestToolRoundTrip(t *testing.T) {
 				Content:   "我需要读一下文件",
 				Reasoning: "用户让我处理文件,先调用工具",
 				ToolCalls: []apiImpl.ToolCall{{
-					ID:        "c1",
-					Name:      "read_file",
-					Arguments: `{"path":"a"}`,
+					ID:          "c1",
+					Name:        "read_file",
+					Arguments:   `{"path":"a"}`,
+					DisplayName: "读取文件",
 				}},
 			},
 			{Role: "tool", ToolCallID: "c1", Content: "文件内容"},

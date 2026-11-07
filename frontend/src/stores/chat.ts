@@ -26,6 +26,7 @@ import {
 import { useConfigsStore } from './configs'
 
 let contextWindowRequestId = 0
+let effortUpdates: Promise<void> = Promise.resolve()
 
 // 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约一 token。
 function estimateTextTokens(text: string): number {
@@ -43,6 +44,8 @@ export interface ProcessItem {
   kind: 'reasoning' | 'text' | 'tool'
   content?: string
   name?: string
+  toolId?: string
+  callId?: string
   status?: 'run' | 'done' | 'fail'
 }
 
@@ -50,6 +53,8 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   process?: ProcessItem[]
+  reasoningEffort?: string
+  reasoningTokens?: number
   nodeId?: string
   parentId?: string
   branchIndex?: number
@@ -156,16 +161,22 @@ export const useChatStore = defineStore('chat', {
     },
     // 用户在菜单里改档位：立即写回当前对话，切走再回来还能读回
     async setEffort(effort: 'none' | 'low' | 'high' | 'max') {
+      if (this.sending) return
       this.effort = effort
       const id = this.session?.id
       if (!id) return
-      try {
+      // 按选择顺序写回，避免较早的请求后返回，把新档位覆盖成旧档位。
+      const update = effortUpdates.then(async () => {
         const session = await SetChatReasoningEffort(id, effort)
         // 请求期间用户可能已经切到别的对话，别把旧会话盖回来
-        if (this.session?.id === id) {
+        if (this.session?.id === id && this.effort === effort) {
           this.session = session
           this.syncEffort()
         }
+      })
+      effortUpdates = update.catch(() => undefined)
+      try {
+        await update
       } catch (err) {
         this.error = String(err)
       }
@@ -213,13 +224,15 @@ export const useChatStore = defineStore('chat', {
           last.process.push({ kind: 'text', content: last.content })
           last.content = ''
         }
-        last.process.push({ kind: 'tool', name: tool.name, status: 'run' })
+        last.process.push({ kind: 'tool', toolId: tool.toolId, callId: tool.callId, name: tool.name, status: 'run' })
         return
       }
 
       for (let i = last.process.length - 1; i >= 0; i--) {
         const item = last.process[i]
-        if (item.kind === 'tool' && item.name === tool.name && item.status === 'run') {
+        const matches = tool.callId ? item.callId === tool.callId
+          : tool.toolId ? item.toolId === tool.toolId : item.name === tool.name
+        if (item.kind === 'tool' && matches && item.status === 'run') {
           item.status = tool.event === 'fail' ? 'fail' : 'done'
           return
         }
@@ -228,13 +241,15 @@ export const useChatStore = defineStore('chat', {
     async send() {
       const text = this.draft.trim()
       if (!text || this.sending) return
+      const effort = this.effort
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
       this.error = ''
 
       try {
+        await effortUpdates
         if (!this.session) {
-          await this.createChat()
+          await this.createChat(effort)
         }
         if (!this.session?.configId || !this.session.model) {
           this.error = '请先为此对话选择提供商和模型。'
@@ -243,8 +258,8 @@ export const useChatStore = defineStore('chat', {
         this.usage = null
         this.draft = ''
         this.messages.push({ role: 'user', content: text })
-        this.messages.push({ role: 'assistant', content: '' })
-        await SendChatMessage(this.session.id, text, this.effort)
+        this.messages.push({ role: 'assistant', content: '', reasoningEffort: effort })
+        await SendChatMessage(this.session.id, text, effort)
         await this.reloadSession()
       } catch (err) {
         this.error = String(err)
@@ -291,7 +306,7 @@ export const useChatStore = defineStore('chat', {
             if (item.reasoning) process.push({ kind: 'reasoning', content: item.reasoning })
             if ((item.content ?? '').trim()) process.push({ kind: 'text', content: item.content })
             for (const call of item.tool_calls ?? []) {
-              process.push({ kind: 'tool', name: call.name, status: 'done' })
+              process.push({ kind: 'tool', toolId: call.name, callId: call.id, name: call.display_name || call.name, status: 'done' })
             }
           }
           // 最终轮的思考排在最终回复之前
@@ -301,6 +316,8 @@ export const useChatStore = defineStore('chat', {
             role: 'assistant',
             content: final.content ?? '',
             process: process.length ? process : undefined,
+            reasoningEffort: node.reasoningEffort,
+            reasoningTokens: node.usage?.completion_tokens_details?.reasoning_tokens,
             ...meta,
           })
         }
@@ -351,7 +368,7 @@ export const useChatStore = defineStore('chat', {
       this.personas = await ListPersonas()
       if (!this.pendingPersonaId) this.pendingPersonaId = this.personas[0]?.id ?? ''
     },
-    async createChat() {
+    async createChat(effort = this.effort) {
       const configs = useConfigsStore()
       const session = await CreateChat(
         configs.enables?.ID ?? '',
@@ -362,8 +379,8 @@ export const useChatStore = defineStore('chat', {
       this.session = session
       this.rebuildMessages()
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
-      if (this.effort !== 'high') {
-        this.session = await SetChatReasoningEffort(session.id, this.effort)
+      if (effort !== 'high') {
+        this.session = await SetChatReasoningEffort(session.id, effort)
       }
       // 把对话开始前攒下的工具配置写进新会话，写完即清空（只作用于这一次）
       if (this.pendingToolConfig) {
@@ -436,6 +453,8 @@ export const useChatStore = defineStore('chat', {
       const pending = this.messages[index]
       pending.content = ''
       pending.process = []
+      pending.reasoningEffort = this.effort
+      pending.reasoningTokens = undefined
       this.error = ''
       this.sending = true
       try {

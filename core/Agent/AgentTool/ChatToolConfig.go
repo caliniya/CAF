@@ -8,7 +8,8 @@ import "sort"
 // 键不存在表示"继承上一层"，因此只写入显式设置的项：
 // 对话级缺失 → 查全局默认；全局缺失 → 用 kit 的代码默认值。
 type ChatToolConfig struct {
-	Sets map[string]ToolSetInfo `json:"sets,omitempty"`
+	Permission PermissionLevel        `json:"permission,omitempty"`
+	Sets       map[string]ToolSetInfo `json:"sets,omitempty"`
 }
 
 type ToolSetInfo struct {
@@ -88,15 +89,15 @@ func ListEnable() []Tool {
 		return nil
 	}
 
-	names := make([]string, 0, len(Tools))
-	for name := range Tools {
-		names = append(names, name)
+	ids := make([]string, 0, len(Tools))
+	for id := range Tools {
+		ids = append(ids, id)
 	}
-	sort.Strings(names)
+	sort.Strings(ids)
 
-	enabled := make([]Tool, 0, len(names))
-	for _, name := range names {
-		tool := Tools[name]
+	enabled := make([]Tool, 0, len(ids))
+	for _, id := range ids {
+		tool := Tools[id]
 		if tool == nil {
 			continue
 		}

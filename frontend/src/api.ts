@@ -69,6 +69,7 @@ export interface ChatTreeNode {
   next: ChatTreeNode[] | null
   child: StoredChatMessage[] | null
   usage?: TokenUsage
+  reasoningEffort?: string
 }
 
 export interface ChatTree {
@@ -90,7 +91,7 @@ export interface StoredChatMessage {
   role: string
   content: string
   reasoning?: string
-  tool_calls?: { id: string; name: string; arguments: string }[]
+  tool_calls?: { id: string; name: string; arguments: string; display_name?: string }[]
   tool_call_id?: string
 }
 
@@ -244,12 +245,15 @@ export interface TokenUsage {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  completion_tokens_details?: { reasoning_tokens?: number }
 }
 
 // "chat:tool" 事件载荷:工具调用的开始/结束。
 export interface ChatToolEvent {
   chatId?: string
   nodeId?: string
+  toolId?: string
+  callId?: string
   name: string
   event: 'start' | 'done' | 'fail'
   error?: string

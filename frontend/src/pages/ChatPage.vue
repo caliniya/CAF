@@ -502,6 +502,12 @@ function bodyHtml(message: (typeof chat.messages)[number], index: number): strin
   return renderDone(`${message.nodeId ?? 'draft'}:${index}`, message.content)
 }
 
+function missingReasoning(message: (typeof chat.messages)[number], index: number): boolean {
+  return message.role === 'assistant' && !!message.reasoningEffort && message.reasoningEffort !== 'none'
+    && !(chat.sending && index === chat.messages.length - 1)
+    && !message.process?.some((item) => item.kind === 'reasoning' && item.content)
+}
+
 watch(
   () => [chat.session?.id, chat.session?.configId, chat.session?.model],
   () => chat.loadContextWindow(),
@@ -548,6 +554,10 @@ watch(
             </template>
           </div>
         </details>
+
+        <p v-if="missingReasoning(m, i)" class="reasoning-empty">
+          {{ m.reasoningTokens ? '模型进行了思考，但未返回思考文本' : '模型未返回思考内容' }}
+        </p>
 
         <!-- 编辑中的用户消息 -->
         <template v-if="m.role === 'user' && m.nodeId && editingNodeId === m.nodeId">
@@ -1011,6 +1021,11 @@ watch(
 }
 
 /* ===== 模型工作过程 ===== */
+.reasoning-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .process {
   width: 100%;
   border: 1px solid var(--outline);

@@ -20,15 +20,16 @@ type ChatMessage struct {
 
 // ToolCall 是一次工具调用。Arguments 是 JSON 对象的字符串形式
 type ToolCall struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	ID          string `json:"id"`   // 本次调用的 ID，用于关联工具结果。
+	Name        string `json:"name"` // API 函数名，即 ToolMeta.ID。
+	Arguments   string `json:"arguments"`
+	DisplayName string `json:"display_name,omitempty"` // 仅用于界面和历史记录，不发送给模型。
 }
 
 // Tool 是提供给模型的工具声明
 // 原样进入请求体，由模型决定是否调用。
 type Tool struct {
-	Name        string         `json:"name"`
+	Name        string         `json:"name"` // API 函数名，即 ToolMeta.ID。
 	Description string         `json:"description,omitempty"`
 	Parameters  map[string]any `json:"parameters,omitempty"`
 }
@@ -56,9 +57,15 @@ type Delta struct {
 
 // TokenUsage 是模型服务返回的本次请求 token 用量。
 type TokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens            int                     `json:"prompt_tokens"`
+	CompletionTokens        int                     `json:"completion_tokens"`
+	TotalTokens             int                     `json:"total_tokens"`
+	CompletionTokensDetails *CompletionTokenDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type CompletionTokenDetails struct {
+	// nil 表示服务端没有提供统计，区别于明确返回 0。
+	ReasoningTokens *int `json:"reasoning_tokens,omitempty"`
 }
 
 // StreamError 表示服务端在流中返回的错误对象。

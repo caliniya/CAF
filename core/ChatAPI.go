@@ -8,6 +8,7 @@ import (
 
 	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
 
 // Emit 由后端(desktop)注入的事件推送实现,core 不依赖 wails。
@@ -17,7 +18,7 @@ var Emit = func(event string, data ...any) {}
 // 事件名,与前端 api.ts 中的契约一致。
 const (
 	EventChatDelta = "chat:delta" // 载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
-	EventChatTool  = "chat:tool"  // 载荷为 JSON 字符串 {"name": strin6g, "event": "start"|"done"}
+	EventChatTool  = "chat:tool"  // 载荷为 JSON 字符串，toolId/callId 用于识别，name 用于展示。
 )
 
 // deltaPayload 是 chat:delta 的事件载荷。
@@ -76,8 +77,9 @@ func (c *Core) SendMessage(history []apiImpl.ChatMessage, reasoningEffort string
 		if len(d.ToolCalls) > 0 {
 			// 工具执行尚未接入,先把调用声明推给前端展示。
 			for _, tc := range d.ToolCalls {
-				EmitJSON(EventChatTool, map[string]string{"name": tc.Name, "event": "start"})
-				EmitJSON(EventChatTool, map[string]string{"name": tc.Name, "event": "done"})
+				name := agenttool.DisplayName(tc.Name)
+				EmitJSON(EventChatTool, map[string]string{"toolId": tc.Name, "callId": tc.ID, "name": name, "event": "start"})
+				EmitJSON(EventChatTool, map[string]string{"toolId": tc.Name, "callId": tc.ID, "name": name, "event": "done"})
 			}
 		}
 	})

@@ -20,7 +20,7 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 		Messages:        make([]CCChatMessage, 0, len(req.Messages)),
 		ReasoningEffort: req.Thinking,
 	}
-	// DeepSeek 的思考开关与强度分开；首轮也要显式启用，不能依赖历史消息。
+	// 显式发送 DeepSeek 的思考开关；关闭时省略仅用于思考模式的强度。
 	if strings.Contains(strings.ToLower(req.Model), "deepseek") && req.Thinking != "" {
 		thinkingType := "enabled"
 		if req.Thinking == "none" {

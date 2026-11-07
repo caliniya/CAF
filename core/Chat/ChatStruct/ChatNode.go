@@ -17,6 +17,8 @@ type ChatNode struct {
 	Child  []apiImpl.ChatMessage `json:"child"`
 	// Usage 保存该回复最后一次模型请求的用量，切换分支或重开时可恢复。
 	Usage *apiImpl.TokenUsage `json:"usage,omitempty"`
+	// 记录生成该回复时的设置，后续更改会话设置不影响历史回复。
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
 // GetEach 按当前选中的分支顺序访问消息。

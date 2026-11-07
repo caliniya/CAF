@@ -4,6 +4,7 @@ import "github.com/caliniya/caf/NetClient/APIImpl"
 
 // 方便内部使用的元结构体,内嵌使用
 type ToolMeta struct {
+	ID          string
 	Name        string
 	Description string
 	Parameters  map[string]any
