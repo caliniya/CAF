@@ -31,6 +31,14 @@ func (c *Core) StartLogin() (int, error) {
 	return c.QQPlatform.StartLogin(), nil
 }
 
+// SelectDirectory 供前端调用平台文件夹选择器；取消时返回空字符串。
+func (c *Core) SelectDirectory(defaultDirectory string) (string, error) {
+	if c == nil || c.FS == nil {
+		return "", errors.New("文件系统尚未初始化")
+	}
+	return c.FS.SelectDirectory(defaultDirectory)
+}
+
 // LoadConfigs 供前端调用：读取配置文件并返回解析后的结果。
 func (c *Core) LoadConfigs() (*Configs, error) {
 	if c == nil || c.Paths == nil {
@@ -781,6 +789,9 @@ func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
 		}
 	}
 	cfg.Normalize()
+	if cfg.Permission < 0 || cfg.Permission > agenttool.PermissionFullAccess {
+		return nil, errors.New("无效的工具权限配置")
+	}
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return nil, err
@@ -789,7 +800,7 @@ func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Sets == nil {
+	if cfg.Sets == nil && cfg.Permission == 0 {
 		session.ToolConfig = nil
 	} else {
 		session.ToolConfig = &cfg
@@ -1026,16 +1037,17 @@ func (c *Core) endChatSend(id string) {
 // 一轮工具调用后模型会带着结果重新请求，限制轮数防止模型无限调用。
 const maxToolRounds = 10
 
-// 单个工具的执行上限，避免读大文件之类的操作把会话卡死。
-const toolTimeout = 30 * time.Second
-
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
+	toolContext, err := c.toolContextFor(session)
+	if err != nil {
+		return err
+	}
 	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
 	reply.ReasoningEffort = session.ReasoningEffort
 	session.UpdatedAt = time.Now().UTC()
 	c.chatMu.Lock()
-	err := c.saveChatLocked(directory, session)
+	err = c.saveChatLocked(directory, session)
 	c.chatMu.Unlock()
 	if err != nil {
 		return err
@@ -1070,6 +1082,11 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		if prompt, promptErr := active.Prompt(); promptErr == nil {
 			history = append(history, apiImpl.ChatMessage{Role: "system", Content: prompt})
 		}
+	}
+	if toolContext.WorkSpace != "" {
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前工作区路径：" + toolContext.WorkSpace + "。文件工具的相对路径以此目录为起点。"})
+	} else {
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前未使用工作区。自动编辑权限下只允许读取文件，不允许创建或修改文件。"})
 	}
 	history = append(history, messages...)
 	produced := make([]apiImpl.ChatMessage, 0, 4)
@@ -1133,7 +1150,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
 				"name": call.DisplayName, "event": "start",
 			})
-			output, callErr := executeToolCall(call)
+			output, callErr := executeToolCall(call, toolContext)
 			if callErr != nil {
 				EmitJSON(EventChatTool, map[string]string{
 					"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
@@ -1164,10 +1181,24 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 }
 
 // executeToolCall 按 API 函数名（ToolMeta.ID）取工具实例、解析参数并执行，带超时保护。
-func executeToolCall(call apiImpl.ToolCall) (string, error) {
+func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext) (string, error) {
 	tool := agenttool.Tools[call.Name]
 	if tool == nil {
 		return "", fmt.Errorf("未找到工具 %q", call.Name)
+	}
+	meta := tool.Meta()
+	if meta == nil {
+		return "", errors.New("工具缺少元信息")
+	}
+	required := meta.Permission
+	if required == 0 {
+		required = agenttool.PermissionReadOnly
+	}
+	if ctx == nil || !ctx.Check(required) {
+		if ctx != nil && ctx.WorkSpace == "" && ctx.PermissionLevel == agenttool.PermissionAutoEdit && required >= agenttool.PermissionAutoEdit {
+			return "", errors.New("未使用工作区，自动编辑权限下禁止写入文件")
+		}
+		return "", fmt.Errorf("没有执行工具 %q 所需的权限", meta.Name)
 	}
 	args := map[string]any{}
 	if raw := strings.TrimSpace(call.Arguments); raw != "" {
@@ -1175,6 +1206,12 @@ func executeToolCall(call apiImpl.ToolCall) (string, error) {
 			return "", fmt.Errorf("参数解析失败：%w", err)
 		}
 	}
+	timeout, err := meta.TimeoutFor(args)
+	if err != nil {
+		return "", err
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 
 	type result struct {
 		output string
@@ -1182,15 +1219,15 @@ func executeToolCall(call apiImpl.ToolCall) (string, error) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		output, err := tool.Fun(args)
+		output, err := tool.Fun(ctx, args)
 		done <- result{output: output, err: err}
 	}()
 
 	select {
 	case r := <-done:
 		return r.output, r.err
-	case <-time.After(toolTimeout):
-		return "", errors.New("执行超时")
+	case <-timer.C:
+		return "", fmt.Errorf("执行超时（%s）", timeout)
 	}
 }
 

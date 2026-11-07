@@ -1,17 +1,38 @@
 package DesktopBackend
 
 import (
+	"context"
+	"errors"
 	"io/fs"
 	"os"
 
 	platform "github.com/caliniya/caf/platform"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // paltform.FilePlatform接口的桌面实现(其实就是调用go原生)
 type DesktopFileSystem struct {
+	ctx context.Context
 }
 
 var _ platform.FilePlatform = (*DesktopFileSystem)(nil)
+
+func (fsys *DesktopFileSystem) SelectDirectory(defaultDirectory string) (string, error) {
+	if fsys == nil || fsys.ctx == nil {
+		return "", errors.New("文件夹选择器尚未初始化")
+	}
+	if err := fsys.ctx.Err(); err != nil {
+		return "", err
+	}
+	return runtime.OpenDirectoryDialog(fsys.ctx, runtime.OpenDialogOptions{
+		Title:            "选择文件夹",
+		DefaultDirectory: defaultDirectory,
+	})
+}
+
+func (fsys *DesktopFileSystem) Stat(name string) (fs.FileInfo, error) {
+	return os.Stat(name)
+}
 
 func (fsys *DesktopFileSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)

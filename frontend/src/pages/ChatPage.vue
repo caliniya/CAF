@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, ListToolSets, SetChatToolConfig, type Persona, type ToolSetDescriptor } from '../api'
+import { onChatDelta, onChatTool, ListToolSets, type Persona, type PermissionLevel, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
+import WorkspaceDialog from '../components/WorkspaceDialog.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -16,12 +17,96 @@ const modelMenuAnchor = ref<HTMLElement | null>(null)
 const modelMenuOpen = ref(false)
 
 // ===== 权限菜单 =====
-const PERMISSIONS = ['只读', '标准', '完全访问'] as const
+const PERMISSIONS = [
+  { value: 1, label: '只读' },
+  { value: 2, label: '自动编辑' },
+  { value: 4, label: '完全访问' },
+] as const
 const permMenuAnchor = ref<HTMLElement | null>(null)
 const permMenuOpen = ref(false)
 const permFlyoutOpen = ref(false)
 const permFlyoutFlip = ref(false)
 const toolsOpen = ref(false)
+
+// ===== 工作区 =====
+const workspaceMenuAnchor = ref<HTMLElement | null>(null)
+const workspaceMenuButton = ref<HTMLButtonElement | null>(null)
+const workspaceMenuOpen = ref(false)
+const workspaceMenuOffset = ref(0)
+const workspaceListOpen = ref(false)
+const workspaceList = ref<HTMLElement | null>(null)
+const workspaceListPosition = ref({ left: '0px', top: '0px' })
+const workspacesLoading = ref(false)
+const workspaceDialogOpen = ref(false)
+const workspaceCreating = ref(false)
+const workspaceError = ref('')
+const workspaceName = computed(() => chat.currentWorkspace?.name
+  ?? (chat.currentWorkspaceId ? '工作区不可用' : '不使用工作区'))
+
+async function toggleWorkspaceMenu() {
+  const open = !workspaceMenuOpen.value
+  closeMenus()
+  workspaceMenuOpen.value = open
+  if (!open) return
+  workspaceMenuOffset.value = 0
+  await nextTick()
+  const bounds = workspaceMenuAnchor.value?.querySelector('.workspace-menu')?.getBoundingClientRect()
+  if (bounds) workspaceMenuOffset.value = Math.min(0, window.innerWidth - 8 - bounds.right)
+  workspacesLoading.value = true
+  try {
+    await chat.loadWorkspaces()
+  } catch (err) {
+    chat.error = String(err)
+  } finally {
+    workspacesLoading.value = false
+  }
+}
+
+async function toggleWorkspaceList(event: MouseEvent) {
+  if (workspaceListOpen.value) {
+    workspaceListOpen.value = false
+    return
+  }
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const width = 260
+  const left = bounds.right + width + 6 <= window.innerWidth - 8
+    ? bounds.right + 6
+    : Math.max(8, bounds.left - width - 6)
+  workspaceListPosition.value = { left: `${left}px`, top: `${bounds.top}px` }
+  workspaceListOpen.value = true
+  await nextTick()
+  const height = workspaceList.value?.getBoundingClientRect().height ?? 0
+  workspaceListPosition.value.top = `${Math.max(8, Math.min(bounds.top, window.innerHeight - height - 8))}px`
+}
+
+async function selectWorkspace(id: string) {
+  try {
+    await chat.selectWorkspace(id)
+    closeMenus()
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
+function openWorkspaceDialog() {
+  closeMenus()
+  workspaceError.value = ''
+  workspaceDialogOpen.value = true
+}
+
+async function createWorkspace(name: string, path: string) {
+  if (workspaceCreating.value) return
+  workspaceCreating.value = true
+  workspaceError.value = ''
+  try {
+    await chat.createWorkspace(name, path)
+    workspaceDialogOpen.value = false
+  } catch (err) {
+    workspaceError.value = String(err)
+  } finally {
+    workspaceCreating.value = false
+  }
+}
 
 // ===== 人设 =====
 const currentPersonaId = computed(() =>
@@ -77,6 +162,8 @@ async function confirmPersonaChange() {
 }
 
 function closeMenus() {
+  workspaceMenuOpen.value = false
+  workspaceListOpen.value = false
   modelMenuOpen.value = false
   openFlyout.value = ''
   permMenuOpen.value = false
@@ -130,10 +217,13 @@ function togglePermFlyout(event: MouseEvent) {
   permFlyoutOpen.value = true
 }
 
-function pickPermission(level: string) {
-  chat.permission = level
-  permFlyoutOpen.value = false
-  permMenuOpen.value = false
+async function pickPermission(level: PermissionLevel) {
+  try {
+    await chat.setPermission(level)
+    closeMenus()
+  } catch (err) {
+    chat.error = String(err)
+  }
 }
 
 const toolSets = ref<ToolSetDescriptor[]>([])
@@ -148,7 +238,8 @@ function toolKey(setID: string, kitID: string) {
 
 function readOverrides() {
   // 有会话读会话里的；没有就读「对话开始前」攒下的配置
-  const sets = chat.session?.toolConfig?.sets ?? chat.pendingToolConfig?.sets ?? {}
+  const current = chat.session ? chat.session.toolConfig : chat.pendingToolConfig
+  const sets = current?.sets ?? {}
   const result: Record<string, boolean> = {}
   for (const [setID, info] of Object.entries(sets)) {
     for (const [kitID, on] of Object.entries(info.kits ?? {})) {
@@ -159,8 +250,7 @@ function readOverrides() {
 }
 
 async function openTools() {
-  permMenuOpen.value = false
-  permFlyoutOpen.value = false
+  closeMenus()
   toolsOpen.value = true
   toolsLoading.value = true
   try {
@@ -204,6 +294,7 @@ function setAllKits(set: ToolSetDescriptor, on: boolean) {
 }
 
 async function saveOverrides(next: Record<string, boolean>) {
+  if (chat.sending || chat.workspaceChanging || chat.toolConfigChanging) return
   toolOverrides.value = next
   const sets: Record<string, { kits: Record<string, boolean> }> = {}
   for (const [key, on] of Object.entries(next)) {
@@ -212,16 +303,11 @@ async function saveOverrides(next: Record<string, boolean>) {
     if (!sets[setID]) sets[setID] = { kits: {} }
     sets[setID].kits[kitID] = on
   }
-  const config = Object.keys(next).length ? { sets } : null
-  const id = chat.session?.id
-  if (!id) {
-    // 对话还没创建：先攒着，createChat 成功后写进新会话
-    chat.setPendingToolConfig(config)
-    return
-  }
+  const current = chat.session ? chat.session.toolConfig : chat.pendingToolConfig
+  const permission = current?.permission
+  const config = Object.keys(next).length || permission ? { sets, permission } : null
   try {
-    const session = await SetChatToolConfig(id, JSON.stringify(config ?? {}))
-    if (chat.session?.id === id) chat.session = session
+    await chat.updateToolConfig(config)
   } catch (err) {
     chat.error = String(err)
   }
@@ -258,11 +344,13 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (detailsPersona.value || personaChange.value) return
+  if (detailsPersona.value || personaChange.value || workspaceDialogOpen.value) return
   if (event.key === 'Escape') {
     const settingsWasOpen = settingsMenuOpen.value
+    const workspaceWasOpen = workspaceMenuOpen.value
     closeMenus()
     if (settingsWasOpen) settingsMenuButton.value?.focus()
+    if (workspaceWasOpen) workspaceMenuButton.value?.focus()
     return
   }
   if (!event.ctrlKey || event.key.toLowerCase() !== 't') return
@@ -357,10 +445,10 @@ async function selectModel(model: string) {
 }
 
 function closeMenusOnOutside(event: PointerEvent) {
-  if (detailsPersona.value || personaChange.value) return
+  if (detailsPersona.value || personaChange.value || workspaceDialogOpen.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
-    || settingsMenuAnchor.value?.contains(target)) return
+    || settingsMenuAnchor.value?.contains(target) || workspaceMenuAnchor.value?.contains(target)) return
   closeMenus()
 }
 
@@ -399,6 +487,7 @@ onMounted(() => {
   document.addEventListener('keydown', onGlobalKeydown)
   if (!configs.loaded) configs.load()
   chat.loadPersonas().catch((err) => { chat.error = String(err) })
+  if (!chat.workspacesLoaded) chat.loadWorkspaces().catch((err) => { chat.error = String(err) })
   if (!chat.chats.length) chat.loadChats().catch((err) => { chat.error = String(err) })
 })
 onUnmounted(() => {
@@ -603,11 +692,56 @@ watch(
       <!-- 工作区条：对话为空时才出现，视觉上压在输入框后面 -->
       <div class="composer-frame">
         <div class="workspace-bar">
-          <button type="button" class="ctx-pill" title="切换工作区">
-            <Folder :size="14" :stroke-width="2" />
-            <span>CAF</span>
-            <ChevronDown class="chev" :size="12" :stroke-width="2" />
-          </button>
+          <div ref="workspaceMenuAnchor" class="workspace-anchor">
+            <button ref="workspaceMenuButton" type="button" class="ctx-pill workspace-trigger"
+              :title="chat.currentWorkspace?.path || '选择工作区'" :aria-expanded="workspaceMenuOpen"
+              aria-haspopup="menu" aria-controls="workspace-menu" :disabled="chat.sending || chat.workspaceChanging"
+              @click="toggleWorkspaceMenu">
+              <Folder :size="14" :stroke-width="2" />
+              <span class="workspace-trigger-name">{{ workspaceName }}</span>
+              <ChevronDown class="chev" :size="12" :stroke-width="2" />
+            </button>
+
+            <div v-if="workspaceMenuOpen" id="workspace-menu" class="menu workspace-menu"
+              :style="{ left: `${workspaceMenuOffset}px` }" role="menu" aria-label="工作区">
+              <div class="menu-slot">
+                <button type="button" class="menu-row" role="menuitem" :aria-expanded="workspaceListOpen"
+                  aria-haspopup="menu" aria-controls="workspace-list" @click="toggleWorkspaceList">
+                  <span class="menu-row-label">当前工作区</span>
+                  <span class="menu-row-name workspace-current-name">{{ workspaceName }}</span>
+                  <ChevronRight class="chev" :size="12" :stroke-width="2" />
+                </button>
+                <div v-if="workspaceListOpen" id="workspace-list" ref="workspaceList"
+                  class="flyout workspace-list" :style="workspaceListPosition" role="menu" aria-label="可用工作区">
+                  <span v-if="workspacesLoading" class="menu-empty">正在加载工作区…</span>
+                  <template v-else>
+                    <button v-for="workspace in chat.workspaces" :key="workspace.id" type="button"
+                      class="menu-row" :class="{ on: workspace.id === chat.currentWorkspaceId }"
+                      role="menuitemradio" :aria-checked="workspace.id === chat.currentWorkspaceId"
+                      :title="workspace.path" :disabled="chat.sending || chat.workspaceChanging"
+                      @click="selectWorkspace(workspace.id)">
+                      <Folder class="row-icon" :size="15" :stroke-width="1.6" />
+                      <span class="menu-row-name">{{ workspace.name }}</span>
+                      <Check v-if="workspace.id === chat.currentWorkspaceId" class="check" :size="14" :stroke-width="2" />
+                    </button>
+                    <span v-if="!chat.workspaces.length" class="menu-empty">暂无工作区</span>
+                  </template>
+                </div>
+              </div>
+
+              <button type="button" class="menu-row" role="menuitem" @click="openWorkspaceDialog">
+                <Plus class="row-icon" :size="15" :stroke-width="1.6" />
+                <span class="menu-row-name">新建工作区</span>
+              </button>
+              <div class="menu-sep"></div>
+              <button type="button" class="menu-row" :class="{ on: !chat.currentWorkspaceId }"
+                role="menuitemradio" :aria-checked="!chat.currentWorkspaceId"
+                :disabled="chat.sending || chat.workspaceChanging" @click="selectWorkspace('')">
+                <span class="menu-row-name">不使用工作区</span>
+                <Check v-if="!chat.currentWorkspaceId" class="check" :size="14" :stroke-width="2" />
+              </button>
+            </div>
+          </div>
 
           <!-- 当前人设：只展示，悬停时可打开详情 -->
           <div class="persona-anchor">
@@ -653,10 +787,12 @@ watch(
 
                   <div v-if="permFlyoutOpen" class="flyout flyout--narrow"
                     :class="{ 'flyout--flip': permFlyoutFlip }" role="menu">
-                    <button v-for="level in PERMISSIONS" :key="level" type="button" class="menu-row"
-                      :class="{ on: chat.permission === level }" @click="pickPermission(level)">
-                      <span class="menu-row-name">{{ level }}</span>
-              <Check v-if="chat.permission === level" class="check" :size="14" :stroke-width="2" />
+                    <button v-for="level in PERMISSIONS" :key="level.value" type="button" class="menu-row"
+                      :class="{ on: chat.permissionLevel === level.value }"
+                      :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging"
+                      @click="pickPermission(level.value)">
+                      <span class="menu-row-name">{{ level.label }}</span>
+              <Check v-if="chat.permissionLevel === level.value" class="check" :size="14" :stroke-width="2" />
                     </button>
                   </div>
                 </div>
@@ -810,7 +946,7 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending" aria-label="发送"
+            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -819,6 +955,10 @@ watch(
       </div>
     </div>
   </section>
+
+  <WorkspaceDialog :open="workspaceDialogOpen" :initial-directory="chat.currentWorkspace?.path"
+    :busy="workspaceCreating" :error="workspaceError" @confirm="createWorkspace"
+    @cancel="workspaceDialogOpen = false" />
 
   <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
   <ConfirmationDialog :open="!!personaChange" title="切换人设"
@@ -854,6 +994,7 @@ watch(
                   <span class="tool-count">{{ set.kits.length }} 个模块</span>
                 </button>
                 <input type="checkbox" class="switch" :checked="setState(set) !== 'off'"
+                  :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging"
                   :indeterminate.prop="setState(set) === 'mixed'" :aria-label="`${set.name} 全部模块`"
                   @change="setAllKits(set, ($event.target as HTMLInputElement).checked)" />
               </div>
@@ -867,6 +1008,7 @@ watch(
                     <span class="tool-desc">{{ kit.description }}</span>
                   </span>
                   <input type="checkbox" class="switch"
+                    :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging"
                     :checked="toolEnabled(set.id, kit.id, kit.defaultEnabled)" :aria-label="kit.name"
                     @change="setToolKit(set.id, kit.id, ($event.target as HTMLInputElement).checked)" />
                 </label>
@@ -876,7 +1018,8 @@ watch(
         </div>
 
         <footer class="tools-foot">
-          <button type="button" class="btn btn-ghost btn-sm" @click="resetToolConfig">恢复默认</button>
+          <button type="button" class="btn btn-ghost btn-sm"
+            :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging" @click="resetToolConfig">恢复默认</button>
           <button type="button" class="btn btn-primary btn-sm" @click="toolsOpen = false">完成</button>
         </footer>
       </div>
@@ -1207,6 +1350,47 @@ watch(
   height: 28px;
   padding: 0 4px;
   white-space: nowrap;
+}
+
+.workspace-anchor {
+  position: relative;
+  min-width: 0;
+}
+
+.workspace-trigger {
+  max-width: 280px;
+}
+
+.workspace-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-trigger svg {
+  flex-shrink: 0;
+}
+
+.workspace-trigger[aria-expanded='true'] {
+  background: var(--tonal);
+  color: var(--accent);
+}
+
+.workspace-menu {
+  bottom: calc(100% + 6px);
+  width: 280px;
+}
+
+.workspace-current-name {
+  text-align: right;
+}
+
+.workspace-list {
+  position: fixed;
+  z-index: 31;
+  width: 260px;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow-y: auto;
 }
 
 .persona-anchor {

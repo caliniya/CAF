@@ -18,7 +18,8 @@ func Init(assets fs.FS) error {
 	if assets == nil {
 		return errors.New("必须提供前端")
 	}
-	core.Platform.FS = &DesktopFileSystem{}
+	fileSystem := &DesktopFileSystem{}
+	core.Platform.FS = fileSystem
 
 	path, err := DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 	if err == nil {
@@ -39,6 +40,8 @@ func Init(assets fs.FS) error {
 		BackgroundColour: &options.RGBA{R: 245, G: 246, B: 250, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup: func(ctx context.Context) {
+			// 原生文件夹选择器需要桌面运行时上下文。
+			fileSystem.ctx = ctx
 			// 把事件推送能力注入 core,core 自身不依赖 wails。
 			core.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)

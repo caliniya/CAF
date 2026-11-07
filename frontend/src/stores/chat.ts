@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import {
   CreateChat,
+  CreateWorkspace,
   DeleteChat,
   EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
   ListChats,
   ListPersonas,
+  ListWorkspaces,
   RenameChat,
   RegenerateChatMessage,
   SendChatMessage,
@@ -14,6 +16,7 @@ import {
   SetChatPersona,
   SetChatReasoningEffort,
   SetChatToolConfig,
+  SetChatWorkspace,
   UpdateChatModel,
   type ChatTask as StoredChatTask,
   type ChatSummary,
@@ -22,11 +25,14 @@ import {
   type ChatToolEvent,
   type Persona,
   type TokenUsage,
+  type Workspace,
+  type PermissionLevel,
 } from '../api'
 import { useConfigsStore } from './configs'
 
 let contextWindowRequestId = 0
 let effortUpdates: Promise<void> = Promise.resolve()
+let toolConfigUpdates: Promise<void> = Promise.resolve()
 
 // 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约一 token。
 function estimateTextTokens(text: string): number {
@@ -76,12 +82,28 @@ export const useChatStore = defineStore('chat', {
     // pendingPersonaId 用于新建对话；已有对话的人设单独保存。
     personas: [] as Persona[],
     pendingPersonaId: '',
-    // 输入框状态行的界面设置(演示阶段仅前端本地)。
-    permission: '标准',
+    workspaces: [] as Workspace[],
+    workspacesLoaded: false,
+    pendingWorkspaceId: '',
+    workspaceChanging: false,
+    toolConfigChanging: false,
     // 默认「中」，与后端 NewChatTask 的默认值一致
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
+    currentWorkspaceId(state): string {
+      return state.session ? state.session.workspaceId ?? '' : state.pendingWorkspaceId
+    },
+    currentWorkspace(): Workspace | undefined {
+      return this.workspaces.find((item) => item.id === this.currentWorkspaceId)
+    },
+    permissionLevel(state): PermissionLevel {
+      const config = state.session ? state.session.toolConfig : state.pendingToolConfig
+      return config?.permission || useConfigsStore().toolNormalConfig?.permission || 2
+    },
+    permission(): string {
+      return { 1: '只读', 2: '自动编辑', 3: '自动审批', 4: '完全访问' }[this.permissionLevel]
+    },
     ctxUsedTokens(state): number | null {
       if (state.usage) {
         return state.usage.total_tokens || state.usage.prompt_tokens + state.usage.completion_tokens
@@ -240,7 +262,7 @@ export const useChatStore = defineStore('chat', {
     },
     async send() {
       const text = this.draft.trim()
-      if (!text || this.sending) return
+      if (!text || this.sending || this.workspaceChanging) return
       const effort = this.effort
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
@@ -248,6 +270,7 @@ export const useChatStore = defineStore('chat', {
 
       try {
         await effortUpdates
+        await toolConfigUpdates
         if (!this.session) {
           await this.createChat(effort)
         }
@@ -352,6 +375,55 @@ export const useChatStore = defineStore('chat', {
     setPendingToolConfig(config: ChatToolConfig | null) {
       this.pendingToolConfig = config
     },
+    async updateToolConfig(config: ChatToolConfig | null) {
+      if (this.sending || this.workspaceChanging || this.toolConfigChanging) return
+      const id = this.session?.id
+      if (!id) {
+        this.pendingToolConfig = config
+        return
+      }
+      this.toolConfigChanging = true
+      const update = toolConfigUpdates.then(async () => {
+        const session = await SetChatToolConfig(id, JSON.stringify(config ?? {}))
+        if (this.session?.id === id) this.session = session
+      })
+      toolConfigUpdates = update.catch(() => undefined)
+      try {
+        await update
+      } finally {
+        this.toolConfigChanging = false
+      }
+    },
+    async setPermission(permission: PermissionLevel) {
+      const current = (this.session ? this.session.toolConfig : this.pendingToolConfig) ?? {}
+      await this.updateToolConfig({ ...current, permission })
+    },
+    async loadWorkspaces() {
+      this.workspaces = await ListWorkspaces()
+      this.workspacesLoaded = true
+    },
+    async selectWorkspace(workspaceId: string) {
+      if (this.sending || this.workspaceChanging) return
+      this.workspaceChanging = true
+      try {
+        await toolConfigUpdates
+        const id = this.session?.id
+        if (id) {
+          const session = await SetChatWorkspace(id, workspaceId)
+          if (this.session?.id === id) this.session = session
+        }
+        this.pendingWorkspaceId = workspaceId
+      } finally {
+        this.workspaceChanging = false
+      }
+    },
+    async createWorkspace(name: string, path: string) {
+      const workspace = await CreateWorkspace(name, path)
+      this.workspaces.push(workspace)
+      this.workspacesLoaded = true
+      await this.selectWorkspace(workspace.id)
+      return workspace
+    },
     setPendingPersona(id: string) {
       this.pendingPersonaId = id
     },
@@ -378,6 +450,9 @@ export const useChatStore = defineStore('chat', {
       )
       this.session = session
       this.rebuildMessages()
+      if (this.pendingWorkspaceId) {
+        this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
+      }
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
       if (effort !== 'high') {
         this.session = await SetChatReasoningEffort(session.id, effort)
@@ -393,7 +468,9 @@ export const useChatStore = defineStore('chat', {
     },
     async openChat(id: string) {
       this.error = ''
+      await toolConfigUpdates
       this.session = await GetChat(id)
+      this.pendingWorkspaceId = this.session.workspaceId ?? ''
       this.syncEffort()
       this.rebuildMessages()
     },

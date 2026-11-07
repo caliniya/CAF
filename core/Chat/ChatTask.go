@@ -13,6 +13,7 @@ type ChatTask struct {
 	Title           string                    `json:"title"`
 	ConfigID        string                    `json:"configId"`
 	Model           string                    `json:"model"`
+	WorkspaceID     string                    `json:"workspaceId,omitempty"`
 	ReasoningEffort string                    `json:"reasoningEffort,omitempty"`
 	Tree            *chatstruct.ChatTree      `json:"tree"`
 	CreatedAt       time.Time                 `json:"createdAt"`

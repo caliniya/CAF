@@ -24,9 +24,14 @@ export interface Model {
 export interface Configs {
   config: Config[] | null
   EnablesConfig: Config | null
+  toolNormalConfig?: ChatToolConfig
 }
 
 interface CoreBindings {
+  SelectDirectory(defaultDirectory: string): Promise<string>
+  ListWorkspaces(): Promise<Workspace[]>
+  CreateWorkspace(name: string, path: string): Promise<Workspace>
+  SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask>
   LoadConfigs(): Promise<Configs>
   GetModelContextWindow(): Promise<number>
   GetChatModelContextWindow(id: string): Promise<number>
@@ -101,7 +106,16 @@ export interface ChatTask extends ChatSummary {
   // 每个对话各自的思考强度，由后端持久化在会话文件里
   reasoningEffort?: string
   toolConfig?: ChatToolConfig
+  workspaceId?: string
 }
+
+export interface Workspace {
+  id: string
+  name: string
+  path: string
+}
+
+export type PermissionLevel = 1 | 2 | 3 | 4
 
 export interface ToolKitDescriptor {
   id: string
@@ -121,6 +135,7 @@ export interface ToolSetDescriptor {
 
 // 对话级覆盖：只写显式设置的 ToolKit，未写的项继承全局默认
 export interface ChatToolConfig {
+  permission?: PermissionLevel
   sets?: Record<string, { kits?: Record<string, boolean> }>
 }
 
@@ -144,6 +159,23 @@ async function bridge(): Promise<CoreBindings> {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error('Wails 绑定尚未就绪')
+}
+
+// 返回选中的文件夹路径；用户取消时返回空字符串。
+export function SelectDirectory(defaultDirectory = ''): Promise<string> {
+  return bridge().then((c) => c.SelectDirectory(defaultDirectory))
+}
+
+export function ListWorkspaces(): Promise<Workspace[]> {
+  return bridge().then((c) => c.ListWorkspaces())
+}
+
+export function CreateWorkspace(name: string, path: string): Promise<Workspace> {
+  return bridge().then((c) => c.CreateWorkspace(name, path))
+}
+
+export function SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatWorkspace(id, workspaceId))
 }
 
 export function LoadConfigs(): Promise<Configs> {

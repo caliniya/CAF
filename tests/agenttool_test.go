@@ -19,7 +19,7 @@ func (t *listEnableTestTool) Meta() *agenttool.ToolMeta {
 	return t.meta
 }
 
-func (t *listEnableTestTool) Fun(map[string]any) (string, error) {
+func (t *listEnableTestTool) Fun(*agenttool.ToolContext, map[string]any) (string, error) {
 	return "", nil
 }
 

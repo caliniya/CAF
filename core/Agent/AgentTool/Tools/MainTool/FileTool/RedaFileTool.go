@@ -33,13 +33,14 @@ func (t *ReadFile) Load() {
 		"required": []string{"path"},
 	}
 	t.ToolMeta.Enabled = true
+	t.ToolMeta.Permission = agenttool.PermissionReadOnly
 }
 
 func (t *ReadFile) Meta() *agenttool.ToolMeta {
 	return &t.ToolMeta
 }
 
-func (t *ReadFile) Fun(arg map[string]any) (string, error) {
+func (t *ReadFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string, error) {
 	pathValue, ok := arg["path"]
 	if !ok || pathValue == nil {
 		return "", errors.New("缺少参数 path")
@@ -59,6 +60,13 @@ func (t *ReadFile) Fun(arg map[string]any) (string, error) {
 		parts[i] = part
 	}
 	path := filepath.Join(parts...)
+	if ctx != nil {
+		var err error
+		path, err = ctx.ResolvePath(path)
+		if err != nil {
+			return "", err
+		}
+	}
 
 	data, err := core.Platform.FS.ReadFile(path)
 	if err != nil {
@@ -68,9 +76,5 @@ func (t *ReadFile) Fun(arg map[string]any) (string, error) {
 }
 
 func (t ReadFile) ToType() *APIImpl.Tool {
-	return &APIImpl.Tool{
-		Name:        t.ID,
-		Description: t.Description,
-		Parameters:  t.Parameters,
-	}
+	return t.ToolMeta.ToType()
 }

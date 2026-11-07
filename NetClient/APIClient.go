@@ -112,11 +112,6 @@ func (c *APIClient) StreamChat(
 		ReasoningEffort string `json:"reasoning_effort"`
 	}
 	if json.Unmarshal([]byte(body), &controls) == nil {
-		thinking := "default"
-		if controls.Thinking != nil {
-			thinking = controls.Thinking.Type
-		}
-		log.Printf("模型请求: model=%s thinking=%s reasoning_effort=%s", req.Model, thinking, controls.ReasoningEffort)
 	}
 
 	url := strings.TrimRight(c.Config.ServerAddress, "/")

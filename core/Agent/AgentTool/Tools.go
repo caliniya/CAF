@@ -56,11 +56,7 @@ func Sync() {
 	ToolList = make(map[string]apiImpl.Tool, len(Tools))
 	for id, tool := range Tools {
 		meta := tool.Meta()
-		ToolList[id] = apiImpl.Tool{
-			Name:        meta.ID,
-			Description: meta.Description,
-			Parameters:  meta.Parameters,
-		}
+		ToolList[id] = *meta.ToType()
 	}
 }
 

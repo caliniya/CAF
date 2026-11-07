@@ -11,6 +11,7 @@ import {
   type Config,
   type Configs,
   type Model,
+  type ChatToolConfig,
 } from '../api'
 
 // 全局配置状态：页面切换时保留，避免重复读取配置文件。
@@ -18,6 +19,7 @@ export const useConfigsStore = defineStore('configs', {
   state: () => ({
     configs: [] as Config[],
     enables: null as Config | null,
+    toolNormalConfig: null as ChatToolConfig | null,
     loaded: false,
     loading: false,
     status: '',
@@ -37,6 +39,7 @@ export const useConfigsStore = defineStore('configs', {
     apply(configs: Configs) {
       this.configs = configs.config ?? []
       this.enables = configs.EnablesConfig
+      this.toolNormalConfig = configs.toolNormalConfig ?? null
       this.loaded = true
     },
     async load() {
