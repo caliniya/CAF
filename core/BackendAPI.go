@@ -308,8 +308,11 @@ func (c *Core) DeleteConfig(index int) (*Configs, error) {
 }
 
 type chatIndex struct {
-	Chats []chat.ChatSummary `json:"chats"`
+	Version int                `json:"version"`
+	Chats   []chat.ChatSummary `json:"chats"`
 }
+
+const chatIndexVersion = 1
 
 func (c *Core) chatDirectory() (string, error) {
 	if c == nil || c.Paths == nil || c.FS == nil {
@@ -333,7 +336,7 @@ func validChatID(id string) bool {
 func (c *Core) readChatIndexLocked(directory string) (chatIndex, error) {
 	data, err := c.FS.ReadFile(filepath.Join(directory, "index.json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return chatIndex{Chats: []chat.ChatSummary{}}, nil
+		return chatIndex{Version: chatIndexVersion, Chats: []chat.ChatSummary{}}, nil
 	}
 	if err != nil {
 		return chatIndex{}, err
@@ -344,6 +347,37 @@ func (c *Core) readChatIndexLocked(directory string) (chatIndex, error) {
 	}
 	if index.Chats == nil {
 		index.Chats = []chat.ChatSummary{}
+	}
+	// 旧索引没有工作区字段，从会话文件补齐一次，之后只需读取摘要。
+	if index.Version < chatIndexVersion {
+		for i := range index.Chats {
+			id := index.Chats[i].ID
+			if !validChatID(id) {
+				return chatIndex{}, errors.New("会话索引包含无效 ID")
+			}
+			data, err := c.FS.ReadFile(filepath.Join(directory, id+".json"))
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return chatIndex{}, fmt.Errorf("读取会话工作区失败：%w", err)
+			}
+			var stored struct {
+				ID          string `json:"id"`
+				WorkspaceID string `json:"workspaceId"`
+			}
+			if err := json.Unmarshal(data, &stored); err != nil {
+				return chatIndex{}, fmt.Errorf("解析会话工作区失败：%w", err)
+			}
+			if stored.ID != id {
+				return chatIndex{}, errors.New("会话文件 ID 不匹配")
+			}
+			index.Chats[i].WorkspaceID = stored.WorkspaceID
+		}
+		index.Version = chatIndexVersion
+		if err := c.writeJSONLocked(filepath.Join(directory, "index.json"), index); err != nil {
+			return chatIndex{}, fmt.Errorf("更新会话索引失败：%w", err)
+		}
 	}
 	return index, nil
 }
@@ -422,7 +456,7 @@ func (c *Core) saveChatLocked(directory string, session *chat.ChatTask) error {
 	}
 	summary := chat.ChatSummary{
 		ID: session.ID, Title: session.Title, ConfigID: session.ConfigID,
-		Model: session.Model, UpdatedAt: session.UpdatedAt,
+		Model: session.Model, WorkspaceID: session.WorkspaceID, UpdatedAt: session.UpdatedAt,
 	}
 	found := false
 	for i := range index.Chats {

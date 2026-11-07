@@ -23,11 +23,12 @@ type ChatTask struct {
 }
 
 type ChatSummary struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	ConfigID  string    `json:"configId"`
-	Model     string    `json:"model"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	ConfigID    string    `json:"configId"`
+	Model       string    `json:"model"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 func NewChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *ChatTask {

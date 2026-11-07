@@ -65,6 +65,7 @@ export interface ChatSummary {
   title: string
   configId: string
   model: string
+  workspaceId?: string
   updatedAt: string
 }
 
@@ -106,7 +107,6 @@ export interface ChatTask extends ChatSummary {
   // 每个对话各自的思考强度，由后端持久化在会话文件里
   reasoningEffort?: string
   toolConfig?: ChatToolConfig
-  workspaceId?: string
 }
 
 export interface Workspace {

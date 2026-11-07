@@ -411,6 +411,7 @@ export const useChatStore = defineStore('chat', {
         if (id) {
           const session = await SetChatWorkspace(id, workspaceId)
           if (this.session?.id === id) this.session = session
+          await this.loadChats()
         }
         this.pendingWorkspaceId = workspaceId
       } finally {

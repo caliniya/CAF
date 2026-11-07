@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, type ComponentPublicInstance } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { ChevronRight, Folder, MessageSquare } from '@lucide/vue'
 import type { ChatSummary } from '../api'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useChatStore } from '../stores/chat'
@@ -16,6 +17,85 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const deleteTarget = ref<ChatSummary | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
+
+type WorkspaceGroup = {
+  id: string
+  name: string
+  path: string
+  chats: ChatSummary[]
+}
+
+const workspaceGroups = computed(() => {
+  const groups: WorkspaceGroup[] = chat.workspaces.map((workspace) => ({ ...workspace, chats: [] }))
+  const byId = new Map(groups.map((group) => [group.id, group]))
+  const unassigned: WorkspaceGroup = { id: '', name: '不使用工作区', path: '', chats: [] }
+
+  for (const item of chat.chats) {
+    const workspaceId = item.workspaceId ?? ''
+    if (!workspaceId) {
+      unassigned.chats.push(item)
+      continue
+    }
+    let group = byId.get(workspaceId)
+    if (!group) {
+      group = { id: workspaceId, name: '工作区不可用', path: '', chats: [] }
+      groups.push(group)
+      byId.set(workspaceId, group)
+    }
+    group.chats.push(item)
+  }
+  if (unassigned.chats.length) groups.push(unassigned)
+  return groups
+})
+
+const COLLAPSED_KEY = 'caf.collapsed-workspaces'
+
+function readCollapsedGroups(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    if (Array.isArray(saved)) return new Set(saved.filter((id): id is string => typeof id === 'string'))
+  } catch {
+    // 无法读取本地设置时默认展开。
+  }
+  return new Set()
+}
+
+const collapsedGroups = ref(readCollapsedGroups())
+
+function toggleGroup(group: WorkspaceGroup) {
+  const next = new Set(collapsedGroups.value)
+  if (next.has(group.id)) {
+    next.delete(group.id)
+  } else {
+    next.add(group.id)
+    if (group.chats.some((item) => item.id === openedMenuId.value)) openedMenuId.value = ''
+    if (group.chats.some((item) => item.id === renamingId.value)) cancelRename()
+  }
+  collapsedGroups.value = next
+}
+
+watch(collapsedGroups, (groups) => {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...groups]))
+  } catch {
+    // 无法保存时仍可在本次使用中折叠。
+  }
+})
+
+// 打开对话或切换它的工作区后，展开所在分组，确保当前对话可见。
+watch(
+  () => chat.session ? `${chat.session.id}:${chat.session.workspaceId ?? ''}` : '',
+  () => {
+    if (!chat.session) return
+    const id = chat.session.workspaceId ?? ''
+    if (collapsedGroups.value.has(id)) {
+      const next = new Set(collapsedGroups.value)
+      next.delete(id)
+      collapsedGroups.value = next
+    }
+  },
+  { immediate: true },
+)
 
 // v-for 内的字符串 ref 会被收集成数组，改用函数 ref 精确拿到当前正在编辑的输入框。
 function setRenameInput(el: Element | ComponentPublicInstance | null) {
@@ -110,6 +190,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', closeMenuOnOutside)
   document.addEventListener('keydown', closeOnEscape)
   chat.loadChats().catch((err) => { error.value = String(err) })
+  if (!chat.workspacesLoaded) chat.loadWorkspaces().catch((err) => { error.value = String(err) })
 })
 onUnmounted(() => {
   document.removeEventListener('pointerdown', closeMenuOnOutside)
@@ -118,67 +199,64 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="chat.chats.length || error" class="task-list">
+  <div v-if="workspaceGroups.length || error" class="task-list">
     <p class="task-label">对话</p>
     <p v-if="error" class="task-error">{{ error }}</p>
 
-    <div
-      v-for="item in chat.chats"
-      :key="item.id"
-      class="task-row"
-      :class="{ active: item.id === chat.session?.id }"
-    >
-      <div v-if="renamingId === item.id" class="task-rename">
-        <input
-          :ref="setRenameInput"
-          v-model="renameDraft"
-          type="text"
-          aria-label="对话名称"
-          @keydown.enter.prevent="submitRename(item.id, item.title)"
-          @keydown.esc.prevent="cancelRename"
-        />
-        <button type="button" title="保存" aria-label="保存" @click="submitRename(item.id, item.title)">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </button>
-        <button type="button" title="取消" aria-label="取消" @click="cancelRename">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
+    <section v-for="group in workspaceGroups" :key="group.id" class="workspace-group">
+      <button type="button" class="workspace-group-toggle"
+        :class="{ active: group.chats.some((item) => item.id === chat.session?.id) }"
+        :aria-expanded="!collapsedGroups.has(group.id)"
+        :aria-controls="`workspace-chats-${group.id || 'unassigned'}`"
+        :title="group.path || group.name" @click="toggleGroup(group)">
+        <ChevronRight class="workspace-group-chevron" :class="{ expanded: !collapsedGroups.has(group.id) }"
+          :size="12" :stroke-width="2" />
+        <Folder v-if="group.id" :size="14" :stroke-width="1.6" />
+        <MessageSquare v-else :size="14" :stroke-width="1.6" />
+        <span class="workspace-group-name">{{ group.name }}</span>
+        <span class="workspace-group-count">{{ group.chats.length }}</span>
+      </button>
 
-      <template v-else>
-        <button
-          type="button"
-          class="task-item"
-          :class="{ active: item.id === chat.session?.id }"
-          :title="item.title"
-          @click="chat.openChat(item.id).catch((err) => { error = String(err) })"
-        >
-          <span class="task-title">{{ item.title }}</span>
-        </button>
-        <span class="task-more-wrap">
-          <button
-            type="button"
-            class="task-more"
-            title="更多操作"
-            aria-label="更多操作"
-            aria-haspopup="menu"
-            :aria-expanded="openedMenuId === item.id"
-            @click="toggleMenu(item.id, $event)"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="5" cy="12" r="1.6" />
-              <circle cx="12" cy="12" r="1.6" />
-              <circle cx="19" cy="12" r="1.6" />
-            </svg>
-          </button>
-        </span>
-      </template>
-    </div>
+      <div v-show="!collapsedGroups.has(group.id)" :id="`workspace-chats-${group.id || 'unassigned'}`"
+        class="workspace-group-chats">
+        <p v-if="!group.chats.length" class="workspace-group-empty">暂无对话</p>
+        <div v-for="item in group.chats" :key="item.id" class="task-row"
+          :class="{ active: item.id === chat.session?.id }">
+          <div v-if="renamingId === item.id" class="task-rename">
+            <input :ref="setRenameInput" v-model="renameDraft" type="text" aria-label="对话名称"
+              @keydown.enter.prevent="submitRename(item.id, item.title)" @keydown.esc.prevent="cancelRename" />
+            <button type="button" title="保存" aria-label="保存" @click="submitRename(item.id, item.title)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </button>
+            <button type="button" title="取消" aria-label="取消" @click="cancelRename">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          <template v-else>
+            <button type="button" class="task-item" :class="{ active: item.id === chat.session?.id }"
+              :title="item.title" @click="chat.openChat(item.id).catch((err) => { error = String(err) })">
+              <span class="task-title">{{ item.title }}</span>
+            </button>
+            <span class="task-more-wrap">
+              <button type="button" class="task-more" title="更多操作" aria-label="更多操作"
+                aria-haspopup="menu" :aria-expanded="openedMenuId === item.id" @click="toggleMenu(item.id, $event)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.6" />
+                  <circle cx="12" cy="12" r="1.6" />
+                  <circle cx="19" cy="12" r="1.6" />
+                </svg>
+              </button>
+            </span>
+          </template>
+        </div>
+      </div>
+    </section>
   </div>
 
   <Teleport to="body">
@@ -225,6 +303,76 @@ onUnmounted(() => {
 .task-error {
   padding: 4px 10px;
   color: var(--danger);
+  font-size: 12px;
+}
+
+.workspace-group {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.workspace-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.workspace-group-toggle:hover {
+  background: var(--tonal);
+  color: var(--ink);
+}
+
+.workspace-group-toggle.active {
+  color: var(--accent);
+}
+
+.workspace-group-toggle svg {
+  flex-shrink: 0;
+}
+
+.workspace-group-chevron {
+  transition: transform 120ms ease;
+}
+
+.workspace-group-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.workspace-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-group-count {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.workspace-group-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px 13px;
+  padding-left: 8px;
+  border-left: 1px solid var(--outline);
+}
+
+.workspace-group-empty {
+  padding: 5px 10px;
+  color: var(--muted);
   font-size: 12px;
 }
 
