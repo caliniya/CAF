@@ -9,8 +9,11 @@ type FilePlatform interface {
 	// 用户取消时返回空字符串和 nil。
 	SelectDirectory(defaultDirectory string) (string, error)
 	Stat(name string) (fs.FileInfo, error)
+	ReadDir(name string) ([]fs.DirEntry, error)
 	ReadFile(name string) ([]byte, error)
 	WriteFile(name string, data []byte, perm fs.FileMode) error
+	// WriteFileInRoot 的 name 是相对路径，禁止通过路径或符号链接写入 root 之外。
+	WriteFileInRoot(root, name string, data []byte, perm fs.FileMode) error
 	MoveFile(source, destination string) error
 	RenameFile(name, newName string) error
 	CreateDirectory(name string, perm fs.FileMode) error

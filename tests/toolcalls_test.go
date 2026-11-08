@@ -58,8 +58,18 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
 				}
-				if len(request.Tools) != 1 || request.Tools[0].Function.Name != "ReadFile" {
-					t.Errorf("工具声明应使用 ID，实际 %+v", request.Tools)
+				if len(request.Tools) != len(agenttool.Tools) {
+					t.Errorf("工具声明数量错误：%d，期望 %d", len(request.Tools), len(agenttool.Tools))
+				}
+				requestToolIDs := make(map[string]bool, len(request.Tools))
+				for _, tool := range request.Tools {
+					if requestToolIDs[tool.Function.Name] || agenttool.Tools[tool.Function.Name] == nil {
+						t.Errorf("工具声明应使用唯一的已注册 ID，实际 %+v", tool)
+					}
+					requestToolIDs[tool.Function.Name] = true
+				}
+				if !requestToolIDs["ReadFile"] {
+					t.Error("工具声明缺少 ReadFile")
 				}
 				if strings.Contains(string(data), "display_name") {
 					t.Error("展示名字段不能发送给模型")

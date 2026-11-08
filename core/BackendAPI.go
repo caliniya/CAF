@@ -759,12 +759,19 @@ func (c *Core) SetChatReasoningEffort(id, effort string) (*chat.ChatTask, error)
 // ===== 对话级工具启用配置 =====
 // 最小启停单位是 ToolKit，不是单个 Tool。
 
+type ToolDescriptor struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
 type ToolKitDescriptor struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	DefaultEnabled bool     `json:"defaultEnabled"`
-	Tools          []string `json:"tools"`
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	DefaultEnabled bool             `json:"defaultEnabled"`
+	Tools          []ToolDescriptor `json:"tools"`
 }
 
 type ToolSetDescriptor struct {
@@ -775,7 +782,7 @@ type ToolSetDescriptor struct {
 	Kits           []ToolKitDescriptor `json:"kits"`
 }
 
-// ListToolSets 返回启动期注册的所有工具集，供前端渲染开关。
+// ListToolSets 返回工具集、模块及工具的完整参数声明，供前端渲染开关和详情。
 func (c *Core) ListToolSets() []ToolSetDescriptor {
 	out := make([]ToolSetDescriptor, 0, len(agenttool.ToolSets))
 	for setID, set := range agenttool.ToolSets {
@@ -786,17 +793,23 @@ func (c *Core) ListToolSets() []ToolSetDescriptor {
 		}
 		for kitID, kit := range meta.ToolKits {
 			kitMeta := kit.Meta()
-			names := make([]string, 0, len(kitMeta.Tools))
+			tools := make([]ToolDescriptor, 0, len(kitMeta.Tools))
 			for _, tool := range kit.List() {
+				if tool == nil {
+					continue
+				}
 				if tm := tool.Meta(); tm != nil {
-					names = append(names, tm.Name)
+					tools = append(tools, ToolDescriptor{
+						ID: tm.ID, Name: tm.Name, Description: tm.Description,
+						Parameters: tm.ToType().Parameters,
+					})
 				}
 			}
-			sort.Strings(names)
+			sort.Slice(tools, func(i, j int) bool { return tools[i].ID < tools[j].ID })
 			item.Kits = append(item.Kits, ToolKitDescriptor{
 				ID: kitID, Name: kitMeta.Name, Description: kitMeta.Description,
 				DefaultEnabled: meta.Enabled && kitMeta.Enabled,
-				Tools:          names,
+				Tools:          tools,
 			})
 		}
 		sort.Slice(item.Kits, func(i, j int) bool { return item.Kits[i].ID < item.Kits[j].ID })

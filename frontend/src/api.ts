@@ -120,12 +120,34 @@ export interface Workspace {
 
 export type PermissionLevel = 1 | 2 | 3 | 4
 
+export interface ToolParameterSchema {
+  type?: string | string[]
+  title?: string
+  description?: string
+  properties?: Record<string, ToolParameterSchema | boolean>
+  required?: string[]
+  items?: ToolParameterSchema | boolean | (ToolParameterSchema | boolean)[]
+  additionalProperties?: ToolParameterSchema | boolean
+  enum?: unknown[]
+  default?: unknown
+  const?: unknown
+  examples?: unknown[]
+  [key: string]: unknown
+}
+
+export interface ToolDescriptor {
+  id: string
+  name: string
+  description: string
+  parameters: ToolParameterSchema | null
+}
+
 export interface ToolKitDescriptor {
   id: string
   name: string
   description: string
   defaultEnabled: boolean
-  tools: string[]
+  tools: ToolDescriptor[]
 }
 
 export interface ToolSetDescriptor {

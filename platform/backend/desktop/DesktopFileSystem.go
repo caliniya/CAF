@@ -34,12 +34,25 @@ func (fsys *DesktopFileSystem) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(name)
 }
 
+func (fsys *DesktopFileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
+	return os.ReadDir(name)
+}
+
 func (fsys *DesktopFileSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
 }
 
 func (fsys *DesktopFileSystem) WriteFile(name string, data []byte, perm fs.FileMode) error {
 	return os.WriteFile(name, data, perm)
+}
+
+func (fsys *DesktopFileSystem) WriteFileInRoot(directory, name string, data []byte, perm fs.FileMode) error {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.WriteFile(name, data, perm)
 }
 
 func (fsys *DesktopFileSystem) MoveFile(source, destination string) error {

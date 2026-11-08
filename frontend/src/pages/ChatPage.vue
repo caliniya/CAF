@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, ListToolSets, type Persona, type PermissionLevel, type ToolSetDescriptor } from '../api'
+import { onChatDelta, onChatTool, ListToolSets, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
+import ToolKitDetailsPopover from '../components/ToolKitDetailsPopover.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -230,6 +231,76 @@ const toolSets = ref<ToolSetDescriptor[]>([])
 const toolOverrides = ref<Record<string, boolean>>({})
 const toolsLoading = ref(false)
 const expandedSets = ref<Record<string, boolean>>({})
+const toolDetailsId = useId() + '-toolkit-details'
+const toolDetails = ref<{ key: string; kit: ToolKitDescriptor; anchor: HTMLElement } | null>(null)
+let toolDetailsOpenTimer: number | undefined
+let toolDetailsCloseTimer: number | undefined
+
+function cancelToolDetailsOpen() {
+  window.clearTimeout(toolDetailsOpenTimer)
+  toolDetailsOpenTimer = undefined
+}
+
+function keepToolDetailsOpen() {
+  window.clearTimeout(toolDetailsCloseTimer)
+  toolDetailsCloseTimer = undefined
+}
+
+function closeToolDetails() {
+  cancelToolDetailsOpen()
+  keepToolDetailsOpen()
+  toolDetails.value = null
+}
+
+function openToolDetails(setID: string, kit: ToolKitDescriptor, event: MouseEvent | FocusEvent) {
+  cancelToolDetailsOpen()
+  keepToolDetailsOpen()
+  const target = event.currentTarget as HTMLElement
+  const anchor = target.closest<HTMLElement>('.tool-row') ?? target
+  toolDetails.value = { key: toolKey(setID, kit.id), kit, anchor }
+}
+
+function hoverToolDetails(setID: string, kit: ToolKitDescriptor, event: MouseEvent) {
+  cancelToolDetailsOpen()
+  keepToolDetailsOpen()
+  const anchor = event.currentTarget as HTMLElement
+  const key = toolKey(setID, kit.id)
+  if (toolDetails.value?.key === key) return
+  toolDetailsOpenTimer = window.setTimeout(() => {
+    toolDetailsOpenTimer = undefined
+    if (toolsOpen.value && anchor.isConnected) toolDetails.value = { key, kit, anchor }
+  }, 180)
+}
+
+function scheduleToolDetailsClose() {
+  cancelToolDetailsOpen()
+  keepToolDetailsOpen()
+  toolDetailsCloseTimer = window.setTimeout(() => {
+    const panel = document.getElementById(toolDetailsId)
+    const anchor = toolDetails.value?.anchor
+    const focused = document.activeElement
+    if (anchor?.matches(':hover') || panel?.matches(':hover')
+      || (focused && (anchor?.contains(focused) || panel?.contains(focused)))) return
+    closeToolDetails()
+  }, 280)
+}
+
+function dismissToolDetails() {
+  const anchor = toolDetails.value?.anchor
+  if (document.getElementById(toolDetailsId)?.contains(document.activeElement)) {
+    anchor?.querySelector<HTMLButtonElement>('.tool-details-trigger')?.focus()
+  }
+  closeToolDetails()
+}
+
+function closeTools() {
+  closeToolDetails()
+  toolsOpen.value = false
+}
+
+watch(toolsOpen, (open) => {
+  if (!open) closeToolDetails()
+})
 
 // 用 \0 作分隔符，工具集/工具名里不可能出现
 function toolKey(setID: string, kitID: string) {
@@ -251,6 +322,7 @@ function readOverrides() {
 
 async function openTools() {
   closeMenus()
+  closeToolDetails()
   toolsOpen.value = true
   toolsLoading.value = true
   try {
@@ -269,6 +341,7 @@ async function openTools() {
 }
 
 function toggleSet(setID: string) {
+  closeToolDetails()
   expandedSets.value = { ...expandedSets.value, [setID]: !expandedSets.value[setID] }
 }
 
@@ -345,6 +418,14 @@ function pickEffort(index: number) {
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
   if (detailsPersona.value || personaChange.value || workspaceDialogOpen.value) return
+  if (toolsOpen.value) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (toolDetails.value) dismissToolDetails()
+      else closeTools()
+    }
+    return
+  }
   if (event.key === 'Escape') {
     const settingsWasOpen = settingsMenuOpen.value
     const workspaceWasOpen = workspaceMenuOpen.value
@@ -492,6 +573,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   pageUnmounted = true
+  closeToolDetails()
   document.removeEventListener('pointerdown', closeMenusOnOutside)
   document.removeEventListener('keydown', onGlobalKeydown)
   offs.forEach((off) => off())
@@ -966,10 +1048,10 @@ watch(
     confirm-label="确认切换" :busy="personaChanging" :error="personaChangeError"
     @confirm="confirmPersonaChange" @cancel="personaChange = null" />
 
-  <!-- 当前对话的工具设置（占位） -->
+  <!-- 当前对话的工具设置 -->
   <Teleport to="body">
-    <div v-if="toolsOpen" class="overlay" @click.self="toolsOpen = false">
-      <div class="tools-dialog" role="dialog" aria-modal="true">
+    <div v-if="toolsOpen" class="overlay" @click.self="closeTools">
+      <div class="tools-dialog" role="dialog" aria-modal="true" aria-label="工具配置">
         <header class="tools-head">
           <div>
             <h2>工具配置</h2>
@@ -977,7 +1059,7 @@ watch(
               {{ chat.session ? '改动只作用于当前对话' : '为即将开始的对话预设工具' }}
             </p>
           </div>
-          <button type="button" class="btn btn-ghost btn-sm" @click="toolsOpen = false">关闭</button>
+          <button type="button" class="btn btn-ghost btn-sm" @click="closeTools">关闭</button>
         </header>
 
         <div class="tools-body">
@@ -1000,18 +1082,28 @@ watch(
               </div>
               <p class="tool-desc">{{ set.description }}</p>
 
-              <!-- 展开后才显示子模块；不列出模块里有哪些工具 -->
+              <!-- 悬停或点击模块名称可查看工具与参数 -->
               <div v-if="expandedSets[set.id]" class="tool-kits">
-                <label v-for="kit in set.kits" :key="kit.id" class="tool-row">
-                  <span class="tool-text">
-                    <span class="tool-name">{{ kit.name }}</span>
-                    <span class="tool-desc">{{ kit.description }}</span>
-                  </span>
+                <div v-for="kit in set.kits" :key="kit.id" class="tool-row"
+                  :class="{ 'showing-details': toolDetails?.key === toolKey(set.id, kit.id) }"
+                  @mouseenter="hoverToolDetails(set.id, kit, $event)" @mouseleave="scheduleToolDetailsClose"
+                  @focusin="openToolDetails(set.id, kit, $event)" @focusout="scheduleToolDetailsClose">
+                  <button type="button" class="tool-details-trigger" aria-haspopup="dialog"
+                    :aria-expanded="toolDetails?.key === toolKey(set.id, kit.id)"
+                    :aria-controls="toolDetails?.key === toolKey(set.id, kit.id) ? toolDetailsId : undefined"
+                    @click="openToolDetails(set.id, kit, $event)">
+                    <span class="tool-text">
+                      <span class="tool-name">{{ kit.name }}</span>
+                      <span class="tool-desc">{{ kit.description }}</span>
+                    </span>
+                    <span class="tool-count">{{ kit.tools.length }} 个工具</span>
+                    <ChevronRight class="tool-details-chevron" :size="13" :stroke-width="2" aria-hidden="true" />
+                  </button>
                   <input type="checkbox" class="switch"
                     :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging"
                     :checked="toolEnabled(set.id, kit.id, kit.defaultEnabled)" :aria-label="kit.name"
                     @change="setToolKit(set.id, kit.id, ($event.target as HTMLInputElement).checked)" />
-                </label>
+                </div>
               </div>
             </section>
           </div>
@@ -1020,11 +1112,14 @@ watch(
         <footer class="tools-foot">
           <button type="button" class="btn btn-ghost btn-sm"
             :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging" @click="resetToolConfig">恢复默认</button>
-          <button type="button" class="btn btn-primary btn-sm" @click="toolsOpen = false">完成</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="closeTools">完成</button>
         </footer>
       </div>
     </div>
   </Teleport>
+  <ToolKitDetailsPopover v-if="toolsOpen && toolDetails" :id="toolDetailsId" :key="toolDetails.key"
+    :kit="toolDetails.kit" :anchor="toolDetails.anchor"
+    @keep-open="keepToolDetailsOpen" @leave="scheduleToolDetailsClose" @close="dismissToolDetails" />
 </template>
 
 <style scoped>
@@ -1668,7 +1763,7 @@ watch(
   width: 210px;
 }
 
-/* ===== 工具配置弹窗（占位） ===== */
+/* ===== 工具配置弹窗 ===== */
 .overlay {
   position: fixed;
   inset: 0;
@@ -1808,7 +1903,36 @@ watch(
   gap: 16px;
   padding: 9px 0;
   border-top: 1px solid var(--outline);
+}
+
+.tool-details-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
   cursor: pointer;
+}
+
+.tool-details-trigger:hover,
+.showing-details .tool-details-trigger {
+  background: var(--tonal);
+}
+
+.tool-details-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.showing-details .tool-name,
+.showing-details .tool-details-chevron {
+  color: var(--accent);
 }
 
 .tool-text {

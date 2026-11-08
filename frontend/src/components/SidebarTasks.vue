@@ -367,7 +367,7 @@ onUnmounted(() => {
     confirm-label="确认删除" danger :busy="deleting" :error="deleteError"
     @confirm="confirmDelete" @cancel="deleteTarget = null" />
   <ConfirmationDialog :open="!!workspaceDeleteTarget" title="删除工作区"
-    :message="`确定删除「${workspaceDeleteTarget?.name ?? ''}」工作区吗？\n确认删除：保留对话，转为不使用工作区。\n全部删除：同时删除所有对话，无法恢复。\n两种方式都会保留工作区文件夹。`"
+    :message="`确定删除「${workspaceDeleteTarget?.name ?? ''}」工作区吗？\n确认删除：保留对话，转为不使用工作区。\n全部删除：同时删除所有对话，无法恢复。\n不会影响工作区实际文件。`"
     confirm-label="确认删除" danger :busy="workspaceDeleting" :error="workspaceDeleteError"
     @confirm="confirmWorkspaceDelete()" @cancel="workspaceDeleteTarget = null">
     <template #extra-actions>
