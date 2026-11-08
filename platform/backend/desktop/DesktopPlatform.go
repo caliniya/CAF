@@ -47,9 +47,6 @@ func Init(assets fs.FS) error {
 				runtime.EventsEmit(ctx, event, data...)
 			}
 		},
-		OnShutdown: func(context.Context) {
-			_, _ = core.Platform.StopQQTestAdapter()
-		},
 		Bind: []interface{}{
 			core.Platform,
 		},
