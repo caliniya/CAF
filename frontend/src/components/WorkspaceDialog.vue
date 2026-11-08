@@ -30,7 +30,12 @@ async function chooseDirectory() {
   browseError.value = ''
   try {
     const selected = await SelectDirectory(path.value.trim() || props.initialDirectory || '')
-    if (selected) path.value = selected
+    if (selected) {
+      path.value = selected
+      if (!name.value.trim()) {
+        name.value = selected.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || selected
+      }
+    }
   } catch (err) {
     browseError.value = String(err)
   } finally {
@@ -39,7 +44,7 @@ async function chooseDirectory() {
 }
 
 function confirm() {
-  if (!props.busy && !browsing.value && name.value.trim() && path.value.trim()) {
+  if (!props.busy && !browsing.value && path.value.trim()) {
     emit('confirm', name.value.trim(), path.value.trim())
   }
 }
@@ -72,7 +77,7 @@ watch(
         <div class="workspace-dialog-content">
           <label class="workspace-field">
             <span>名称</span>
-            <input v-model="name" type="text" placeholder="工作区名称" required autofocus
+            <input v-model="name" type="text" placeholder="留空使用文件夹名称" autofocus
               :disabled="busy || browsing" />
           </label>
           <label class="workspace-field">
@@ -92,7 +97,7 @@ watch(
         <footer class="workspace-dialog-actions">
           <button type="button" class="btn btn-ghost" :disabled="busy || browsing" @click="cancel">取消</button>
           <button type="submit" class="btn btn-primary"
-            :disabled="busy || browsing || !name.trim() || !path.trim()">{{ busy ? '创建中…' : '创建并使用' }}</button>
+            :disabled="busy || browsing || !path.trim()">{{ busy ? '创建中…' : '创建并使用' }}</button>
         </footer>
       </form>
     </dialog>

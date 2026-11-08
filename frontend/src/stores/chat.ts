@@ -3,6 +3,7 @@ import {
   CreateChat,
   CreateWorkspace,
   DeleteChat,
+  DeleteWorkspace,
   EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
@@ -10,6 +11,7 @@ import {
   ListPersonas,
   ListWorkspaces,
   RenameChat,
+  RenameWorkspace,
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
@@ -424,6 +426,24 @@ export const useChatStore = defineStore('chat', {
       this.workspacesLoaded = true
       await this.selectWorkspace(workspace.id)
       return workspace
+    },
+    async renameWorkspace(id: string, name: string) {
+      const workspace = await RenameWorkspace(id, name)
+      this.workspaces = this.workspaces.map((item) => item.id === id ? workspace : item)
+    },
+    async deleteWorkspace(id: string) {
+      if (this.workspaceChanging) throw new Error('工作区正在切换中，请稍后重试')
+      this.workspaceChanging = true
+      try {
+        await toolConfigUpdates
+        await DeleteWorkspace(id)
+        this.workspaces = this.workspaces.filter((item) => item.id !== id)
+        this.chats = this.chats.map((item) => item.workspaceId === id ? { ...item, workspaceId: '' } : item)
+        if (this.pendingWorkspaceId === id) this.pendingWorkspaceId = ''
+        if (this.session?.workspaceId === id) this.session = { ...this.session, workspaceId: '' }
+      } finally {
+        this.workspaceChanging = false
+      }
     },
     setPendingPersona(id: string) {
       this.pendingPersonaId = id

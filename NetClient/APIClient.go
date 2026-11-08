@@ -7,12 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
-	"unicode/utf8"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
@@ -145,13 +142,6 @@ func (c *APIClient) StreamChat(
 	scanner := bufio.NewScanner(resp.Body)
 	// SSE 单行可能超过默认 64KB(长文本/大参数),放宽到 1MB。
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	var reasoningFields []string
-	rawReasoningChars, decodedReasoningChars := 0, 0
-	defer func() {
-		slices.Sort(reasoningFields)
-		log.Printf("模型响应: model=%s reasoning_fields=%v raw_reasoning_chars=%d decoded_reasoning_chars=%d",
-			req.Model, reasoningFields, rawReasoningChars, decodedReasoningChars)
-	}()
 
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
@@ -165,35 +155,12 @@ func (c *APIClient) StreamChat(
 		if payload == "" {
 			continue
 		}
-		// 统计原始字段名和长度，不记录思考正文，便于与解码结果比较。
-		var rawChunk struct {
-			Choices []struct {
-				Delta map[string]json.RawMessage `json:"delta"`
-			} `json:"choices"`
-		}
-		if json.Unmarshal([]byte(payload), &rawChunk) == nil {
-			for _, choice := range rawChunk.Choices {
-				for name, value := range choice.Delta {
-					if !strings.Contains(name, "reasoning") {
-						continue
-					}
-					if !slices.Contains(reasoningFields, name) {
-						reasoningFields = append(reasoningFields, name)
-					}
-					var text string
-					if json.Unmarshal(value, &text) == nil {
-						rawReasoningChars += utf8.RuneCountInString(text)
-					}
-				}
-			}
-		}
 
 		deltas, err := proto.DecodeEvent(payload)
 		if err != nil {
 			return fmt.Errorf("解析响应失败：%w", err)
 		}
 		for _, d := range deltas {
-			decodedReasoningChars += utf8.RuneCountInString(d.Reasoning)
 			if onDelta != nil {
 				onDelta(d)
 			}

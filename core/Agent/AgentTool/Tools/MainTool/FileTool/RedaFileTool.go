@@ -18,6 +18,8 @@ type ReadFile struct {
 func (t *ReadFile) Load() {
 	t.ToolMeta.ID = "ReadFile"
 	t.ToolMeta.Name = "读取文件"
+	// 可选的调用超时，0 或省略时使用工具默认值（未设置则为 30 秒）。
+	t.ToolMeta.TimeoutParam = "timeout_seconds"
 	t.ToolMeta.Description = `读取指定文件并返回其文本内容。path 是按顺序排列的路径片段；Windows 绝对路径的盘符片段可写为 "C:\"`
 	t.ToolMeta.Parameters = map[string]any{
 		"type": "object",

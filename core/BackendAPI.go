@@ -7,13 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	netclient "github.com/caliniya/caf/NetClient"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
@@ -1128,7 +1126,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 
 	for round := 0; round <= maxToolRounds; round++ {
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
-		var roundUsage *apiImpl.TokenUsage
 		request := apiImpl.ChatRequest{
 			Model:    session.Model,
 			Messages: history,
@@ -1151,7 +1148,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			if delta.Usage != nil {
 				usage := *delta.Usage
 				reply.Usage = &usage
-				roundUsage = &usage
 			}
 			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
 				EmitJSON(EventChatDelta, map[string]any{
@@ -1160,12 +1156,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				})
 			}
 		})
-		reasoningTokens := "unknown"
-		if roundUsage != nil && roundUsage.CompletionTokensDetails != nil && roundUsage.CompletionTokensDetails.ReasoningTokens != nil {
-			reasoningTokens = fmt.Sprint(*roundUsage.CompletionTokensDetails.ReasoningTokens)
-		}
-		log.Printf("模型回复: chat=%s round=%d reasoning_effort=%s reasoning_chars=%d reasoning_tokens=%s content_chars=%d",
-			id, round+1, reply.ReasoningEffort, utf8.RuneCountInString(assistant.Reasoning), reasoningTokens, utf8.RuneCountInString(assistant.Content))
 		produced = append(produced, assistant)
 		reply.Child = produced
 		if streamErr != nil {

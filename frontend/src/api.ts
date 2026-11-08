@@ -31,6 +31,8 @@ interface CoreBindings {
   SelectDirectory(defaultDirectory: string): Promise<string>
   ListWorkspaces(): Promise<Workspace[]>
   CreateWorkspace(name: string, path: string): Promise<Workspace>
+  RenameWorkspace(id: string, name: string): Promise<Workspace>
+  DeleteWorkspace(id: string): Promise<void>
   SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask>
   LoadConfigs(): Promise<Configs>
   GetModelContextWindow(): Promise<number>
@@ -172,6 +174,14 @@ export function ListWorkspaces(): Promise<Workspace[]> {
 
 export function CreateWorkspace(name: string, path: string): Promise<Workspace> {
   return bridge().then((c) => c.CreateWorkspace(name, path))
+}
+
+export function RenameWorkspace(id: string, name: string): Promise<Workspace> {
+  return bridge().then((c) => c.RenameWorkspace(id, name))
+}
+
+export function DeleteWorkspace(id: string): Promise<void> {
+  return bridge().then((c) => c.DeleteWorkspace(id))
 }
 
 export function SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask> {

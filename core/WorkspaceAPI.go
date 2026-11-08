@@ -76,9 +76,6 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, errors.New("工作区名称不能为空")
-	}
 	index, err := c.readWorkspacesLocked()
 	if err != nil {
 		return nil, err
@@ -86,6 +83,13 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 	path, err = c.validateWorkspacePath(path)
 	if err != nil {
 		return nil, err
+	}
+	if name == "" {
+		folder := strings.TrimRight(path, `/\`)
+		name = folder[strings.LastIndexAny(folder, `/\`)+1:]
+		if name == "" {
+			name = path
+		}
 	}
 	workspace := chat.WorkSpace{ID: newID(), Name: name, Path: path}
 	index.Workspaces = append(index.Workspaces, workspace)
@@ -97,6 +101,93 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 		return nil, fmt.Errorf("保存工作区失败：%w", err)
 	}
 	return &workspace, nil
+}
+
+func (c *Core) RenameWorkspace(id, name string) (*chat.WorkSpace, error) {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("工作区名称不能为空")
+	}
+	index, err := c.readWorkspacesLocked()
+	if err != nil {
+		return nil, err
+	}
+	for i := range index.Workspaces {
+		if index.Workspaces[i].ID != id {
+			continue
+		}
+		index.Workspaces[i].Name = name
+		file, err := c.workspaceFile()
+		if err != nil {
+			return nil, err
+		}
+		if err := c.writeJSONLocked(file, index); err != nil {
+			return nil, fmt.Errorf("保存工作区名称失败：%w", err)
+		}
+		return &index.Workspaces[i], nil
+	}
+	return nil, fmt.Errorf("工作区 %q 不存在", id)
+}
+
+// DeleteWorkspace 移除工作区记录，所属对话改为不使用工作区，保留文件夹和对话。
+func (c *Core) DeleteWorkspace(id string) error {
+	c.chatMu.Lock()
+	defer c.chatMu.Unlock()
+	index, err := c.readWorkspacesLocked()
+	if err != nil {
+		return err
+	}
+	position := -1
+	for i := range index.Workspaces {
+		if index.Workspaces[i].ID == id {
+			position = i
+			break
+		}
+	}
+	if position < 0 {
+		return fmt.Errorf("工作区 %q 不存在", id)
+	}
+	directory, err := c.chatDirectory()
+	if err != nil {
+		return err
+	}
+	chats, err := c.readChatIndexLocked(directory)
+	if err != nil {
+		return err
+	}
+	var sessions []*chat.ChatTask
+	for _, summary := range chats.Chats {
+		if summary.WorkspaceID != id {
+			continue
+		}
+		if c.chatSending[summary.ID] {
+			return errors.New("工作区内有对话正在生成中，暂时无法删除")
+		}
+		session, err := c.readChatLocked(directory, summary.ID)
+		if err != nil {
+			return err
+		}
+		sessions = append(sessions, session)
+	}
+	// 先解除对话关联，全部保存成功后再移除工作区记录。
+	for _, session := range sessions {
+		session.WorkspaceID = ""
+		if err := c.saveChatLocked(directory, session); err != nil {
+			return err
+		}
+		delete(c.ChatList, session.ID)
+	}
+	index.Workspaces = append(index.Workspaces[:position], index.Workspaces[position+1:]...)
+	file, err := c.workspaceFile()
+	if err != nil {
+		return err
+	}
+	if err := c.writeJSONLocked(file, index); err != nil {
+		return fmt.Errorf("删除工作区记录失败：%w", err)
+	}
+	return nil
 }
 
 func (c *Core) workspaceByIDLocked(id string) (*chat.WorkSpace, error) {
