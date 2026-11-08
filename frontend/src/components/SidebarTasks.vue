@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { ChevronRight, Folder, MessageSquare } from '@lucide/vue'
-import type { ChatSummary } from '../api'
+import type { ChatSummary, Workspace } from '../api'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import { useChatStore } from '../stores/chat'
 
@@ -10,13 +10,20 @@ const chat = useChatStore()
 
 const error = ref('')
 const openedMenuId = ref('')
+const menuKind = ref<'chat' | 'workspace'>('chat')
 const menuPosition = ref<Record<string, string>>({})
-const renamingId = ref('')
+// 空字符串是「不使用工作区」组的 ID，用 null 表示没有正在编辑的项。
+const renamingId = ref<string | null>(null)
+const renameKind = ref<'chat' | 'workspace'>('chat')
+const renameSaving = ref(false)
 const renameDraft = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
 const deleteTarget = ref<ChatSummary | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
+const workspaceDeleteTarget = ref<Workspace | null>(null)
+const workspaceDeleting = ref(false)
+const workspaceDeleteError = ref('')
 
 type WorkspaceGroup = {
   id: string
@@ -102,19 +109,25 @@ function setRenameInput(el: Element | ComponentPublicInstance | null) {
   if (el instanceof HTMLInputElement) renameInput.value = el
 }
 
-const menuItem = computed(() => chat.chats.find((item) => item.id === openedMenuId.value))
+const menuItem = computed(() => menuKind.value === 'chat'
+  ? chat.chats.find((item) => item.id === openedMenuId.value)
+  : undefined)
+const workspaceMenuItem = computed(() => menuKind.value === 'workspace'
+  ? chat.workspaces.find((item) => item.id === openedMenuId.value)
+  : undefined)
 
-function toggleMenu(id: string, event: MouseEvent) {
-  if (openedMenuId.value === id) {
+function toggleMenu(id: string, event: MouseEvent, kind: 'chat' | 'workspace' = 'chat') {
+  if (openedMenuId.value === id && menuKind.value === kind) {
     openedMenuId.value = ''
     return
   }
   const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
   const menuWidth = 156
   menuPosition.value = {
-    top: `${bounds.top}px`,
+    top: `${Math.max(8, Math.min(bounds.top, window.innerHeight - 76))}px`,
     left: `${Math.min(bounds.right + 4, window.innerWidth - menuWidth - 8)}px`,
   }
+  menuKind.value = kind
   openedMenuId.value = id
 }
 
@@ -127,11 +140,14 @@ function closeMenuOnOutside(event: PointerEvent) {
 function closeOnEscape(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   openedMenuId.value = ''
-  renamingId.value = ''
+  cancelRename()
 }
 
-function beginRename(id: string, title: string) {
+function beginRename(id: string, title: string, kind: 'chat' | 'workspace' = 'chat') {
+  if (!id || renameSaving.value) return
   openedMenuId.value = ''
+  error.value = ''
+  renameKind.value = kind
   renameDraft.value = title
   renamingId.value = id
   nextTick(() => {
@@ -141,15 +157,18 @@ function beginRename(id: string, title: string) {
 }
 
 function cancelRename() {
-  renamingId.value = ''
+  if (renameSaving.value) return
+  renamingId.value = null
   renameDraft.value = ''
+  renameInput.value = null
   error.value = ''
 }
 
 async function submitRename(id: string, currentTitle: string) {
+  if (!id || renamingId.value !== id || renameSaving.value) return
   const title = renameDraft.value.trim()
   if (!title) {
-    error.value = '对话标题不能为空'
+    error.value = renameKind.value === 'workspace' ? '工作区名称不能为空' : '对话标题不能为空'
     renameInput.value?.focus()
     return
   }
@@ -157,11 +176,18 @@ async function submitRename(id: string, currentTitle: string) {
     cancelRename()
     return
   }
+  renameSaving.value = true
+  error.value = ''
   try {
-    await chat.renameChat(id, title)
-    cancelRename()
+    if (renameKind.value === 'workspace') await chat.renameWorkspace(id, title)
+    else await chat.renameChat(id, title)
+    renamingId.value = null
+    renameDraft.value = ''
+    renameInput.value = null
   } catch (err) {
     error.value = String(err)
+  } finally {
+    renameSaving.value = false
   }
 }
 
@@ -186,6 +212,30 @@ async function confirmDelete() {
   }
 }
 
+function requestWorkspaceDelete(workspace: Workspace) {
+  openedMenuId.value = ''
+  workspaceDeleteError.value = ''
+  workspaceDeleteTarget.value = { ...workspace }
+}
+
+async function confirmWorkspaceDelete(deleteChats = false) {
+  const target = workspaceDeleteTarget.value
+  if (!target || workspaceDeleting.value) return
+  workspaceDeleting.value = true
+  workspaceDeleteError.value = ''
+  try {
+    await chat.deleteWorkspace(target.id, deleteChats)
+    const next = new Set(collapsedGroups.value)
+    next.delete(target.id)
+    collapsedGroups.value = next
+    workspaceDeleteTarget.value = null
+  } catch (err) {
+    workspaceDeleteError.value = String(err)
+  } finally {
+    workspaceDeleting.value = false
+  }
+}
+
 onMounted(() => {
   document.addEventListener('pointerdown', closeMenuOnOutside)
   document.addEventListener('keydown', closeOnEscape)
@@ -204,33 +254,67 @@ onUnmounted(() => {
     <p v-if="error" class="task-error">{{ error }}</p>
 
     <section v-for="group in workspaceGroups" :key="group.id" class="workspace-group">
-      <button type="button" class="workspace-group-toggle"
-        :class="{ active: group.chats.some((item) => item.id === chat.session?.id) }"
-        :aria-expanded="!collapsedGroups.has(group.id)"
-        :aria-controls="`workspace-chats-${group.id || 'unassigned'}`"
-        :title="group.path || group.name" @click="toggleGroup(group)">
-        <ChevronRight class="workspace-group-chevron" :class="{ expanded: !collapsedGroups.has(group.id) }"
-          :size="12" :stroke-width="2" />
-        <Folder v-if="group.id" :size="14" :stroke-width="1.6" />
-        <MessageSquare v-else :size="14" :stroke-width="1.6" />
-        <span class="workspace-group-name">{{ group.name }}</span>
-        <span class="workspace-group-count">{{ group.chats.length }}</span>
-      </button>
+      <div class="workspace-group-head">
+        <div v-if="renameKind === 'workspace' && renamingId === group.id" class="task-rename">
+          <input :ref="setRenameInput" v-model="renameDraft" type="text" aria-label="工作区名称"
+            :disabled="renameSaving" @keydown.enter.prevent="submitRename(group.id, group.name)"
+            @keydown.esc.stop.prevent="cancelRename" />
+          <button type="button" title="保存" aria-label="保存" :disabled="renameSaving"
+            @click="submitRename(group.id, group.name)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+          <button type="button" title="取消" aria-label="取消" :disabled="renameSaving" @click="cancelRename">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <template v-else>
+          <button type="button" class="workspace-group-toggle"
+            :class="{ active: group.chats.some((item) => item.id === chat.session?.id), managed: !!group.path }"
+            :aria-expanded="!collapsedGroups.has(group.id)"
+            :aria-controls="`workspace-chats-${group.id || 'unassigned'}`"
+            :title="group.path || group.name" @click="toggleGroup(group)">
+            <ChevronRight class="workspace-group-chevron" :class="{ expanded: !collapsedGroups.has(group.id) }"
+              :size="12" :stroke-width="2" />
+            <Folder v-if="group.id" :size="14" :stroke-width="1.6" />
+            <MessageSquare v-else :size="14" :stroke-width="1.6" />
+            <span class="workspace-group-name">{{ group.name }}</span>
+            <span class="workspace-group-count">{{ group.chats.length }}</span>
+          </button>
+          <span v-if="group.path" class="task-more-wrap">
+            <button type="button" class="task-more workspace-more" title="工作区操作"
+              :aria-label="`「${group.name}」的工作区操作`" aria-haspopup="menu"
+              :aria-expanded="menuKind === 'workspace' && openedMenuId === group.id"
+              @click="toggleMenu(group.id, $event, 'workspace')">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+          </span>
+        </template>
+      </div>
 
       <div v-show="!collapsedGroups.has(group.id)" :id="`workspace-chats-${group.id || 'unassigned'}`"
         class="workspace-group-chats">
         <p v-if="!group.chats.length" class="workspace-group-empty">暂无对话</p>
         <div v-for="item in group.chats" :key="item.id" class="task-row"
           :class="{ active: item.id === chat.session?.id }">
-          <div v-if="renamingId === item.id" class="task-rename">
+          <div v-if="renameKind === 'chat' && renamingId === item.id" class="task-rename">
             <input :ref="setRenameInput" v-model="renameDraft" type="text" aria-label="对话名称"
+              :disabled="renameSaving"
               @keydown.enter.prevent="submitRename(item.id, item.title)" @keydown.esc.prevent="cancelRename" />
-            <button type="button" title="保存" aria-label="保存" @click="submitRename(item.id, item.title)">
+            <button type="button" title="保存" aria-label="保存" :disabled="renameSaving" @click="submitRename(item.id, item.title)">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </button>
-            <button type="button" title="取消" aria-label="取消" @click="cancelRename">
+            <button type="button" title="取消" aria-label="取消" :disabled="renameSaving" @click="cancelRename">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
@@ -245,7 +329,7 @@ onUnmounted(() => {
             </button>
             <span class="task-more-wrap">
               <button type="button" class="task-more" title="更多操作" aria-label="更多操作"
-                aria-haspopup="menu" :aria-expanded="openedMenuId === item.id" @click="toggleMenu(item.id, $event)">
+                aria-haspopup="menu" :aria-expanded="menuKind === 'chat' && openedMenuId === item.id" @click="toggleMenu(item.id, $event)">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <circle cx="5" cy="12" r="1.6" />
                   <circle cx="12" cy="12" r="1.6" />
@@ -261,24 +345,36 @@ onUnmounted(() => {
 
   <Teleport to="body">
     <div
-      v-if="menuItem"
+      v-if="menuItem || workspaceMenuItem"
       class="task-flyout"
       :style="menuPosition"
       role="menu"
       @keydown.esc.stop="openedMenuId = ''"
     >
-      <button type="button" role="menuitem" @click="beginRename(menuItem.id, menuItem.title)">
-        重命名
-      </button>
-      <button type="button" class="danger" role="menuitem" @click="requestDelete(menuItem)">
-        删除
-      </button>
+      <template v-if="workspaceMenuItem">
+        <button type="button" role="menuitem"
+          @click="beginRename(workspaceMenuItem.id, workspaceMenuItem.name, 'workspace')">重命名</button>
+        <button type="button" class="danger" role="menuitem" @click="requestWorkspaceDelete(workspaceMenuItem)">删除</button>
+      </template>
+      <template v-else-if="menuItem">
+        <button type="button" role="menuitem" @click="beginRename(menuItem.id, menuItem.title)">重命名</button>
+        <button type="button" class="danger" role="menuitem" @click="requestDelete(menuItem)">删除</button>
+      </template>
     </div>
   </Teleport>
   <ConfirmationDialog :open="!!deleteTarget" title="删除对话"
     :message="`确定删除「${deleteTarget?.title ?? ''}」吗？删除后无法恢复。`"
     confirm-label="确认删除" danger :busy="deleting" :error="deleteError"
     @confirm="confirmDelete" @cancel="deleteTarget = null" />
+  <ConfirmationDialog :open="!!workspaceDeleteTarget" title="删除工作区"
+    :message="`确定删除「${workspaceDeleteTarget?.name ?? ''}」工作区吗？\n确认删除：保留对话，转为不使用工作区。\n全部删除：同时删除所有对话，无法恢复。\n两种方式都会保留工作区文件夹。`"
+    confirm-label="确认删除" danger :busy="workspaceDeleting" :error="workspaceDeleteError"
+    @confirm="confirmWorkspaceDelete()" @cancel="workspaceDeleteTarget = null">
+    <template #extra-actions>
+      <button type="button" class="btn btn-danger-outline workspace-delete-all" :disabled="workspaceDeleting"
+        @click="confirmWorkspaceDelete(true)">全部删除</button>
+    </template>
+  </ConfirmationDialog>
 </template>
 
 <style scoped>
@@ -309,6 +405,37 @@ onUnmounted(() => {
 .workspace-group {
   flex-shrink: 0;
   min-width: 0;
+}
+
+.workspace-delete-all {
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+.workspace-group-head {
+  position: relative;
+}
+
+.workspace-group-toggle.managed {
+  padding-right: 34px;
+}
+
+.workspace-more {
+  pointer-events: none;
+}
+
+.workspace-group-head:hover .workspace-more,
+.workspace-more:focus-visible,
+.workspace-more[aria-expanded='true'] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .workspace-more {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .workspace-group-toggle {

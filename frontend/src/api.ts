@@ -33,6 +33,7 @@ interface CoreBindings {
   CreateWorkspace(name: string, path: string): Promise<Workspace>
   RenameWorkspace(id: string, name: string): Promise<Workspace>
   DeleteWorkspace(id: string): Promise<void>
+  DeleteWorkspaceAndChats(id: string): Promise<void>
   SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask>
   LoadConfigs(): Promise<Configs>
   GetModelContextWindow(): Promise<number>
@@ -182,6 +183,10 @@ export function RenameWorkspace(id: string, name: string): Promise<Workspace> {
 
 export function DeleteWorkspace(id: string): Promise<void> {
   return bridge().then((c) => c.DeleteWorkspace(id))
+}
+
+export function DeleteWorkspaceAndChats(id: string): Promise<void> {
+  return bridge().then((c) => c.DeleteWorkspaceAndChats(id))
 }
 
 export function SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask> {

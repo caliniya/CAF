@@ -4,6 +4,7 @@ import {
   CreateWorkspace,
   DeleteChat,
   DeleteWorkspace,
+  DeleteWorkspaceAndChats,
   EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
@@ -431,16 +432,22 @@ export const useChatStore = defineStore('chat', {
       const workspace = await RenameWorkspace(id, name)
       this.workspaces = this.workspaces.map((item) => item.id === id ? workspace : item)
     },
-    async deleteWorkspace(id: string) {
+    async deleteWorkspace(id: string, deleteChats = false) {
       if (this.workspaceChanging) throw new Error('工作区正在切换中，请稍后重试')
       this.workspaceChanging = true
       try {
         await toolConfigUpdates
-        await DeleteWorkspace(id)
+        if (deleteChats) await DeleteWorkspaceAndChats(id)
+        else await DeleteWorkspace(id)
         this.workspaces = this.workspaces.filter((item) => item.id !== id)
-        this.chats = this.chats.map((item) => item.workspaceId === id ? { ...item, workspaceId: '' } : item)
+        this.chats = deleteChats
+          ? this.chats.filter((item) => item.workspaceId !== id)
+          : this.chats.map((item) => item.workspaceId === id ? { ...item, workspaceId: '' } : item)
         if (this.pendingWorkspaceId === id) this.pendingWorkspaceId = ''
-        if (this.session?.workspaceId === id) this.session = { ...this.session, workspaceId: '' }
+        if (this.session?.workspaceId === id) {
+          if (deleteChats) this.reset()
+          else this.session = { ...this.session, workspaceId: '' }
+        }
       } finally {
         this.workspaceChanging = false
       }

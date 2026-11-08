@@ -133,6 +133,15 @@ func (c *Core) RenameWorkspace(id, name string) (*chat.WorkSpace, error) {
 
 // DeleteWorkspace 移除工作区记录，所属对话改为不使用工作区，保留文件夹和对话。
 func (c *Core) DeleteWorkspace(id string) error {
+	return c.deleteWorkspace(id, false)
+}
+
+// DeleteWorkspaceAndChats 删除工作区记录及所属对话，保留工作区文件夹。
+func (c *Core) DeleteWorkspaceAndChats(id string) error {
+	return c.deleteWorkspace(id, true)
+}
+
+func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 	c.chatMu.Lock()
 	defer c.chatMu.Unlock()
 	index, err := c.readWorkspacesLocked()
@@ -166,18 +175,40 @@ func (c *Core) DeleteWorkspace(id string) error {
 			return errors.New("工作区内有对话正在生成中，暂时无法删除")
 		}
 		session, err := c.readChatLocked(directory, summary.ID)
+		if deleteChats && errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
 		sessions = append(sessions, session)
 	}
-	// 先解除对话关联，全部保存成功后再移除工作区记录。
-	for _, session := range sessions {
-		session.WorkspaceID = ""
-		if err := c.saveChatLocked(directory, session); err != nil {
+	if deleteChats {
+		for _, session := range sessions {
+			if err := c.FS.DeleteFile(filepath.Join(directory, session.ID+".json")); err != nil {
+				return fmt.Errorf("删除工作区对话失败：%w", err)
+			}
+			delete(c.ChatList, session.ID)
+		}
+		remaining := chats.Chats[:0]
+		for _, summary := range chats.Chats {
+			if summary.WorkspaceID != id {
+				remaining = append(remaining, summary)
+			}
+		}
+		chats.Chats = remaining
+		if err := c.writeJSONLocked(filepath.Join(directory, "index.json"), chats); err != nil {
 			return err
 		}
-		delete(c.ChatList, session.ID)
+	} else {
+		// 先解除对话关联，全部保存成功后再移除工作区记录。
+		for _, session := range sessions {
+			session.WorkspaceID = ""
+			if err := c.saveChatLocked(directory, session); err != nil {
+				return err
+			}
+			delete(c.ChatList, session.ID)
+		}
 	}
 	index.Workspaces = append(index.Workspaces[:position], index.Workspaces[position+1:]...)
 	file, err := c.workspaceFile()

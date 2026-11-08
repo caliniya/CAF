@@ -43,6 +43,7 @@ watch(
       <p :id="messageId" class="confirmation-message">{{ message }}</p>
       <p v-if="error" class="confirmation-error" role="alert">{{ error }}</p>
       <footer class="confirmation-actions">
+        <slot name="extra-actions" />
         <button type="button" class="btn btn-ghost" :disabled="busy" autofocus @click="cancel">取消</button>
         <button type="button" class="btn" :class="danger ? 'btn-danger' : 'btn-primary'"
           :disabled="busy" @click="emit('confirm')">{{ busy ? '处理中…' : confirmLabel }}</button>
