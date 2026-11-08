@@ -46,6 +46,11 @@ interface CoreBindings {
   RenameConfig(index: number, name: string): Promise<Configs>
   DeleteConfig(index: number): Promise<Configs>
   StartLogin(): Promise<number>
+  StartQQTestAdapter(config: QQTestConfig): Promise<QQTestState>
+  StopQQTestAdapter(): Promise<QQTestState>
+  GetQQTestState(afterId: number): Promise<QQTestState>
+  ClearQQTestLog(): Promise<QQTestState>
+  SendQQTestMessage(messageType: 'private' | 'group', targetId: string, text: string): Promise<QQTestSendResult>
   ListChats(): Promise<ChatSummary[]>
   CreateChat(configId: string, model: string, title: string, personaId: string): Promise<ChatTask>
   ListPersonas(): Promise<Persona[]>
@@ -116,6 +121,50 @@ export interface Workspace {
   id: string
   name: string
   path: string
+}
+
+export interface QQTestConfig {
+  address: string
+  path: string
+  accessToken: string
+  selfId: string
+  timeoutSeconds: number
+}
+
+export interface QQClientInfo {
+  self_id: string
+  nickname?: string
+  adapter: string
+  connected: boolean
+  online?: boolean | null
+  last_error?: string
+}
+
+export interface QQTestLogEntry {
+  id: number
+  time: string
+  kind: string
+  summary: string
+  detail?: string
+  messageType?: string
+  targetId?: string
+}
+
+export interface QQTestState {
+  running: boolean
+  address: string
+  path: string
+  expectedSelfId: string
+  authEnabled: boolean
+  timeoutSeconds: number
+  urls: string[]
+  info: QQClientInfo
+  entries: QQTestLogEntry[]
+  lastId: number
+}
+
+export interface QQTestSendResult {
+  messageId: string
 }
 
 export type PermissionLevel = 1 | 2 | 3 | 4
@@ -217,6 +266,26 @@ export function SetChatWorkspace(id: string, workspaceId: string): Promise<ChatT
 
 export function LoadConfigs(): Promise<Configs> {
   return bridge().then((c) => c.LoadConfigs())
+}
+
+export function StartQQTestAdapter(config: QQTestConfig): Promise<QQTestState> {
+  return bridge().then((c) => c.StartQQTestAdapter(config))
+}
+
+export function StopQQTestAdapter(): Promise<QQTestState> {
+  return bridge().then((c) => c.StopQQTestAdapter())
+}
+
+export function GetQQTestState(afterId = 0): Promise<QQTestState> {
+  return bridge().then((c) => c.GetQQTestState(afterId))
+}
+
+export function ClearQQTestLog(): Promise<QQTestState> {
+  return bridge().then((c) => c.ClearQQTestLog())
+}
+
+export function SendQQTestMessage(messageType: 'private' | 'group', targetId: string, text: string): Promise<QQTestSendResult> {
+  return bridge().then((c) => c.SendQQTestMessage(messageType, targetId, text))
 }
 
 export function GetModelContextWindow(): Promise<number> {

@@ -20,6 +20,13 @@ type Core struct {
 	chatSending map[string]bool
 
 	ChatList map[string]chat.ChatTask
+
+	qqTestLifecycle sync.Mutex
+	qqTestMu        sync.Mutex
+	qqTest          *qqTestSession
+	qqTestState     QQTestState
+	qqTestLog       []QQTestLogEntry
+	qqTestLogID     uint64
 }
 
 func (c *Core) GetPaths() *platform.Paths {
