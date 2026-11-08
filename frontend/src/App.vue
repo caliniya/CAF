@@ -1,14 +1,88 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
+import { Check, ChevronDown, MessageCircle } from '@lucide/vue'
 import { useChatStore } from './stores/chat'
 import SidebarTasks from './components/SidebarTasks.vue'
+import { APP_AREAS, readAppArea, saveAppArea, type AppArea } from './navigation'
 
 const route = useRoute()
 const router = useRouter()
 const chat = useChatStore()
 
 const inSettings = computed(() => route.path.startsWith('/settings'))
+const selectedArea = ref<AppArea>(readAppArea())
+const areaOptions = [
+  { id: 'agent', ...APP_AREAS.agent },
+  { id: 'qq', ...APP_AREAS.qq },
+] as const
+const activeArea = computed(() => APP_AREAS[selectedArea.value])
+const areaMenuOpen = ref(false)
+const areaSwitcher = ref<HTMLElement | null>(null)
+const areaTrigger = ref<HTMLButtonElement | null>(null)
+const areaMenu = ref<HTMLElement | null>(null)
+const areaMenuId = useId() + '-area-menu'
+
+watch(
+  () => route.meta.area,
+  (area) => {
+    if (area !== 'agent' && area !== 'qq') return
+    selectedArea.value = area
+    saveAppArea(area)
+  },
+  { immediate: true },
+)
+
+watch(() => route.fullPath, () => { areaMenuOpen.value = false })
+
+function closeAreaMenu(restoreFocus = false) {
+  areaMenuOpen.value = false
+  if (restoreFocus) areaTrigger.value?.focus()
+}
+
+async function openAreaMenu() {
+  areaMenuOpen.value = true
+  await nextTick()
+  areaMenu.value?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus()
+}
+
+function toggleAreaMenu() {
+  if (areaMenuOpen.value) closeAreaMenu()
+  else void openAreaMenu()
+}
+
+function selectArea(area: AppArea) {
+  closeAreaMenu(true)
+  void router.push(APP_AREAS[area].path)
+}
+
+function onAreaMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeAreaMenu(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const buttons = Array.from(areaMenu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [])
+  if (!buttons.length) return
+  const current = buttons.findIndex((button) => button === document.activeElement)
+  const next = event.key === 'Home' ? 0
+    : event.key === 'End' ? buttons.length - 1
+    : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+  buttons[next]?.focus()
+}
+
+function closeAreaMenuOnOutside(event: PointerEvent) {
+  if (event.target instanceof Node && !areaSwitcher.value?.contains(event.target)) closeAreaMenu()
+}
+
+function onAreaFocusOut(event: FocusEvent) {
+  if (!(event.relatedTarget instanceof Node) || !areaSwitcher.value?.contains(event.relatedTarget)) closeAreaMenu()
+}
+
+onMounted(() => document.addEventListener('pointerdown', closeAreaMenuOnOutside))
+onUnmounted(() => document.removeEventListener('pointerdown', closeAreaMenuOnOutside))
 
 // ===== 侧边栏拖拽调宽 =====
 const MIN_SIDEBAR = 180
@@ -66,7 +140,8 @@ async function newConversation() {
 }
 
 function toggleSettings() {
-  router.push(inSettings.value ? '/chat' : '/settings/general')
+  closeAreaMenu()
+  void router.push(inSettings.value ? activeArea.value.path : '/settings/general')
 }
 </script>
 
@@ -75,11 +150,36 @@ function toggleSettings() {
     <aside class="sidebar" :style="{ width: `${sidebarWidth}px` }">
       <div class="brand">
         <span class="brand-name">CAF</span>
-        <span class="brand-version">v0.1.0</span>
+        <span class="brand-version">v0.2</span>
+        <div ref="areaSwitcher" class="area-switcher" @focusout="onAreaFocusOut"
+          @keydown.esc.stop.prevent="closeAreaMenu(true)">
+          <button ref="areaTrigger" type="button" class="area-trigger" :class="{ open: areaMenuOpen }"
+            :aria-label="'切换界面，当前为 ' + activeArea.name" aria-haspopup="menu"
+            :aria-expanded="areaMenuOpen" :aria-controls="areaMenuId" @click="toggleAreaMenu"
+            @keydown.down.prevent="openAreaMenu" @keydown.up.prevent="openAreaMenu">
+            <span>{{ activeArea.name }}</span>
+            <ChevronDown :size="12" :stroke-width="2" aria-hidden="true" />
+          </button>
+          <div v-if="areaMenuOpen" :id="areaMenuId" ref="areaMenu" class="menu area-menu"
+            role="menu" aria-label="切换界面" @keydown.stop="onAreaMenuKeydown">
+            <button v-for="area in areaOptions" :key="area.id" type="button" class="menu-row"
+              :class="{ on: selectedArea === area.id }" role="menuitemradio"
+              :aria-checked="selectedArea === area.id" @click="selectArea(area.id)">
+              <span class="menu-row-name">{{ area.name }}</span>
+              <Check v-if="selectedArea === area.id" :size="14" :stroke-width="2" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      <!-- 主界面：新建对话 + 会话列表 -->
-      <template v-if="!inSettings">
+      <!-- 设置页共用导航，返回时回到所选界面。 -->
+      <nav v-if="inSettings" class="nav" aria-label="设置">
+        <RouterLink to="/settings/models" class="nav-item">模型配置</RouterLink>
+        <RouterLink to="/settings/general" class="nav-item">通用设置</RouterLink>
+      </nav>
+
+      <!-- Agent：新建对话 + 会话列表 -->
+      <template v-else-if="selectedArea === 'agent'">
         <button type="button" class="new-chat" :disabled="chat.sending" @click="newConversation">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <line x1="12" y1="5" x2="12" y2="19" />
@@ -91,10 +191,11 @@ function toggleSettings() {
         <SidebarTasks />
       </template>
 
-      <!-- 设置：分区导航 -->
-      <nav v-else class="nav" aria-label="设置">
-        <RouterLink to="/settings/models" class="nav-item">模型配置</RouterLink>
-        <RouterLink to="/settings/general" class="nav-item">通用设置</RouterLink>
+      <nav v-else class="nav" aria-label="QQ">
+        <RouterLink to="/qq" class="nav-item">
+          <MessageCircle :size="15" :stroke-width="1.7" aria-hidden="true" />
+          <span>消息</span>
+        </RouterLink>
       </nav>
 
       <div class="sidebar-foot">
@@ -109,7 +210,7 @@ function toggleSettings() {
               d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
             />
           </svg>
-          <span>{{ inSettings ? '返回对话' : '设置' }}</span>
+          <span>{{ inSettings ? '返回 ' + activeArea.name : '设置' }}</span>
         </button>
       </div>
 
@@ -125,7 +226,11 @@ function toggleSettings() {
     </aside>
 
     <main class="main">
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <KeepAlive include="ChatPage">
+          <component :is="Component" />
+        </KeepAlive>
+      </RouterView>
     </main>
   </div>
 </template>
@@ -175,9 +280,9 @@ function toggleSettings() {
 
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 2px 10px 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px 14px;
 }
 
 .brand-name {
@@ -187,8 +292,46 @@ function toggleSettings() {
 }
 
 .brand-version {
-  font-size: 11px;
+  flex-shrink: 0;
   color: var(--muted);
+  font-size: 11px;
+}
+
+.area-switcher {
+  position: relative;
+  margin-left: auto;
+}
+
+.area-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.area-trigger:hover,
+.area-trigger.open {
+  background: var(--tonal);
+}
+
+.area-trigger svg {
+  color: var(--muted);
+}
+
+.area-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 148px;
+  width: 148px;
+  max-width: calc(100vw - 32px);
 }
 
 /* ===== 设置区的分区导航 ===== */
@@ -202,6 +345,7 @@ function toggleSettings() {
 .nav-item {
   display: flex;
   align-items: center;
+  gap: 8px;
   height: 34px;
   padding: 0 10px;
   border-radius: 8px;

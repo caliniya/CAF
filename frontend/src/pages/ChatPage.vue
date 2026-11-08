@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { onChatDelta, onChatTool, ListToolSets, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
@@ -515,9 +515,22 @@ async function selectBranch(message: (typeof chat.messages)[number], direction: 
   }
 }
 
-onMounted(() => {
+onActivated(() => {
   document.addEventListener('pointerdown', closeMenusOnOutside)
   document.addEventListener('keydown', onGlobalKeydown)
+})
+
+onDeactivated(() => {
+  document.removeEventListener('pointerdown', closeMenusOnOutside)
+  document.removeEventListener('keydown', onGlobalKeydown)
+  closeMenus()
+  closeTools()
+  detailsPersona.value = null
+  personaChange.value = null
+  workspaceDialogOpen.value = false
+})
+
+onMounted(() => {
   if (!configs.loaded) configs.load()
   chat.loadPersonas().catch((err) => { chat.error = String(err) })
   if (!chat.workspacesLoaded) chat.loadWorkspaces().catch((err) => { chat.error = String(err) })
