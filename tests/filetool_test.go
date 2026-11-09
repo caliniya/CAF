@@ -53,6 +53,19 @@ func TestFileToolRegistration(t *testing.T) {
 		if properties["path"] == nil || properties["timeout_seconds"] == nil {
 			t.Fatalf("工具 %s 缺少路径或可选超时声明", id)
 		}
+		if id == "ReadFile" || id == "WriteFile" {
+			for _, name := range []string{"start_line", "end_line"} {
+				parameter, ok := properties[name].(map[string]any)
+				if !ok || parameter["type"] != "integer" || parameter["minimum"] != 1 {
+					t.Fatalf("工具 %s 缺少正整数行号声明 %s", id, name)
+				}
+				for _, required := range declaration.Parameters["required"].([]string) {
+					if required == name {
+						t.Fatalf("工具 %s 的行号 %s 应是可选参数", id, name)
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -273,8 +286,14 @@ func TestFileToolWritePermissions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := kit.Tools["WriteFile"].Fun(tc.ctx, map[string]any{"path": tc.path, "content": "不应写入"}); err == nil {
-				t.Fatal("应拒绝没有权限或工作区外的写入")
+			for _, byLine := range []bool{false, true} {
+				arguments := map[string]any{"path": tc.path, "content": "不应写入"}
+				if byLine {
+					arguments["start_line"] = 1
+				}
+				if _, err := kit.Tools["WriteFile"].Fun(tc.ctx, arguments); err == nil {
+					t.Fatalf("应拒绝没有权限或工作区外的写入，按行=%v", byLine)
+				}
 			}
 		})
 	}
@@ -337,8 +356,14 @@ func TestFileToolSymlinks(t *testing.T) {
 	}
 	ctx := agenttool.CreateContext(workspace, agenttool.PermissionAutoEdit)
 	for _, path := range [][]string{{"linked", "keep.txt"}, {"linked", "new.txt"}, {"linked.txt"}} {
-		if _, err := kit.Tools["WriteFile"].Fun(ctx, map[string]any{"path": path, "content": "禁止越界"}); err == nil {
-			t.Fatalf("应拒绝符号链接越界写入：%v", path)
+		for _, byLine := range []bool{false, true} {
+			arguments := map[string]any{"path": path, "content": "禁止越界"}
+			if byLine {
+				arguments["start_line"] = 1
+			}
+			if _, err := kit.Tools["WriteFile"].Fun(ctx, arguments); err == nil {
+				t.Fatalf("应拒绝符号链接越界写入：%v，按行=%v", path, byLine)
+			}
 		}
 	}
 	data, err := os.ReadFile(external)
