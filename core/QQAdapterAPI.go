@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	extension "github.com/caliniya/caf/core/Extension"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
 const qqAdapterPath = "/onebot/v11/ws"
@@ -27,7 +27,7 @@ type qqAdapterConfig struct {
 }
 
 type qqAdapterRuntime struct {
-	client qq.Extension
+	client onebot11qq.Extension
 	err    string
 	cancel context.CancelFunc
 }
@@ -314,7 +314,7 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 		view := c.qqAdapterViewLocked(config)
 		return &view, nil
 	}
-	client, err := qq.NewReverseWSExtension(qq.ReverseWSConfig{
+	client, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{
 		Address: net.JoinHostPort("0.0.0.0", strconv.Itoa(config.Port)),
 		Path:    qqAdapterPath, AccessToken: config.Token, SelfID: config.SelfID,
 	})
@@ -337,7 +337,7 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 }
 
 // 持续消费事件，避免消息堆积阻塞连接；上层可订阅 qq:event 继续分发。
-func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client qq.Extension) {
+func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client onebot11qq.Extension) {
 	commands := make(chan qqCommandJob, 32)
 	go c.runQQCommands(ctx, id, client, commands)
 	defer func() {
@@ -348,7 +348,7 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client qq.
 		}
 	}()
 	for envelope := range client.Events() {
-		var event qq.Event
+		var event onebot11qq.Event
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
 			continue
 		}
@@ -384,7 +384,7 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client qq.
 			}{id, envelope})
 			Emit("qq:event", struct {
 				AdapterID string   `json:"adapterId"`
-				Event     qq.Event `json:"event"`
+				Event     onebot11qq.Event `json:"event"`
 			}{id, event})
 		}
 	}

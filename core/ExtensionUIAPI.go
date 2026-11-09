@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	extension "github.com/caliniya/caf/core/Extension"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
 // ExtensionOption 是一个已创建实例，绑定与运行状态分别表示。
@@ -23,7 +23,7 @@ type ExtensionOption struct {
 }
 
 func (c *Core) ListExtensionTypes() []extension.Descriptor {
-	return []extension.Descriptor{qq.OneBot11Descriptor()}
+	return []extension.Descriptor{onebot11qq.OneBot11Descriptor()}
 }
 
 func (c *Core) ListExtensions() ([]ExtensionOption, error) {
@@ -51,7 +51,7 @@ func (c *Core) ListExtensions() ([]ExtensionOption, error) {
 		if running := c.qqClients[config.ID]; running != nil && running.client != nil {
 			values = running.client.UIValues()
 		}
-		option := ExtensionOption{ID: config.ID, Type: qq.ExtensionType, Name: config.Name, Running: view.State != "stopped", Values: values, LastError: view.LastError}
+		option := ExtensionOption{ID: config.ID, Type: onebot11qq.ExtensionType, Name: config.Name, Running: view.State != "stopped", Values: values, LastError: view.LastError}
 		for _, client := range clients {
 			for _, binding := range client.Extensions {
 				if binding.AdapterID == config.ID {
@@ -95,7 +95,7 @@ func parseOneBot11Parameters(parameters map[string]string) (string, string, stri
 }
 
 func (c *Core) CreateExtension(kind string, parameters map[string]string) (*ExtensionOption, error) {
-	if kind != qq.ExtensionType {
+	if kind != onebot11qq.ExtensionType {
 		return nil, errors.New("不支持的扩展类型")
 	}
 	name, token, selfID, port, err := parseOneBot11Parameters(parameters)
@@ -220,7 +220,7 @@ func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) 
 
 // CreateClientExtension 创建独立实例并保存到当前客户端，初始为停用。
 func (c *Core) CreateClientExtension(clientID, kind string, parameters map[string]string) (*ExtensionOption, error) {
-	if kind != qq.ExtensionType {
+	if kind != onebot11qq.ExtensionType {
 		return nil, errors.New("不支持的扩展类型")
 	}
 	name, token, selfID, port, err := parseOneBot11Parameters(parameters)

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	"io/fs"
 	"path/filepath"
 	"regexp"
@@ -81,9 +81,9 @@ func (c *Core) readExtensionClientLocked(id string) (*ExtensionClient, error) {
 	for i := range client.Extensions {
 		item := &client.Extensions[i]
 		if item.Type == "qq" {
-			item.Type = qq.ExtensionType
+			item.Type = onebot11qq.ExtensionType
 		}
-		if item.Type != qq.ExtensionType || !extensionCommandName.MatchString(item.Name) || item.AdapterID == "" || names[item.Name] || adapters[item.AdapterID] {
+		if item.Type != onebot11qq.ExtensionType || !extensionCommandName.MatchString(item.Name) || item.AdapterID == "" || names[item.Name] || adapters[item.AdapterID] {
 			return nil, errors.New("客户端扩展配置包含无效或重复的名称、适配器")
 		}
 		names[item.Name], adapters[item.AdapterID] = true, true
@@ -237,7 +237,7 @@ func (c *Core) setExtensionClientQQLocked(id, adapterID, name string, enabled bo
 	var previous ClientExtension
 	position := -1
 	for i, item := range client.Extensions {
-		if item.Type != qq.ExtensionType {
+		if item.Type != onebot11qq.ExtensionType {
 			continue
 		}
 		if item.AdapterID == adapterID {
@@ -266,7 +266,7 @@ func (c *Core) setExtensionClientQQLocked(id, adapterID, name string, enabled bo
 				continue
 			}
 			for _, item := range other.Extensions {
-				if item.Type == qq.ExtensionType && item.AdapterID == adapterID {
+				if item.Type == onebot11qq.ExtensionType && item.AdapterID == adapterID {
 					return nil, fmt.Errorf("该适配器已绑定客户端「%s」", other.Name)
 				}
 			}
@@ -277,7 +277,7 @@ func (c *Core) setExtensionClientQQLocked(id, adapterID, name string, enabled bo
 			return nil, err
 		}
 	}
-	item := ClientExtension{Type: qq.ExtensionType, Name: name, AdapterID: adapterID, Enabled: enabled}
+	item := ClientExtension{Type: onebot11qq.ExtensionType, Name: name, AdapterID: adapterID, Enabled: enabled}
 	if position < 0 {
 		client.Extensions = append(client.Extensions, item)
 	} else {
@@ -307,7 +307,7 @@ func (c *Core) RemoveExtensionClientQQ(id, adapterID string) (*ExtensionClient, 
 	items := []ClientExtension{}
 	found := false
 	for _, item := range client.Extensions {
-		if item.Type == qq.ExtensionType && item.AdapterID == adapterID {
+		if item.Type == onebot11qq.ExtensionType && item.AdapterID == adapterID {
 			found = true
 			continue
 		}
@@ -356,7 +356,7 @@ func (c *Core) DeleteExtensionClient(id string) error {
 		return err
 	}
 	for _, item := range client.Extensions {
-		if item.Type == qq.ExtensionType && item.AdapterID != "" {
+		if item.Type == onebot11qq.ExtensionType && item.AdapterID != "" {
 			_, _ = c.StopQQAdapter(item.AdapterID)
 		}
 	}
@@ -373,7 +373,7 @@ func (c *Core) StartExtensionClients() {
 	}
 	for _, client := range clients {
 		for _, item := range client.Extensions {
-			if item.Type != qq.ExtensionType || !item.Enabled {
+			if item.Type != onebot11qq.ExtensionType || !item.Enabled {
 				continue
 			}
 			if _, err := c.StartQQAdapter(item.AdapterID); err != nil {

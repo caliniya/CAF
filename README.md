@@ -3,6 +3,6 @@
 
 CAF 是 Go/Wails 制作的 Agent 框架软件。
 
-计划集成qq登录并自行实现Bot框架
+QQ 接入通过 Onebot11QQ 扩展提供，支持 OneBot 11 反向 WebSocket。
 未来计划实现内置编辑器
 计划实现插件等扩展功能

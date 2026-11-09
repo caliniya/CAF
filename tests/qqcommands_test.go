@@ -6,39 +6,39 @@ import (
 	"testing"
 	"time"
 
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	"github.com/gorilla/websocket"
 )
 
 func TestQQCommandsUseNamedPrefixes(t *testing.T) {
 	for _, text := range []string{"hi", "/caf status", "hello /助手 help", "/助手2 help", "/助手help"} {
-		if _, ok := qq.ParseCommand(qq.QQMessage{Segments: []qq.QQMessageSegment{qq.QQText(text)}}, "助手"); ok {
+		if _, ok := onebot11qq.ParseCommand(onebot11qq.QQMessage{Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText(text)}}, "助手"); ok {
 			t.Fatalf("recognized ordinary/wrong-prefix message %q", text)
 		}
 	}
-	message := qq.QQMessage{SelfID: "10001", Segments: []qq.QQMessageSegment{
-		{Type: qq.QQSegmentReply, Data: map[string]any{"id": "1"}},
-		{Type: qq.QQSegmentAt, Data: map[string]any{"qq": "10001"}},
-		qq.QQText(" /助手 status "),
+	message := onebot11qq.QQMessage{SelfID: "10001", Segments: []onebot11qq.QQMessageSegment{
+		{Type: onebot11qq.QQSegmentReply, Data: map[string]any{"id": "1"}},
+		{Type: onebot11qq.QQSegmentAt, Data: map[string]any{"qq": "10001"}},
+		onebot11qq.QQText(" /助手 status "),
 	}}
-	command, ok := qq.ParseCommand(message, "助手")
+	command, ok := onebot11qq.ParseCommand(message, "助手")
 	if !ok || command.Name != "status" || len(command.Args) != 0 {
 		t.Fatalf("could not parse bot mention command: %+v", command)
 	}
 	message.SentBySelf = true
-	if _, ok := qq.ParseCommand(message, "助手"); ok {
+	if _, ok := onebot11qq.ParseCommand(message, "助手"); ok {
 		t.Fatal("self message triggered command")
 	}
 	message.SentBySelf = false
 	message.Segments[1].Data["qq"] = "20002"
-	if _, ok := qq.ParseCommand(message, "助手"); ok {
+	if _, ok := onebot11qq.ParseCommand(message, "助手"); ok {
 		t.Fatal("mention of other account triggered command")
 	}
-	message.Segments = []qq.QQMessageSegment{qq.QQText("/助手 help"), {Type: qq.QQSegmentImage, Data: map[string]any{"file": "x"}}}
-	if _, ok := qq.ParseCommand(message, "助手"); ok {
+	message.Segments = []onebot11qq.QQMessageSegment{onebot11qq.QQText("/助手 help"), {Type: onebot11qq.QQSegmentImage, Data: map[string]any{"file": "x"}}}
+	if _, ok := onebot11qq.ParseCommand(message, "助手"); ok {
 		t.Fatal("image command accepted")
 	}
-	command, ok = qq.ParseCommand(qq.QQMessage{Segments: []qq.QQMessageSegment{qq.QQText("/助手")}}, "助手")
+	command, ok = onebot11qq.ParseCommand(onebot11qq.QQMessage{Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText("/助手")}}, "助手")
 	if !ok || command.Name != "help" {
 		t.Fatal("bare prefix should return help")
 	}
@@ -72,7 +72,7 @@ func TestQQCommandsReplyOnlyForEnabledNamedExtension(t *testing.T) {
 	writeMessage(connection, 10001, 2, "/helper status")
 	writeMessage(connection, 10001, 3, "/助手 status")
 	action := readOneBotAction(t, connection)
-	response, err := qq.QQMessageFromOneBot11Action(action)
+	response, err := onebot11qq.QQMessageFromOneBot11Action(action)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,22 +80,22 @@ func TestQQCommandsReplyOnlyForEnabledNamedExtension(t *testing.T) {
 	if !strings.Contains(text, "扩展：助手") || !strings.Contains(text, "ID：main") || response.GroupID != "23456" {
 		t.Fatalf("wrong command reply: %+v", response)
 	}
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":101}`)})
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":101}`)})
 	writeMessage(connection2, 20002, 4, "/helper help")
 	action2 := readOneBotAction(t, connection2)
-	response, err = qq.QQMessageFromOneBot11Action(action2)
+	response, err = onebot11qq.QQMessageFromOneBot11Action(action2)
 	if err != nil || !strings.Contains(response.Segments[0].Data["text"].(string), "/helper status") {
 		t.Fatalf("second extension prefix not used: %+v / %v", response, err)
 	}
-	writeOneBotPacket(t, connection2, qq.OneBot11ActionResponse{Status: "ok", Echo: action2.Echo, Data: json.RawMessage(`{"message_id":102}`)})
+	writeOneBotPacket(t, connection2, onebot11qq.OneBot11ActionResponse{Status: "ok", Echo: action2.Echo, Data: json.RawMessage(`{"message_id":102}`)})
 	writeMessage(connection, 10001, 3, "/助手 status") // 已处理的重复事件
 	writeMessage(connection, 10001, 5, "/助手 help")
 	next := readOneBotAction(t, connection)
-	response, err = qq.QQMessageFromOneBot11Action(next)
+	response, err = onebot11qq.QQMessageFromOneBot11Action(next)
 	if err != nil || !strings.Contains(response.Segments[0].Data["text"].(string), "可用指令") {
 		t.Fatal("duplicate command was replied to again")
 	}
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{Status: "ok", Echo: next.Echo, Data: json.RawMessage(`{"message_id":103}`)})
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{Status: "ok", Echo: next.Echo, Data: json.RawMessage(`{"message_id":103}`)})
 	if _, err := instance.SetExtensionClientQQ(owner.ID, first.ID, "助手", false); err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
 // json.Number 防止测试比较时把相邻的大整数误当成相等。
@@ -50,7 +50,7 @@ func TestQQOneBotModelTextRoundTrip(t *testing.T) {
 		],
 		"message_seq": 9007199254740997
 	}`
-	var event qq.OneBot11MessageEvent
+	var event onebot11qq.OneBot11MessageEvent
 	if err := json.Unmarshal([]byte(fixture), &event); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestQQOneBotModelTextRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelMessage.Role != "user" || !strings.HasPrefix(modelMessage.Content, qq.QQMessageTextPrefix) {
+	if modelMessage.Role != "user" || !strings.HasPrefix(modelMessage.Content, onebot11qq.QQMessageTextPrefix) {
 		t.Fatalf("QQ 消息应转换成 user 角色的纯文本：%+v", modelMessage)
 	}
 	if modelMessage.Reasoning != "" || len(modelMessage.ToolCalls) != 0 || modelMessage.ToolCallID != "" {
@@ -84,7 +84,7 @@ func TestQQOneBotModelTextRoundTrip(t *testing.T) {
 	if len(request.Messages) != 1 || len(request.Messages[0]) != 2 || request.Messages[0]["content"] != modelMessage.Content {
 		t.Fatalf("模型协议必须只接收 role 和纯文本 content：%s", encoded)
 	}
-	restoredMessage, err := qq.QQMessageFromChatMessage(modelMessage)
+	restoredMessage, err := onebot11qq.QQMessageFromChatMessage(modelMessage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,13 +103,13 @@ func TestQQOneBotModelTextRoundTrip(t *testing.T) {
 }
 
 func TestQQPrivateAndSelfMessages(t *testing.T) {
-	for _, postType := range []string{qq.OneBot11PostMessage, qq.OneBot11PostMessageSent} {
+	for _, postType := range []string{onebot11qq.OneBot11PostMessage, onebot11qq.OneBot11PostMessageSent} {
 		t.Run(postType, func(t *testing.T) {
-			event := qq.OneBot11MessageEvent{
-				OneBot11EventHeader: qq.OneBot11EventHeader{Time: 123, SelfID: 10001, PostType: postType},
+			event := onebot11qq.OneBot11MessageEvent{
+				OneBot11EventHeader: onebot11qq.OneBot11EventHeader{Time: 123, SelfID: 10001, PostType: postType},
 				MessageType:         "private", SubType: "friend", UserID: 10002, MessageID: 100,
-				Message: qq.OneBot11Message{{Type: "text", Data: map[string]any{"text": "私聊正文"}}},
-				Sender:  &qq.OneBot11Sender{UserID: 10002, Nickname: "Bob"},
+				Message: onebot11qq.OneBot11Message{{Type: "text", Data: map[string]any{"text": "私聊正文"}}},
+				Sender:  &onebot11qq.OneBot11Sender{UserID: 10002, Nickname: "Bob"},
 			}
 			message, err := event.ToQQMessage()
 			if err != nil {
@@ -120,13 +120,13 @@ func TestQQPrivateAndSelfMessages(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantRole := "user"
-			if postType == qq.OneBot11PostMessageSent {
+			if postType == onebot11qq.OneBot11PostMessageSent {
 				wantRole = "assistant"
 			}
 			if model.Role != wantRole {
 				t.Fatalf("发送方向错误：%s", model.Role)
 			}
-			back, err := qq.QQMessageFromChatMessage(model)
+			back, err := onebot11qq.QQMessageFromChatMessage(model)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -140,17 +140,17 @@ func TestQQPrivateAndSelfMessages(t *testing.T) {
 
 func TestQQPlainModelReplyAndSendAction(t *testing.T) {
 	const body = "普通模型回复\n[CQ:at,qq=all] & [图片]"
-	message, err := qq.QQMessageFromChatMessage(apiImpl.ChatMessage{
+	message, err := onebot11qq.QQMessageFromChatMessage(apiImpl.ChatMessage{
 		Role: "assistant", Content: body, Reasoning: "不发送的思考",
 		ToolCalls: []apiImpl.ToolCall{{ID: "call", Name: "ReadFile", Arguments: "{}"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(message.Segments) != 1 || message.Segments[0].Type != qq.QQSegmentText || message.Segments[0].Data["text"] != body {
+	if len(message.Segments) != 1 || message.Segments[0].Type != onebot11qq.QQSegmentText || message.Segments[0].Data["text"] != body {
 		t.Fatalf("普通回复应完整保留为一个文本段：%+v", message)
 	}
-	message.Type, message.GroupID = qq.QQMessageGroup, "9007199254740993"
+	message.Type, message.GroupID = onebot11qq.QQMessageGroup, "9007199254740993"
 	echo := json.RawMessage(`"send-1"`)
 	action, err := message.ToOneBot11Action(echo)
 	if err != nil {
@@ -160,18 +160,18 @@ func TestQQPlainModelReplyAndSendAction(t *testing.T) {
 	if string(action.Echo) != `"send-1"` {
 		t.Fatal("动作 echo 不应与调用方共享缓冲区")
 	}
-	if action.Action != "send_group_msg" || action.Params["group_id"].(qq.OneBot11ID).String() != message.GroupID {
+	if action.Action != "send_group_msg" || action.Params["group_id"].(onebot11qq.OneBot11ID).String() != message.GroupID {
 		t.Fatalf("群消息发送动作错误：%+v", action)
 	}
 	data, err := json.Marshal(action)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded qq.OneBot11ActionRequest
+	var decoded onebot11qq.OneBot11ActionRequest
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	restored, err := qq.QQMessageFromOneBot11Action(decoded)
+	restored, err := onebot11qq.QQMessageFromOneBot11Action(decoded)
 	if err != nil || restored.GroupID != message.GroupID || restored.Segments[0].Data["text"] != body {
 		t.Fatalf("发送动作往返丢失正文或整数精度：%+v，错误=%v", restored, err)
 	}
@@ -182,7 +182,7 @@ func TestQQPlainModelReplyAndSendAction(t *testing.T) {
 
 func TestOneBot11CQCodec(t *testing.T) {
 	const fixture = `A&amp;&#91;CQ:at,qq=all&#93;[CQ:at,qq=all][CQ:image,file=a&#44;b&#91;c&#93;&amp;.jpg]尾&amp;#91;`
-	message, err := qq.ParseOneBot11CQMessage(fixture)
+	message, err := onebot11qq.ParseOneBot11CQMessage(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestOneBot11CQCodec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fromString qq.OneBot11Message
+	var fromString onebot11qq.OneBot11Message
 	if err := json.Unmarshal(jsonString, &fromString); err != nil {
 		t.Fatal(err)
 	}
@@ -208,12 +208,12 @@ func TestOneBot11CQCodec(t *testing.T) {
 	if err != nil || len(encoded) == 0 || encoded[0] != '[' {
 		t.Fatalf("消息编码应统一使用数组格式：%s，错误=%v", encoded, err)
 	}
-	nested := qq.OneBot11Message{{Type: "node", Data: map[string]any{"content": []any{map[string]any{"type": "text", "data": map[string]any{"text": "嵌套"}}}}}}
+	nested := onebot11qq.OneBot11Message{{Type: "node", Data: map[string]any{"content": []any{map[string]any{"type": "text", "data": map[string]any{"text": "嵌套"}}}}}}
 	if _, err := nested.CQText(); err == nil {
 		t.Fatal("嵌套消息不能悄悄转换成不支持的 CQ 参数")
 	}
 	for _, invalid := range []string{"[CQ:at", "[CQ:]", "[CQ:at,bad]", "[CQ:at,qq=1,qq=2]", "[CQ:at,=1]"} {
-		if _, err := qq.ParseOneBot11CQMessage(invalid); err == nil {
+		if _, err := onebot11qq.ParseOneBot11CQMessage(invalid); err == nil {
 			t.Fatalf("应拒绝无效 CQ 码：%s", invalid)
 		}
 	}
@@ -224,16 +224,16 @@ func TestOneBot11SendActionFormats(t *testing.T) {
 		name      string
 		action    string
 		params    map[string]any
-		wantType  qq.QQMessageType
+		wantType  onebot11qq.QQMessageType
 		wantID    string
 		wantCount int
 	}{
-		{name: "CQ string", action: "send_private_msg", params: map[string]any{"user_id": "12345", "message": "你好[CQ:at,qq=all]"}, wantType: qq.QQMessagePrivate, wantID: "12345", wantCount: 2},
-		{name: "auto escape", action: "send_private_msg", params: map[string]any{"user_id": 12345, "message": "[CQ:at,qq=all]", "auto_escape": true}, wantType: qq.QQMessagePrivate, wantID: "12345", wantCount: 1},
-		{name: "infer group", action: "send_msg", params: map[string]any{"group_id": 54321, "message": "群消息"}, wantType: qq.QQMessageGroup, wantID: "54321", wantCount: 1},
+		{name: "CQ string", action: "send_private_msg", params: map[string]any{"user_id": "12345", "message": "你好[CQ:at,qq=all]"}, wantType: onebot11qq.QQMessagePrivate, wantID: "12345", wantCount: 2},
+		{name: "auto escape", action: "send_private_msg", params: map[string]any{"user_id": 12345, "message": "[CQ:at,qq=all]", "auto_escape": true}, wantType: onebot11qq.QQMessagePrivate, wantID: "12345", wantCount: 1},
+		{name: "infer group", action: "send_msg", params: map[string]any{"group_id": 54321, "message": "群消息"}, wantType: onebot11qq.QQMessageGroup, wantID: "54321", wantCount: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			message, err := qq.QQMessageFromOneBot11Action(qq.OneBot11ActionRequest{Action: tc.action, Params: tc.params})
+			message, err := onebot11qq.QQMessageFromOneBot11Action(onebot11qq.OneBot11ActionRequest{Action: tc.action, Params: tc.params})
 			if err != nil || message.Type != tc.wantType || len(message.Segments) != tc.wantCount {
 				t.Fatalf("发送动作解析错误：%+v，错误=%v", message, err)
 			}
@@ -249,7 +249,7 @@ func TestOneBot11SendActionFormats(t *testing.T) {
 
 func TestQQProtocolRejectsInvalidData(t *testing.T) {
 	for _, data := range []string{`null`, `1.5`, `"not-id"`, `9223372036854775808`} {
-		var id qq.OneBot11ID
+		var id onebot11qq.OneBot11ID
 		if err := json.Unmarshal([]byte(data), &id); err == nil {
 			t.Fatalf("应拒绝无效 ID：%s", data)
 		}
@@ -258,7 +258,7 @@ func TestQQProtocolRejectsInvalidData(t *testing.T) {
 		`{}`, `123`, `[{"type":"text","data":{"text":123}}]`,
 		`[{"type":"","data":{}}]`, `[{"type":"at","data":null}]`,
 	} {
-		var message qq.OneBot11Message
+		var message onebot11qq.OneBot11Message
 		if err := json.Unmarshal([]byte(data), &message); err == nil {
 			t.Fatalf("应拒绝无效 OneBot 消息：%s", data)
 		}
@@ -267,15 +267,15 @@ func TestQQProtocolRejectsInvalidData(t *testing.T) {
 		{Role: "system", Content: "系统指令"},
 		{Role: "tool", Content: "工具结果"},
 		{Role: "assistant"},
-		{Role: "user", Content: qq.QQMessageTextPrefix + "{}"},
-		{Role: "user", Content: qq.QQMessageTextPrefix + `{"sent_by_self":true,"segments":[{"type":"text","data":{"text":"x"}}]}`},
-		{Role: "user", Content: qq.QQMessageTextPrefix + `{"segments":[{"type":"text","data":{"text":"x"}}]}{}`},
+		{Role: "user", Content: onebot11qq.QQMessageTextPrefix + "{}"},
+		{Role: "user", Content: onebot11qq.QQMessageTextPrefix + `{"sent_by_self":true,"segments":[{"type":"text","data":{"text":"x"}}]}`},
+		{Role: "user", Content: onebot11qq.QQMessageTextPrefix + `{"segments":[{"type":"text","data":{"text":"x"}}]}{}`},
 	} {
-		if _, err := qq.QQMessageFromChatMessage(model); err == nil {
+		if _, err := onebot11qq.QQMessageFromChatMessage(model); err == nil {
 			t.Fatalf("应拒绝无效 QQ 模型消息：%+v", model)
 		}
 	}
-	base := qq.QQMessage{Type: qq.QQMessageGroup, GroupID: "54321", Segments: []qq.QQMessageSegment{qq.QQText("正文")}}
+	base := onebot11qq.QQMessage{Type: onebot11qq.QQMessageGroup, GroupID: "54321", Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText("正文")}}
 	for _, groupID := range []string{"", "0", "-1", "abc", "9223372036854775808"} {
 		message := base
 		message.GroupID = groupID
@@ -286,7 +286,7 @@ func TestQQProtocolRejectsInvalidData(t *testing.T) {
 	if _, err := base.ToOneBot11Action(json.RawMessage("bad")); err == nil {
 		t.Fatal("应拒绝无效 echo JSON")
 	}
-	if _, err := (qq.OneBot11MessageEvent{OneBot11EventHeader: qq.OneBot11EventHeader{PostType: "notice"}}).ToQQMessage(); err == nil {
+	if _, err := (onebot11qq.OneBot11MessageEvent{OneBot11EventHeader: onebot11qq.OneBot11EventHeader{PostType: "notice"}}).ToQQMessage(); err == nil {
 		t.Fatal("通知不能当作消息事件转换")
 	}
 }

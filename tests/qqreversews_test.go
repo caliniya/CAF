@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	"github.com/gorilla/websocket"
 	"net/http"
 	"net/http/httptest"
@@ -15,9 +15,9 @@ import (
 	"time"
 )
 
-func useReverseWS(t *testing.T, config qq.ReverseWSConfig) (*qq.ReverseWSClient, string) {
+func useReverseWS(t *testing.T, config onebot11qq.ReverseWSConfig) (*onebot11qq.ReverseWSClient, string) {
 	t.Helper()
-	client, err := qq.NewReverseWSClient(config)
+	client, err := onebot11qq.NewReverseWSClient(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func connectReverseWS(t *testing.T, address, selfID, token string) *websocket.Co
 	return connection
 }
 
-func nextQQEvent(t *testing.T, events <-chan qq.Event, eventType qq.EventType) qq.Event {
+func nextQQEvent(t *testing.T, events <-chan onebot11qq.Event, eventType onebot11qq.EventType) onebot11qq.Event {
 	t.Helper()
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
@@ -62,7 +62,7 @@ func nextQQEvent(t *testing.T, events <-chan qq.Event, eventType qq.EventType) q
 			if !open {
 				t.Fatal("QQ 事件流提前关闭")
 			}
-			if event.Type == qq.EventError {
+			if event.Type == onebot11qq.EventError {
 				t.Fatalf("非预期的 QQ 协议错误：%s", event.Error)
 			}
 			if event.Type == eventType {
@@ -81,12 +81,12 @@ func writeOneBotPacket(t *testing.T, connection *websocket.Conn, value any) {
 	}
 }
 
-func readOneBotAction(t *testing.T, connection *websocket.Conn) qq.OneBot11ActionRequest {
+func readOneBotAction(t *testing.T, connection *websocket.Conn) onebot11qq.OneBot11ActionRequest {
 	t.Helper()
 	if err := connection.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	var action qq.OneBot11ActionRequest
+	var action onebot11qq.OneBot11ActionRequest
 	if err := connection.ReadJSON(&action); err != nil {
 		t.Fatal(err)
 	}
@@ -94,11 +94,11 @@ func readOneBotAction(t *testing.T, connection *websocket.Conn) qq.OneBot11Actio
 }
 
 type qqSendOutcome struct {
-	result qq.SendResult
+	result onebot11qq.SendResult
 	err    error
 }
 
-func sendQQAsync(client qq.QQClient, ctx context.Context, message qq.QQMessage) <-chan qqSendOutcome {
+func sendQQAsync(client onebot11qq.QQClient, ctx context.Context, message onebot11qq.QQMessage) <-chan qqSendOutcome {
 	result := make(chan qqSendOutcome, 1)
 	go func() {
 		sent, err := client.SendMessage(ctx, message)
@@ -107,10 +107,10 @@ func sendQQAsync(client qq.QQClient, ctx context.Context, message qq.QQMessage) 
 	return result
 }
 
-func qqTestGroupMessage(text string) qq.QQMessage {
-	return qq.QQMessage{
-		Type: qq.QQMessageGroup, GroupID: "23456",
-		Segments: []qq.QQMessageSegment{qq.QQText(text)},
+func qqTestGroupMessage(text string) onebot11qq.QQMessage {
+	return onebot11qq.QQMessage{
+		Type: onebot11qq.QQMessageGroup, GroupID: "23456",
+		Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText(text)},
 	}
 }
 
@@ -126,9 +126,9 @@ func waitQQSend(t *testing.T, result <-chan qqSendOutcome) qqSendOutcome {
 }
 
 func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{AccessToken: "token"})
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{AccessToken: "token"})
 	connection := connectReverseWS(t, address, "10001", "token")
-	status := nextQQEvent(t, client.Events(), qq.EventStatus)
+	status := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if status.Info == nil || !status.Info.Connected || status.Info.SelfID != "10001" || status.Info.Online != nil {
 		t.Fatalf("连接状态错误：%+v", status)
 	}
@@ -136,7 +136,7 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		"time": 123, "self_id": 10001, "post_type": "meta_event",
 		"meta_event_type": "heartbeat", "interval": 5000, "status": map[string]bool{"online": true},
 	})
-	status = nextQQEvent(t, client.Events(), qq.EventStatus)
+	status = nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if status.Info.Online == nil || !*status.Info.Online {
 		t.Fatalf("没有识别 QQ 在线状态：%+v", status)
 	}
@@ -151,9 +151,9 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 			"message_type": messageType, "message_id": -101, "user_id": 12345, "group_id": 23456,
 			"message": "你好[CQ:at,qq=10001]", "sender": map[string]any{"user_id": 12345, "nickname": "Alice"},
 		})
-		event := nextQQEvent(t, client.Events(), qq.EventMessage)
+		event := nextQQEvent(t, client.Events(), onebot11qq.EventMessage)
 		if event.Message == nil || string(event.Message.Type) != messageType || event.Message.ID != "-101" ||
-			event.Message.SentBySelf || len(event.Message.Segments) != 2 || event.Message.Segments[1].Type != qq.QQSegmentAt {
+			event.Message.SentBySelf || len(event.Message.Segments) != 2 || event.Message.Segments[1].Type != onebot11qq.QQSegmentAt {
 			t.Fatalf("消息没有转换成内部 QQ 协议：%+v", event.Message)
 		}
 	}
@@ -163,7 +163,7 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		"message": []any{map[string]any{"type": "text", "data": map[string]string{"text": "自身消息"}}},
 		"sender":  map[string]any{"user_id": 10001, "nickname": "CAF"},
 	})
-	event := nextQQEvent(t, client.Events(), qq.EventMessage)
+	event := nextQQEvent(t, client.Events(), onebot11qq.EventMessage)
 	if event.Message == nil || !event.Message.SentBySelf || client.Info().Nickname != "CAF" {
 		t.Fatalf("自身消息或昵称识别错误：%+v", event)
 	}
@@ -172,7 +172,7 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		"message_type": "group", "message_id": 103, "user_id": 10001, "group_id": 23456,
 		"message": "作为普通事件上报的自身消息",
 	})
-	event = nextQQEvent(t, client.Events(), qq.EventMessage)
+	event = nextQQEvent(t, client.Events(), onebot11qq.EventMessage)
 	if event.Message == nil || !event.Message.SentBySelf {
 		t.Fatalf("应通过账号识别普通 message 中的自身消息：%+v", event)
 	}
@@ -180,7 +180,7 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		"time": 126, "self_id": 10001, "post_type": "request", "request_type": "friend",
 		"user_id": 12345, "comment": "你好，请加好友", "flag": "friend-flag",
 	})
-	event = nextQQEvent(t, client.Events(), qq.EventRequest)
+	event = nextQQEvent(t, client.Events(), onebot11qq.EventRequest)
 	if event.Request == nil || event.Request.Type != "friend" || event.Request.UserID != "12345" ||
 		event.Request.Flag != "friend-flag" || event.Request.Comment != "你好，请加好友" {
 		t.Fatalf("好友申请没有完整上报：%+v", event)
@@ -189,14 +189,14 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		"time": 127, "self_id": 10001, "post_type": "notice", "notice_type": "group_recall",
 		"group_id": 23456, "user_id": 12345, "operator_id": 12345, "message_id": -101,
 	})
-	event = nextQQEvent(t, client.Events(), qq.EventNotice)
+	event = nextQQEvent(t, client.Events(), onebot11qq.EventNotice)
 	if event.Notice == nil || event.Notice.Type != "group_recall" || event.Notice.MessageID != "-101" || len(event.Raw) == 0 {
 		t.Fatalf("撤回通知没有完整上报：%+v", event)
 	}
 }
 
 func TestQQReverseWSAuthenticatesAndBindsAccount(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{AccessToken: "token", SelfID: "10001"})
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{AccessToken: "token", SelfID: "10001"})
 	for _, tc := range []struct {
 		name    string
 		address string
@@ -224,7 +224,7 @@ func TestQQReverseWSAuthenticatesAndBindsAccount(t *testing.T) {
 		})
 	}
 	connection := connectReverseWS(t, address+"?access_token=token", "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if !client.Info().Connected {
 		t.Fatal("查询参数 token 应允许连接")
 	}
@@ -232,36 +232,36 @@ func TestQQReverseWSAuthenticatesAndBindsAccount(t *testing.T) {
 		"time": 1, "self_id": 10002, "post_type": "message", "message_type": "private",
 		"message_id": 1, "user_id": 12345, "message": "别的账号",
 	})
-	event := nextQQEvent(t, client.Events(), qq.EventStatus)
+	event := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if event.Info == nil || event.Info.Connected || !strings.Contains(event.Info.LastError, "账号") {
 		t.Fatalf("应断开账号不匹配的连接：%+v", event)
 	}
 }
 
 func TestQQReverseWSSendResponseCorrelation(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{RequestTimeout: time.Second})
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{RequestTimeout: time.Second})
 	connection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	first := sendQQAsync(client, context.Background(), qqTestGroupMessage("first"))
 	firstAction := readOneBotAction(t, connection)
-	second := sendQQAsync(client, context.Background(), qq.QQMessage{
-		Type: qq.QQMessagePrivate, UserID: "12345",
-		Segments: []qq.QQMessageSegment{qq.QQText("second[CQ:at,qq=all]")},
+	second := sendQQAsync(client, context.Background(), onebot11qq.QQMessage{
+		Type: onebot11qq.QQMessagePrivate, UserID: "12345",
+		Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText("second[CQ:at,qq=all]")},
 	})
 	secondAction := readOneBotAction(t, connection)
 	if firstAction.Action != "send_group_msg" || secondAction.Action != "send_private_msg" ||
 		string(firstAction.Echo) == string(secondAction.Echo) {
 		t.Fatalf("动作名称或 echo 错误：%+v，%+v", firstAction, secondAction)
 	}
-	secondMessage, err := qq.QQMessageFromOneBot11Action(secondAction)
+	secondMessage, err := onebot11qq.QQMessageFromOneBot11Action(secondAction)
 	if err != nil || len(secondMessage.Segments) != 1 || secondMessage.Segments[0].Data["text"] != "second[CQ:at,qq=all]" {
 		t.Fatalf("纯文本回复不能误解析为 CQ 消息：%+v，错误=%v", secondMessage, err)
 	}
 	// 对端逆序返回，验证响应依赖 echo 而不是发送顺序。
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", RetCode: 0, Echo: secondAction.Echo, Data: json.RawMessage(`{"message_id":-202}`),
 	})
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", RetCode: 0, Echo: firstAction.Echo, Data: json.RawMessage(`{"message_id":"201"}`),
 	})
 	if result := waitQQSend(t, first); result.err != nil || result.result.MessageID != "201" {
@@ -273,32 +273,32 @@ func TestQQReverseWSSendResponseCorrelation(t *testing.T) {
 }
 
 func TestQQReverseWSSendErrorsAndCancellation(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{RequestTimeout: 150 * time.Millisecond})
-	if _, err := client.SendMessage(context.Background(), qqTestGroupMessage("offline")); !errors.Is(err, qq.ErrNotConnected) {
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{RequestTimeout: 150 * time.Millisecond})
+	if _, err := client.SendMessage(context.Background(), qqTestGroupMessage("offline")); !errors.Is(err, onebot11qq.ErrNotConnected) {
 		t.Fatalf("未连接应返回明确错误：%v", err)
 	}
 	connection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancelled := sendQQAsync(client, ctx, qqTestGroupMessage("cancelled"))
 	cancelledAction := readOneBotAction(t, connection)
 	cancel()
 	result := waitQQSend(t, cancelled)
-	var sendError *qq.SendError
+	var sendError *onebot11qq.SendError
 	if !errors.Is(result.err, context.Canceled) || !errors.As(result.err, &sendError) || !sendError.MayHaveSent {
 		t.Fatalf("请求已发出后的取消必须标记发送结果未知：%v", result.err)
 	}
 	// 迟到响应不应该污染后续请求或断开连接。
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", Echo: cancelledAction.Echo, Data: json.RawMessage(`{"message_id":1}`),
 	})
 	failed := sendQQAsync(client, context.Background(), qqTestGroupMessage("failed"))
 	failedAction := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "failed", RetCode: 100, Message: "发送被拒绝", Echo: failedAction.Echo, Data: json.RawMessage("null"),
 	})
 	result = waitQQSend(t, failed)
-	var actionError *qq.ActionError
+	var actionError *onebot11qq.ActionError
 	if !errors.As(result.err, &actionError) || !errors.As(result.err, &sendError) || sendError.MayHaveSent || actionError.RetCode != 100 {
 		t.Fatalf("明确失败响应错误：%v", result.err)
 	}
@@ -310,7 +310,7 @@ func TestQQReverseWSSendErrorsAndCancellation(t *testing.T) {
 	}
 	missingID := sendQQAsync(client, context.Background(), qqTestGroupMessage("missing ID"))
 	action := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage("{}"),
 	})
 	result = waitQQSend(t, missingID)
@@ -321,31 +321,31 @@ func TestQQReverseWSSendErrorsAndCancellation(t *testing.T) {
 		"time": 1, "self_id": 10001, "post_type": "meta_event", "meta_event_type": "heartbeat",
 		"status": map[string]bool{"online": false},
 	})
-	status := nextQQEvent(t, client.Events(), qq.EventStatus)
+	status := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if status.Info.Online == nil || *status.Info.Online {
 		t.Fatal("应识别 QQ 离线")
 	}
-	if _, err := client.SendMessage(context.Background(), qqTestGroupMessage("offline")); !errors.Is(err, qq.ErrQQOffline) {
+	if _, err := client.SendMessage(context.Background(), qqTestGroupMessage("offline")); !errors.Is(err, onebot11qq.ErrQQOffline) {
 		t.Fatalf("QQ 离线不应尝试发送：%v", err)
 	}
 }
 
 func TestQQReverseWSReconnectAndClose(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{})
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{})
 	firstConnection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	pending := sendQQAsync(client, context.Background(), qqTestGroupMessage("old connection"))
 	readOneBotAction(t, firstConnection)
 	secondConnection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	outcome := waitQQSend(t, pending)
-	var sendError *qq.SendError
+	var sendError *onebot11qq.SendError
 	if outcome.err == nil || !errors.As(outcome.err, &sendError) || !sendError.MayHaveSent {
 		t.Fatalf("替换旧连接必须结束旧请求：%+v", outcome)
 	}
 	current := sendQQAsync(client, context.Background(), qqTestGroupMessage("new connection"))
 	action := readOneBotAction(t, secondConnection)
-	writeOneBotPacket(t, secondConnection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, secondConnection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":303}`),
 	})
 	if outcome := waitQQSend(t, current); outcome.err != nil || outcome.result.MessageID != "303" {
@@ -354,12 +354,12 @@ func TestQQReverseWSReconnectAndClose(t *testing.T) {
 	if err := secondConnection.Close(); err != nil {
 		t.Fatal(err)
 	}
-	status := nextQQEvent(t, client.Events(), qq.EventStatus)
+	status := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if status.Info.Connected || client.Info().Connected {
 		t.Fatal("远端断开后应更新连接状态")
 	}
 	connection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	closing := sendQQAsync(client, context.Background(), qqTestGroupMessage("closing"))
 	readOneBotAction(t, connection)
 	var closers sync.WaitGroup
@@ -371,7 +371,7 @@ func TestQQReverseWSReconnectAndClose(t *testing.T) {
 		})
 	}
 	closers.Wait()
-	if outcome := waitQQSend(t, closing); !errors.Is(outcome.err, qq.ErrClientClosed) {
+	if outcome := waitQQSend(t, closing); !errors.Is(outcome.err, onebot11qq.ErrClientClosed) {
 		t.Fatalf("关闭必须结束等待请求：%v", outcome.err)
 	}
 	select {
@@ -385,9 +385,9 @@ func TestQQReverseWSReconnectAndClose(t *testing.T) {
 }
 
 func TestQQReverseWSEventQueueDoesNotBlockResponses(t *testing.T) {
-	client, address := useReverseWS(t, qq.ReverseWSConfig{EventBuffer: 2})
+	client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{EventBuffer: 2})
 	connection := connectReverseWS(t, address, "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	// 故意不读取消息事件，动作响应仍必须能完成。
 	writeOneBotPacket(t, connection, map[string]any{
 		"time": 1, "self_id": 10001, "post_type": "message", "message_type": "private",
@@ -395,7 +395,7 @@ func TestQQReverseWSEventQueueDoesNotBlockResponses(t *testing.T) {
 	})
 	pending := sendQQAsync(client, context.Background(), qqTestGroupMessage("reply"))
 	action := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":4}`),
 	})
 	if outcome := waitQQSend(t, pending); outcome.err != nil {
@@ -416,14 +416,14 @@ func TestQQReverseWSEventQueueDoesNotBlockResponses(t *testing.T) {
 	if client.Info().Connected || !strings.Contains(client.Info().LastError, "队列") {
 		t.Fatalf("事件队列溢出应明确断开而不是静默丢消息：%+v", client.Info())
 	}
-	status := nextQQEvent(t, client.Events(), qq.EventStatus)
+	status := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	if status.Info == nil || status.Info.Connected || !strings.Contains(status.Info.LastError, "队列") {
 		t.Fatalf("队列满后应保留断开状态供上层读取：%+v", status)
 	}
 }
 
 func TestQQReverseWSStartAndContextClose(t *testing.T) {
-	client, err := qq.NewReverseWSClient(qq.ReverseWSConfig{Address: "127.0.0.1:0"})
+	client, err := onebot11qq.NewReverseWSClient(onebot11qq.ReverseWSConfig{Address: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestQQReverseWSStartAndContextClose(t *testing.T) {
 		t.Fatal("应拒绝重复启动")
 	}
 	connectReverseWS(t, "ws://"+client.Address()+"/onebot/v11/ws", "10001", "")
-	nextQQEvent(t, client.Events(), qq.EventStatus)
+	nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 	cancel()
 	select {
 	case _, open := <-client.Events():
@@ -452,11 +452,11 @@ func TestQQReverseWSStartAndContextClose(t *testing.T) {
 func TestQQReverseWSPingAndReadTimeout(t *testing.T) {
 	for _, responsive := range []bool{true, false} {
 		t.Run(fmt.Sprint(responsive), func(t *testing.T) {
-			client, address := useReverseWS(t, qq.ReverseWSConfig{
+			client, address := useReverseWS(t, onebot11qq.ReverseWSConfig{
 				PingInterval: 20 * time.Millisecond, PongTimeout: 150 * time.Millisecond,
 			})
 			connection := connectReverseWS(t, address, "10001", "")
-			nextQQEvent(t, client.Events(), qq.EventStatus)
+			nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 			if responsive {
 				pingReceived := make(chan struct{}, 1)
 				connection.SetPingHandler(func(payload string) error {
@@ -492,7 +492,7 @@ func TestQQReverseWSPingAndReadTimeout(t *testing.T) {
 					t.Fatal("模拟客户端读取没有退出")
 				}
 			} else {
-				event := nextQQEvent(t, client.Events(), qq.EventStatus)
+				event := nextQQEvent(t, client.Events(), onebot11qq.EventStatus)
 				if event.Info == nil || event.Info.Connected || event.Info.LastError == "" {
 					t.Fatalf("没有响应心跳的连接应超时断开：%+v", event)
 				}
@@ -502,7 +502,7 @@ func TestQQReverseWSPingAndReadTimeout(t *testing.T) {
 }
 
 func TestQQReverseWSRejectsMalformedConfig(t *testing.T) {
-	for _, config := range []qq.ReverseWSConfig{
+	for _, config := range []onebot11qq.ReverseWSConfig{
 		{Path: "not-absolute"},
 		{Path: "/ws?token=anything"},
 		{SelfID: "-1"},
@@ -510,7 +510,7 @@ func TestQQReverseWSRejectsMalformedConfig(t *testing.T) {
 		{EventBuffer: -1},
 		{PingInterval: time.Second, PongTimeout: time.Second},
 	} {
-		if client, err := qq.NewReverseWSClient(config); err == nil {
+		if client, err := onebot11qq.NewReverseWSClient(config); err == nil {
 			_ = client.Close()
 			t.Fatalf("应拒绝无效配置：%+v", config)
 		}

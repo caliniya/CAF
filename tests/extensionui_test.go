@@ -11,14 +11,14 @@ import (
 	"testing"
 
 	core "github.com/caliniya/caf/core"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	platform "github.com/caliniya/caf/platform"
 )
 
 func TestExtensionUIDescribesFormsAndInformation(t *testing.T) {
 	instance := useQQAdapterCore(t)
 	types := instance.ListExtensionTypes()
-	if len(types) != 1 || types[0].Type != qq.ExtensionType || types[0].Name != "Onebot11QQ" {
+	if len(types) != 1 || types[0].Type != onebot11qq.ExtensionType || types[0].Name != "Onebot11QQ" {
 		t.Fatalf("wrong extension type: %+v", types)
 	}
 	fields := types[0].Parameters
@@ -33,14 +33,14 @@ func TestExtensionUIDescribesFormsAndInformation(t *testing.T) {
 	if instance.ListExtensionTypes()[0].Parameters[0].Label != "名称" {
 		t.Fatal("descriptor is not a snapshot")
 	}
-	client, address := useQQExtension(t, qq.ReverseWSConfig{})
+	client, address := useQQExtension(t, onebot11qq.ReverseWSConfig{})
 	values := client.UIValues()
 	if values["status"] != "未连接" || values["address"] != address {
 		t.Fatalf("wrong runtime UI values: %+v", values)
 	}
 	values["status"] = "changed"
 	connectReverseWS(t, address, "10001", "")
-	nextExtensionEvent(t, client, "qq.status")
+	nextExtensionEvent(t, client, "onebot11qq.status")
 	if client.UIValues()["status"] != "已连接" {
 		t.Fatal("runtime UI values did not follow connection")
 	}
@@ -54,20 +54,20 @@ func TestExtensionUICreatesPortsListsDisabledAndEditsBindings(t *testing.T) {
 	}
 	portText := strings.Split(strings.TrimPrefix(preview, "ws://127.0.0.1:"), "/")[0]
 	parameters := map[string]string{"name": "助手", "token": "token", "selfId": "10001", "port": portText}
-	created, err := instance.CreateExtension(qq.ExtensionType, parameters)
+	created, err := instance.CreateExtension(onebot11qq.ExtensionType, parameters)
 	if err != nil || !strings.Contains(created.Values["address"], ":"+portText+"/") {
 		t.Fatalf("explicit port not used: %+v / %v", created, err)
 	}
 	for _, invalid := range []string{"0", "65536", "bad", "", "1.5"} {
 		bad := map[string]string{"name": "other", "token": "token", "port": invalid}
-		if _, err := instance.CreateExtension(qq.ExtensionType, bad); err == nil {
+		if _, err := instance.CreateExtension(onebot11qq.ExtensionType, bad); err == nil {
 			t.Fatalf("invalid port accepted %q", invalid)
 		}
 	}
 	if _, err := instance.CreateExtension("unknown", parameters); err == nil {
 		t.Fatal("accepted unknown type")
 	}
-	if _, err := instance.CreateExtension(qq.ExtensionType, parameters); err == nil {
+	if _, err := instance.CreateExtension(onebot11qq.ExtensionType, parameters); err == nil {
 		t.Fatal("accepted duplicate port")
 	}
 	owner, err := instance.CreateExtensionClient("Main", "main")
@@ -93,7 +93,7 @@ func TestExtensionUICreatesPortsListsDisabledAndEditsBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner, err = instance.GetExtensionClient(owner.ID)
-	if err != nil || owner.Extensions[0].Name != "新助手" || owner.Extensions[0].Type != qq.ExtensionType {
+	if err != nil || owner.Extensions[0].Name != "新助手" || owner.Extensions[0].Type != onebot11qq.ExtensionType {
 		t.Fatalf("rename not synced with command binding: %+v / %v", owner, err)
 	}
 	parameters["port"] = "65001"
@@ -125,7 +125,7 @@ func TestExtensionUICreatesPortsListsDisabledAndEditsBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner, err = instance.GetExtensionClient(owner.ID)
-	if err != nil || owner.Extensions[0].Type != qq.ExtensionType {
+	if err != nil || owner.Extensions[0].Type != onebot11qq.ExtensionType {
 		t.Fatalf("old type not migrated: %+v / %v", owner, err)
 	}
 }
@@ -147,7 +147,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 			t.Fatal(err)
 		}
 		port := strings.Split(strings.TrimPrefix(preview, "ws://127.0.0.1:"), "/")[0]
-		option, err := instance.CreateClientExtension(clientID, qq.ExtensionType, map[string]string{"name": "助手", "token": token, "port": port})
+		option, err := instance.CreateClientExtension(clientID, onebot11qq.ExtensionType, map[string]string{"name": "助手", "token": token, "port": port})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,7 +167,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 			t.Fatalf("client sees other extensions: %+v / %v", options, err)
 		}
 	}
-	if _, err := instance.CreateClientExtension(firstClient.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": "65001"}); err == nil {
+	if _, err := instance.CreateClientExtension(firstClient.ID, onebot11qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": "65001"}); err == nil {
 		t.Fatal("same-client name collision accepted")
 	}
 	if _, err := instance.GetClientExtensionParameters(secondClient.ID, first.ID); err == nil {
@@ -234,7 +234,7 @@ func TestClientExtensionCreationRollsBackFailedOwnershipSave(t *testing.T) {
 	port := strings.Split(strings.TrimPrefix(preview, "ws://127.0.0.1:"), "/")[0]
 	original := instance.FS
 	instance.FS = failingClientMetadataFS{original}
-	_, err = instance.CreateClientExtension(owner.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port})
+	_, err = instance.CreateClientExtension(owner.ID, onebot11qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port})
 	instance.FS = original
 	if err == nil {
 		t.Fatal("created extension without persisted owner")
@@ -247,7 +247,7 @@ func TestClientExtensionCreationRollsBackFailedOwnershipSave(t *testing.T) {
 	if err != nil || len(client.Extensions) != 0 {
 		t.Fatalf("failed creation changed client: %+v / %v", client, err)
 	}
-	if _, err := instance.CreateClientExtension(owner.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port}); err != nil {
+	if _, err := instance.CreateClientExtension(owner.ID, onebot11qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port}); err != nil {
 		t.Fatalf("failed creation reserved port/name: %v", err)
 	}
 }
@@ -304,7 +304,7 @@ func TestExtensionUIStartsOnConfiguredPort(t *testing.T) {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
-	adapter, err := instance.CreateExtension(qq.ExtensionType, map[string]string{"name": "bot", "token": "token", "port": strconv.Itoa(port)})
+	adapter, err := instance.CreateExtension(onebot11qq.ExtensionType, map[string]string{"name": "bot", "token": "token", "port": strconv.Itoa(port)})
 	if err != nil {
 		t.Fatal(err)
 	}

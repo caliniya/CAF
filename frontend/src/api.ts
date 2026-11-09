@@ -72,7 +72,6 @@ interface CoreBindings {
   SelectModel(model: string): Promise<Configs>
   RenameConfig(index: number, name: string): Promise<Configs>
   DeleteConfig(index: number): Promise<Configs>
-  StartLogin(): Promise<number>
   ListChats(): Promise<ChatSummary[]>
   CreateChat(configId: string, model: string, title: string, personaId: string): Promise<ChatTask>
   ListPersonas(): Promise<Persona[]>

@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	extension "github.com/caliniya/caf/core/Extension"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	"net"
 	"sync"
 	"testing"
 	"time"
 )
 
-func useQQExtension(t *testing.T, config qq.ReverseWSConfig) (*qq.ReverseWSExtension, string) {
+func useQQExtension(t *testing.T, config onebot11qq.ReverseWSConfig) (*onebot11qq.ReverseWSExtension, string) {
 	t.Helper()
 	config.Address = "127.0.0.1:0"
-	instance, err := qq.NewReverseWSExtension(config)
+	instance, err := onebot11qq.NewReverseWSExtension(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,28 +47,28 @@ func nextExtensionEvent(t *testing.T, instance extension.Extension, eventType st
 }
 
 func TestQQExtensionDescriptorAndLifecycle(t *testing.T) {
-	instance, err := qq.NewReverseWSExtension(qq.ReverseWSConfig{Address: "127.0.0.1:0"})
+	instance, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{Address: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = instance.Close() })
 	var generic extension.Extension = instance
 	descriptor := generic.Describe()
-	if descriptor.Type != qq.ExtensionType || descriptor.Implementation != "onebot11-reverse-ws" ||
-		len(descriptor.Capabilities) != 1 || descriptor.Capabilities[0].Name != qq.CapabilitySendMessage ||
+	if descriptor.Type != onebot11qq.ExtensionType || descriptor.Implementation != "onebot11-reverse-ws" ||
+		len(descriptor.Capabilities) != 1 || descriptor.Capabilities[0].Name != onebot11qq.CapabilitySendMessage ||
 		!json.Valid(descriptor.Capabilities[0].Parameters) {
 		t.Fatalf("invalid extension descriptor: %+v", descriptor)
 	}
 	descriptor.Capabilities[0].Name = "changed"
 	descriptor.Capabilities[0].Parameters[0] = 'x'
-	if current := generic.Describe(); current.Capabilities[0].Name != qq.CapabilitySendMessage || !json.Valid(current.Capabilities[0].Parameters) {
+	if current := generic.Describe(); current.Capabilities[0].Name != onebot11qq.CapabilitySendMessage || !json.Valid(current.Capabilities[0].Parameters) {
 		t.Fatal("descriptor snapshot changed extension behavior")
 	}
 	if generic.Status().State != extension.StateStopped {
 		t.Fatal("new extension should be stopped")
 	}
 	arguments, _ := json.Marshal(qqTestGroupMessage("test"))
-	if _, err := generic.Invoke(context.Background(), qq.CapabilitySendMessage, arguments); !errors.Is(err, extension.ErrNotStarted) {
+	if _, err := generic.Invoke(context.Background(), onebot11qq.CapabilitySendMessage, arguments); !errors.Is(err, extension.ErrNotStarted) {
 		t.Fatalf("invoked stopped extension: %v", err)
 	}
 	canceled, cancel := context.WithCancel(context.Background())
@@ -111,9 +111,9 @@ func TestQQExtensionDescriptorAndLifecycle(t *testing.T) {
 }
 
 func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
-	instance, address := useQQExtension(t, qq.ReverseWSConfig{AccessToken: "token"})
+	instance, address := useQQExtension(t, onebot11qq.ReverseWSConfig{AccessToken: "token"})
 	connection := connectReverseWS(t, address, "10001", "token")
-	nextExtensionEvent(t, instance, "qq.status")
+	nextExtensionEvent(t, instance, "onebot11qq.status")
 	writeOneBotPacket(t, connection, map[string]any{
 		"post_type": "message", "message_type": "group", "sub_type": "normal",
 		"time": 123, "self_id": 10001, "message_id": 77, "group_id": 23456, "user_id": 30003,
@@ -122,13 +122,13 @@ func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
 			{"type": "image", "data": map[string]any{"file": "image.jpg"}},
 		},
 	})
-	event := nextExtensionEvent(t, instance, "qq.message")
+	event := nextExtensionEvent(t, instance, "onebot11qq.message")
 	if event.ID != "77" || event.Scope != "group:23456" || !event.Time.Equal(time.Unix(123, 0)) {
 		t.Fatalf("lost event identity/scope/time: %+v", event)
 	}
-	var domain qq.Event
+	var domain onebot11qq.Event
 	if err := json.Unmarshal(event.Data, &domain); err != nil || domain.Message == nil ||
-		len(domain.Message.Segments) != 2 || domain.Message.Segments[1].Type != qq.QQSegmentImage {
+		len(domain.Message.Segments) != 2 || domain.Message.Segments[1].Type != onebot11qq.QQSegmentImage {
 		t.Fatalf("lost QQ domain data: %+v / %v", domain, err)
 	}
 	writeOneBotPacket(t, connection, map[string]any{
@@ -136,32 +136,32 @@ func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
 		"time": 124, "self_id": 10001, "message_id": 78, "user_id": 30003,
 		"message": []map[string]any{{"type": "text", "data": map[string]any{"text": "private"}}},
 	})
-	if event := nextExtensionEvent(t, instance, "qq.message"); event.Scope != "private:30003" {
+	if event := nextExtensionEvent(t, instance, "onebot11qq.message"); event.Scope != "private:30003" {
 		t.Fatalf("incorrect private scope: %+v", event)
 	}
 	writeOneBotPacket(t, connection, map[string]any{
 		"post_type": "request", "request_type": "group", "sub_type": "add", "time": 125,
 		"self_id": 10001, "user_id": 30003, "group_id": 23456, "flag": "request-flag", "comment": "join",
 	})
-	if event := nextExtensionEvent(t, instance, "qq.request"); event.Scope != "group:23456" {
+	if event := nextExtensionEvent(t, instance, "onebot11qq.request"); event.Scope != "group:23456" {
 		t.Fatalf("incorrect request scope: %+v", event)
 	}
 	_ = connection.Close()
-	nextExtensionEvent(t, instance, "qq.status")
+	nextExtensionEvent(t, instance, "onebot11qq.status")
 	if status := instance.Status(); status.State != extension.StateRunning || *status.Connected {
 		t.Fatalf("disconnect incorrectly ended extension: %+v", status)
 	}
 	connectReverseWS(t, address, "10001", "token")
-	nextExtensionEvent(t, instance, "qq.status")
+	nextExtensionEvent(t, instance, "onebot11qq.status")
 	if !*instance.Status().Connected {
 		t.Fatal("reconnect did not restore extension connection")
 	}
 }
 
 func TestQQExtensionInvokeAndUnknownSendResult(t *testing.T) {
-	instance, address := useQQExtension(t, qq.ReverseWSConfig{RequestTimeout: 100 * time.Millisecond})
+	instance, address := useQQExtension(t, onebot11qq.ReverseWSConfig{RequestTimeout: 100 * time.Millisecond})
 	for _, arguments := range []string{"null", "[]", "{", "{}", `{"segments":[]} {}`} {
-		if _, err := instance.Invoke(context.Background(), qq.CapabilitySendMessage, json.RawMessage(arguments)); !errors.Is(err, extension.ErrInvalidArguments) {
+		if _, err := instance.Invoke(context.Background(), onebot11qq.CapabilitySendMessage, json.RawMessage(arguments)); !errors.Is(err, extension.ErrInvalidArguments) {
 			t.Fatalf("accepted invalid invoke arguments %q: %v", arguments, err)
 		}
 	}
@@ -169,7 +169,7 @@ func TestQQExtensionInvokeAndUnknownSendResult(t *testing.T) {
 		t.Fatalf("unexpected unknown capability error: %v", err)
 	}
 	connection := connectReverseWS(t, address, "10001", "")
-	nextExtensionEvent(t, instance, "qq.status")
+	nextExtensionEvent(t, instance, "onebot11qq.status")
 	arguments, _ := json.Marshal(qqTestGroupMessage("test"))
 	type invocation struct {
 		result json.RawMessage
@@ -178,37 +178,37 @@ func TestQQExtensionInvokeAndUnknownSendResult(t *testing.T) {
 	invoke := func(ctx context.Context) <-chan invocation {
 		out := make(chan invocation, 1)
 		go func() {
-			result, err := instance.Invoke(ctx, qq.CapabilitySendMessage, arguments)
+			result, err := instance.Invoke(ctx, onebot11qq.CapabilitySendMessage, arguments)
 			out <- invocation{result, err}
 		}()
 		return out
 	}
 	result := invoke(context.Background())
 	action := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, onebot11qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":303}`),
 	})
 	outcome := <-result
-	var sent qq.SendResult
+	var sent onebot11qq.SendResult
 	if err := json.Unmarshal(outcome.result, &sent); outcome.err != nil || err != nil || sent.MessageID != "303" {
 		t.Fatalf("invoke lost send result: %+v / %v", outcome, err)
 	}
 	result = invoke(context.Background())
 	readOneBotAction(t, connection)
 	outcome = <-result
-	var sendError *qq.SendError
+	var sendError *onebot11qq.SendError
 	if !errors.As(outcome.err, &sendError) || !sendError.MayHaveSent || !errors.Is(outcome.err, context.DeadlineExceeded) {
 		t.Fatalf("invoke lost unknown-send error: %v", outcome.err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := instance.Invoke(ctx, qq.CapabilitySendMessage, arguments); !errors.Is(err, context.Canceled) {
+	if _, err := instance.Invoke(ctx, onebot11qq.CapabilitySendMessage, arguments); !errors.Is(err, context.Canceled) {
 		t.Fatalf("invoke ignored cancellation: %v", err)
 	}
 }
 
 func TestQQExtensionContextClosesBlockedEventDelivery(t *testing.T) {
-	instance, err := qq.NewReverseWSExtension(qq.ReverseWSConfig{Address: "127.0.0.1:0"})
+	instance, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{Address: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatal(err)
 	}

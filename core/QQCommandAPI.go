@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	qq "github.com/caliniya/caf/core/Extension/QQ"
+	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
 type qqCommandJob struct {
-	Message qq.QQMessage
+	Message onebot11qq.QQMessage
 }
 
 func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtension) {
@@ -21,7 +21,7 @@ func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtensi
 	}
 	for _, client := range clients {
 		for _, item := range client.Extensions {
-			if item.Type == qq.ExtensionType && item.Enabled && item.AdapterID == adapterID {
+			if item.Type == onebot11qq.ExtensionType && item.Enabled && item.AdapterID == adapterID {
 				return &client, item
 			}
 		}
@@ -30,7 +30,7 @@ func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtensi
 }
 
 // 明确指令使用固定逻辑回复；不调用模型，也不发起主动对话。
-func (c *Core) runQQCommands(ctx context.Context, adapterID string, client qq.Extension, jobs <-chan qqCommandJob) {
+func (c *Core) runQQCommands(ctx context.Context, adapterID string, client onebot11qq.Extension, jobs <-chan qqCommandJob) {
 	seen := map[string]bool{}
 	order := []string{}
 	for {
@@ -45,7 +45,7 @@ func (c *Core) runQQCommands(ctx context.Context, adapterID string, client qq.Ex
 			if owner == nil {
 				continue
 			}
-			command, ok := qq.ParseCommand(job.Message, binding.Name)
+			command, ok := onebot11qq.ParseCommand(job.Message, binding.Name)
 			if !ok {
 				continue
 			}
@@ -67,7 +67,7 @@ func (c *Core) runQQCommands(ctx context.Context, adapterID string, client qq.Ex
 			} else if command.Name != "help" || len(command.Args) > 0 {
 				text = "无法识别该指令。\n" + text
 			}
-			reply := qq.QQMessage{Type: job.Message.Type, UserID: job.Message.UserID, GroupID: job.Message.GroupID, Segments: []qq.QQMessageSegment{qq.QQText(text)}}
+			reply := onebot11qq.QQMessage{Type: job.Message.Type, UserID: job.Message.UserID, GroupID: job.Message.GroupID, Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText(text)}}
 			callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			_, err := client.SendMessage(callCtx, reply)
 			cancel()

@@ -1,4 +1,4 @@
-package QQ
+package Onebot11QQ
 
 import "strings"
 

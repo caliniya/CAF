@@ -30,8 +30,4 @@ func main() {
 
 	log.Printf("数据目录：%s", core.Platform.Paths.Data)
 
-	if core.Platform != nil {
-		log.Printf("QQ 后端类型：%T", core.Platform.QQPlatform)
-	}
-
 }

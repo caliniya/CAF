@@ -3,7 +3,6 @@ module github.com/caliniya/caf
 go 1.26.0
 
 require (
-	github.com/LagrangeDev/LagrangeGo v0.1.5-0.20260718062712-f7f8abfaa7f1
 	github.com/gorilla/websocket v1.5.3
 	github.com/wailsapp/wails/v2 v2.17.1
 )

@@ -1,4 +1,4 @@
-package QQ
+package Onebot11QQ
 
 import (
 	"context"
@@ -19,8 +19,8 @@ const (
 	CapabilitySendMessage = "send_message"
 )
 
-// Extension 是 QQ 扩展的契约。通用宿主只使用 extension.Extension；
-// QQ 专用功能可以使用 Info / SendMessage，不依赖 OneBot 或 LagrangeGo。
+// Extension 是 Onebot11QQ 扩展的契约。通用宿主只使用 extension.Extension；
+// OneBot 11 接入通过 Info / SendMessage 提供账号状态和发送能力。
 type Extension interface {
 	extension.Extension
 	Info() ClientInfo

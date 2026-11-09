@@ -21,14 +21,6 @@ import (
 	persona "github.com/caliniya/caf/core/Persona"
 )
 
-func (c *Core) StartLogin() (int, error) {
-	if c == nil || c.QQPlatform == nil {
-		return 0, errors.New("QQ 平台尚未初始化")
-	}
-
-	return c.QQPlatform.StartLogin(), nil
-}
-
 // SelectDirectory 供前端调用平台文件夹选择器；取消时返回空字符串。
 func (c *Core) SelectDirectory(defaultDirectory string) (string, error) {
 	if c == nil || c.FS == nil {

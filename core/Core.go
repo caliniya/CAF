@@ -10,9 +10,8 @@ import (
 var Platform *Core
 
 type Core struct {
-	QQPlatform platform.QQPlatform
-	Paths      *platform.Paths
-	Configs    *Configs
+	Paths   *platform.Paths
+	Configs *Configs
 	//APIClients *[]netclient.APIClient
 	FS platform.FilePlatform
 
