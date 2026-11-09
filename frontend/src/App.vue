@@ -192,7 +192,7 @@ function toggleSettings() {
       </template>
 
       <nav v-else class="nav" aria-label="扩展模式">
-        <RouterLink to="/ext" class="nav-item">
+        <RouterLink to="/ext" class="nav-item" :class="{ 'router-link-active': route.path.startsWith('/ext') }">
           <Monitor :size="15" :stroke-width="1.7" aria-hidden="true" />
           <span>客户端</span>
         </RouterLink>

@@ -30,7 +30,7 @@ async function copyAddress(address: string) {
   <div class="adapter-fields">
     <label class="adapter-field">
       <span>名称</span>
-      <input v-model="input.name" type="text" placeholder="为客户端取一个名称" required
+      <input v-model="input.name" type="text" placeholder="为适配器取一个名称" required
         :autofocus="autofocus" :disabled="busy" />
     </label>
     <label class="adapter-field">
@@ -50,7 +50,7 @@ async function copyAddress(address: string) {
       <input v-model="input.selfId" type="text" inputmode="numeric" pattern="[0-9]*"
         placeholder="留空时从连接的客户端获取" :disabled="busy || connectionLocked" />
     </label>
-    <p v-if="connectionLocked" class="field-hint">关闭客户端后可修改 Token 和 QQ 号。</p>
+    <p v-if="connectionLocked" class="field-hint">停用 QQ 扩展后可修改 Token 和 QQ 号。</p>
     <label class="adapter-field">
       <span>适配器连接地址</span>
       <span class="connection-address">

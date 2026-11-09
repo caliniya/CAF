@@ -1,12 +1,14 @@
 package Tests
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	core "github.com/caliniya/caf/core"
+	platform "github.com/caliniya/caf/platform"
 )
 
 func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
@@ -41,6 +43,10 @@ func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
 	if _, err := instance.RenameExtensionClient(client.ID, "Renamed"); err != nil {
 		t.Fatal(err)
 	}
+	oldData := filepath.Join(filepath.Dir(file), "history.txt")
+	if err := os.WriteFile(oldData, []byte("old client data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := instance.DeleteExtensionClient(client.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -48,11 +54,115 @@ func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
 	if err != nil || len(list) != 0 {
 		t.Fatalf("deleted client remains: %+v / %v", list, err)
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(file), "archived.json")); err != nil {
-		t.Fatal("client data not archived")
+	if _, err := os.Stat(filepath.Dir(file)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("deleted client's ID folder was not released: %v", err)
 	}
-	if _, err := instance.CreateExtensionClient("new", client.ID); err == nil {
-		t.Fatal("archived data was overwritten")
+	archive := filepath.Join(instance.Paths.Data, "ext", "archive", "clients")
+	entries, err := os.ReadDir(archive)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("client data not archived: %+v / %v", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(archive, entries[0].Name(), "history.txt"))
+	if err != nil || string(data) != "old client data" {
+		t.Fatalf("archive lost internal data: %q / %v", data, err)
+	}
+	fresh, err := reloaded.CreateExtensionClient("New", client.ID)
+	if err != nil || fresh.Name != "New" || len(fresh.Extensions) != 0 {
+		t.Fatalf("deleted ID not reusable after reload: %+v / %v", fresh, err)
+	}
+	if _, err := os.Stat(oldData); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("new client inherited archived data")
+	}
+	if err := reloaded.DeleteExtensionClient(fresh.ID); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = os.ReadDir(archive)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("repeated deletion overwrote history: %+v / %v", entries, err)
+	}
+	if _, err := instance.CreateExtensionClient("Third", client.ID); err != nil {
+		t.Fatalf("ID not reusable after repeated deletion: %v", err)
+	}
+	list, err = instance.ListExtensionClients()
+	if err != nil || len(list) != 1 || list[0].Name != "Third" {
+		t.Fatalf("archive leaked into client list: %+v / %v", list, err)
+	}
+}
+
+func TestExtensionClientsReuseLegacyArchivedID(t *testing.T) {
+	instance := useQQAdapterCore(t)
+	client, err := instance.CreateExtensionClient("Legacy", "legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(instance.Paths.Data, "ext", "clients", client.ID)
+	if err := os.Rename(filepath.Join(path, "client.json"), filepath.Join(path, "archived.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "history.txt"), []byte("legacy history"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := instance.CreateExtensionClient("Fresh", "LEGACY")
+	if err != nil || fresh.ID != "LEGACY" {
+		t.Fatalf("legacy deleted ID remained reserved: %+v / %v", fresh, err)
+	}
+	archive := filepath.Join(instance.Paths.Data, "ext", "archive", "clients")
+	entries, err := os.ReadDir(archive)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("legacy archive missing: %+v / %v", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(archive, entries[0].Name(), "history.txt"))
+	if err != nil || string(data) != "legacy history" {
+		t.Fatalf("legacy data overwritten: %q / %v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(archive, entries[0].Name(), "archived.json")); err != nil {
+		t.Fatal("legacy configuration not preserved")
+	}
+	if _, err := os.Stat(filepath.Join(instance.Paths.Data, "ext", "clients", fresh.ID, "archived.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("new client inherited legacy archive")
+	}
+}
+
+type failingClientArchiveFS struct{ platform.FilePlatform }
+
+func (failingClientArchiveFS) MoveFile(string, string) error {
+	return errors.New("test archive move failed")
+}
+
+func TestExtensionClientsFailedArchivePreservesActiveClient(t *testing.T) {
+	instance := useQQAdapterCore(t)
+	client, err := instance.CreateExtensionClient("Main", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter, err := instance.CreateQQAdapter("QQ", "token", "10001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := instance.SetExtensionClientQQ(client.ID, adapter.ID, "助手", true); err != nil {
+		t.Fatal(err)
+	}
+	original := instance.FS
+	instance.FS = failingClientArchiveFS{original}
+	err = instance.DeleteExtensionClient(client.ID)
+	instance.FS = original
+	if err == nil {
+		t.Fatal("deletion succeeded despite failed archive")
+	}
+	if _, err := instance.GetExtensionClient(client.ID); err != nil {
+		t.Fatalf("failed deletion lost client: %v", err)
+	}
+	waitQQAdapter(t, instance, adapter.ID, "disconnected", "10001")
+	if _, err := instance.CreateExtensionClient("Duplicate", client.ID); err == nil {
+		t.Fatal("failed deletion released active ID")
+	}
+	if err := instance.DeleteExtensionClient(client.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitQQAdapter(t, instance, adapter.ID, "stopped", "10001")
+	fresh, err := instance.CreateExtensionClient("Fresh", client.ID)
+	if err != nil || len(fresh.Extensions) != 0 {
+		t.Fatalf("new client inherited old bindings: %+v / %v", fresh, err)
 	}
 }
 
@@ -112,10 +222,14 @@ func TestExtensionClientsMultipleNamedQQBindings(t *testing.T) {
 	if err != nil || len(client.Extensions) != 1 || !client.Extensions[0].Enabled {
 		t.Fatalf("binding did not persist: %+v / %v", client, err)
 	}
-	if err := instance.DeleteExtensionClient(client.ID); err != nil {
+	instance.CloseQQAdapters()
+	reloaded.StartExtensionClients()
+	t.Cleanup(reloaded.CloseQQAdapters)
+	waitQQAdapter(t, reloaded, second.ID, "disconnected", "20002")
+	if err := reloaded.DeleteExtensionClient(client.ID); err != nil {
 		t.Fatal(err)
 	}
-	waitQQAdapter(t, instance, second.ID, "stopped", "20002")
+	waitQQAdapter(t, reloaded, second.ID, "stopped", "20002")
 }
 
 func TestExtensionClientsFailedPersistenceDoesNotEnableQQ(t *testing.T) {

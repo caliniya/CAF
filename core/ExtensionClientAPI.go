@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	qq "github.com/caliniya/caf/core/Extension/QQ"
 )
 
 type ClientExtension struct {
@@ -77,8 +78,10 @@ func (c *Core) readExtensionClientLocked(id string) (*ExtensionClient, error) {
 		client.Extensions = []ClientExtension{}
 	}
 	names, adapters := map[string]bool{}, map[string]bool{}
-	for _, item := range client.Extensions {
-		if item.Type != "qq" || !extensionCommandName.MatchString(item.Name) || item.AdapterID == "" || names[item.Name] || adapters[item.AdapterID] {
+	for i := range client.Extensions {
+		item := &client.Extensions[i]
+		if item.Type == "qq" { item.Type = qq.ExtensionType }
+		if item.Type != qq.ExtensionType || !extensionCommandName.MatchString(item.Name) || item.AdapterID == "" || names[item.Name] || adapters[item.AdapterID] {
 			return nil, errors.New("客户端扩展配置包含无效或重复的名称、适配器")
 		}
 		names[item.Name], adapters[item.AdapterID] = true, true
@@ -152,9 +155,34 @@ func (c *Core) CreateExtensionClient(name, id string) (*ExtensionClient, error) 
 		return nil, err
 	}
 	for _, entry := range entries {
-		if strings.EqualFold(entry.Name(), id) {
+		if !strings.EqualFold(entry.Name(), id) {
+			continue
+		}
+		if !entry.IsDir() {
 			return nil, errors.New("ID 已被使用，请使用其他 ID")
 		}
+		path := filepath.Join(directory, entry.Name())
+		if _, err := c.FS.Stat(filepath.Join(path, "client.json")); !errors.Is(err, fs.ErrNotExist) {
+			if err != nil {
+				return nil, err
+			}
+			return nil, errors.New("ID 已被使用，请使用其他 ID")
+		}
+		// 旧版删除留下 archived.json；复用 ID 时迁到独立归档区。
+		archived, err := c.FS.Stat(filepath.Join(path, "archived.json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, errors.New("ID 已被使用，请使用其他 ID")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if archived.IsDir() {
+			return nil, errors.New("客户端归档配置无效")
+		}
+		if err := c.archiveExtensionClientDirectoryLocked(directory, entry.Name()); err != nil {
+			return nil, err
+		}
+		break
 	}
 	path := filepath.Join(directory, id)
 	if err := c.FS.CreateDirectory(path, 0o700); err != nil {
@@ -203,7 +231,7 @@ func (c *Core) SetExtensionClientQQ(id, adapterID, name string, enabled bool) (*
 	var previous ClientExtension
 	position := -1
 	for i, item := range client.Extensions {
-		if item.Type != "qq" {
+		if item.Type != qq.ExtensionType {
 			continue
 		}
 		if item.AdapterID == adapterID {
@@ -232,7 +260,7 @@ func (c *Core) SetExtensionClientQQ(id, adapterID, name string, enabled bool) (*
 				continue
 			}
 			for _, item := range other.Extensions {
-				if item.Type == "qq" && item.AdapterID == adapterID {
+				if item.Type == qq.ExtensionType && item.AdapterID == adapterID {
 					return nil, fmt.Errorf("该适配器已绑定客户端「%s」", other.Name)
 				}
 			}
@@ -243,7 +271,7 @@ func (c *Core) SetExtensionClientQQ(id, adapterID, name string, enabled bool) (*
 			return nil, err
 		}
 	}
-	item := ClientExtension{Type: "qq", Name: name, AdapterID: adapterID, Enabled: enabled}
+	item := ClientExtension{Type: qq.ExtensionType, Name: name, AdapterID: adapterID, Enabled: enabled}
 	if position < 0 {
 		client.Extensions = append(client.Extensions, item)
 	} else {
@@ -273,7 +301,7 @@ func (c *Core) RemoveExtensionClientQQ(id, adapterID string) (*ExtensionClient, 
 	items := []ClientExtension{}
 	found := false
 	for _, item := range client.Extensions {
-		if item.Type == "qq" && item.AdapterID == adapterID {
+		if item.Type == qq.ExtensionType && item.AdapterID == adapterID {
 			found = true
 			continue
 		}
@@ -290,7 +318,23 @@ func (c *Core) RemoveExtensionClientQQ(id, adapterID string) (*ExtensionClient, 
 	return client, nil
 }
 
-// 删除客户端记录并关闭扩展，内部数据归档保留，ID 不会被重新分配。
+// archiveExtensionClientDirectoryLocked 将内部目录迁出活跃客户端区，释放 ID。
+// 每次归档使用独立目录，保留同一 ID 的多次历史数据。
+func (c *Core) archiveExtensionClientDirectoryLocked(directory, id string) error {
+	if err := validateExtensionClientID(id); err != nil {
+		return err
+	}
+	archive := filepath.Join(c.Paths.Data, "ext", "archive", "clients")
+	if err := c.FS.CreateDirectory(archive, 0o700); err != nil {
+		return fmt.Errorf("创建客户端归档目录失败：%w", err)
+	}
+	if err := c.FS.MoveFile(filepath.Join(directory, id), filepath.Join(archive, id+"-"+newID())); err != nil {
+		return fmt.Errorf("归档客户端失败：%w", err)
+	}
+	return nil
+}
+
+// 删除客户端记录并关闭扩展，数据移入独立归档区，ID 可以重新使用。
 func (c *Core) DeleteExtensionClient(id string) error {
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
@@ -302,12 +346,11 @@ func (c *Core) DeleteExtensionClient(id string) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(directory, id)
-	if err := c.FS.MoveFile(filepath.Join(path, "client.json"), filepath.Join(path, "archived.json")); err != nil {
+	if err := c.archiveExtensionClientDirectoryLocked(directory, id); err != nil {
 		return err
 	}
 	for _, item := range client.Extensions {
-		if item.Type == "qq" && item.AdapterID != "" {
+		if item.Type == qq.ExtensionType && item.AdapterID != "" {
 			_, _ = c.StopQQAdapter(item.AdapterID)
 		}
 	}
@@ -324,7 +367,7 @@ func (c *Core) StartExtensionClients() {
 	}
 	for _, client := range clients {
 		for _, item := range client.Extensions {
-			if item.Type != "qq" || !item.Enabled {
+			if item.Type != qq.ExtensionType || !item.Enabled {
 				continue
 			}
 			if _, err := c.StartQQAdapter(item.AdapterID); err != nil {

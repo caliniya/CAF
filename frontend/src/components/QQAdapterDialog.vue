@@ -53,7 +53,7 @@ watch(() => props.open, async (open) => {
       @click.self="cancel" @cancel.prevent="cancel" @keydown.stop>
       <form @submit.prevent="confirm">
         <header class="adapter-dialog-head">
-          <h2 :id="titleId">新建适配器</h2>
+          <h2 :id="titleId">新建 QQ 适配器</h2>
           <button type="button" class="btn btn-ghost close-button" aria-label="关闭创建窗口"
             :disabled="busy" @click="cancel"><X :size="16" aria-hidden="true" /></button>
         </header>

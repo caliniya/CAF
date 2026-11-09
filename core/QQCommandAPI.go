@@ -21,7 +21,7 @@ func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtensi
 	}
 	for _, client := range clients {
 		for _, item := range client.Extensions {
-			if item.Type == "qq" && item.Enabled && item.AdapterID == adapterID {
+			if item.Type == qq.ExtensionType && item.Enabled && item.AdapterID == adapterID {
 				return &client, item
 			}
 		}

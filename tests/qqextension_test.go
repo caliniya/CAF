@@ -54,7 +54,7 @@ func TestQQExtensionDescriptorAndLifecycle(t *testing.T) {
 	t.Cleanup(func() { _ = instance.Close() })
 	var generic extension.Extension = instance
 	descriptor := generic.Describe()
-	if descriptor.Type != "qq" || descriptor.Implementation != "onebot11-reverse-ws" ||
+	if descriptor.Type != qq.ExtensionType || descriptor.Implementation != "onebot11-reverse-ws" ||
 		len(descriptor.Capabilities) != 1 || descriptor.Capabilities[0].Name != qq.CapabilitySendMessage ||
 		!json.Valid(descriptor.Capabilities[0].Parameters) {
 		t.Fatalf("invalid extension descriptor: %+v", descriptor)

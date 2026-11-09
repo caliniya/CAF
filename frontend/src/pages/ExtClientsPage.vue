@@ -32,7 +32,7 @@ function status(adapterId?: string) { return qq.adapters.find((item) => item.id 
       <div v-else-if="!ext.clients.length && ext.loaded" class="empty"><Monitor :size="36" :stroke-width="1.3" /><h2>还没有客户端</h2><p>创建客户端，为它添加 QQ 等扩展。</p><button type="button" class="btn" @click="openCreate"><Plus :size="14" />新建客户端</button></div>
       <ul v-else class="ext-list" aria-label="扩展客户端">
         <li v-for="client in ext.clients" :key="client.id"><button type="button" class="ext-client" @click="router.push('/ext/clients/' + client.id)">
-          <span class="avatar"><Monitor :size="20" /></span><span class="identity"><strong>{{ client.name }}</strong><span class="hint">{{ client.id }}</span>
+          <span class="avatar"><Monitor :size="20" /></span><span class="identity"><strong>{{ client.name }}</strong><span class="hint">ID：{{ client.id }}</span>
             <span class="extensions"><span v-for="item in client.extensions" :key="item.adapterId" class="extension-tag" :class="{ connected: item.enabled && status(item.adapterId) === 'connected' }"><Puzzle :size="12" />QQ · {{ item.name }}<span>{{ !item.enabled ? '已停用' : status(item.adapterId) === 'connected' ? '已连接' : status(item.adapterId) === 'disconnected' ? '未连接' : '未启动' }}</span></span><span v-if="!client.extensions.length" class="hint">尚未添加扩展</span></span>
           </span><ChevronRight :size="17" class="chevron" />
         </button></li>

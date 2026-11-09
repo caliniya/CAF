@@ -16,6 +16,8 @@ import (
 type Extension interface {
 	Describe() Descriptor
 	Status() Status
+	// UIValues 返回展示字段对应的纯文本快照，不包含创建参数中的秘密值。
+	UIValues() map[string]string
 	// Start 启动事件接收/能力服务，准备就绪后返回，不等待远端上线。
 	// 每个实例启动一次；ctx 的生命周期属于宿主，取消时关闭扩展。
 	Start(context.Context) error
@@ -39,6 +41,30 @@ type Descriptor struct {
 	Name           string       `json:"name"`
 	Description    string       `json:"description,omitempty"`
 	Capabilities   []Capability `json:"capabilities"`
+	Parameters     []ParameterField `json:"parameters"`
+	Information    []InformationField `json:"information"`
+}
+
+// ParameterField 由扩展声明创建/编辑表单，不依赖具体前端框架。
+type ParameterField struct {
+	Key string `json:"key"`
+	Label string `json:"label"`
+	Kind string `json:"kind"` // text、secret、integer
+	Required bool `json:"required"`
+	Default string `json:"default,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+	Help string `json:"help,omitempty"`
+	Pattern string `json:"pattern,omitempty"`
+	Minimum int `json:"minimum,omitempty"`
+	Maximum int `json:"maximum,omitempty"`
+	EditableWhileRunning bool `json:"editableWhileRunning"`
+}
+
+// InformationField 总是在信息窗口展示，InList 额外在列表行显示纯文本。
+type InformationField struct {
+	Key string `json:"key"`
+	Label string `json:"label"`
+	InList bool `json:"inList"`
 }
 
 // Capability 的名称在一个扩展实例内唯一，例如 send_message。

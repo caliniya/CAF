@@ -74,12 +74,12 @@ async function remove() {
 <template>
   <section class="edit-page" aria-labelledby="edit-title">
     <header class="edit-head">
-      <button type="button" class="btn btn-ghost back-button" aria-label="返回客户端列表"
+      <button type="button" class="btn btn-ghost back-button" aria-label="返回客户端"
         :disabled="busy" @click="router.push(backPath)"><ArrowLeft :size="18" aria-hidden="true" /></button>
       <h1 id="edit-title">QQ 适配器配置</h1>
     </header>
     <div class="edit-content">
-      <p v-if="loading" class="edit-hint" role="status">正在加载客户端…</p>
+      <p v-if="loading" class="edit-hint" role="status">正在加载适配器…</p>
       <div v-else-if="!details">
         <p class="edit-error" role="alert">{{ error }}</p>
         <button type="button" class="btn" @click="load">重试</button>

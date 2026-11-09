@@ -20,12 +20,13 @@ const validExtensionName = computed(() => /^[\p{L}\p{N}_-]{1,32}$/u.test(extensi
 let stop: (() => void) | undefined; let generation = 0
 onMounted(() => { stop = qq.watchStatus(); void ext.refresh() })
 onUnmounted(() => { generation++; stop?.() })
-watch(id, async () => {
+async function load() {
   const current = ++generation; loading.value = true; error.value = ''; saved.value = false; addOpen.value = false
   try { const result = await GetExtensionClient(id.value); if (current !== generation) return; ext.replace(result); name.value = result.name }
   catch (err) { if (current === generation) error.value = String(err) }
   finally { if (current === generation) loading.value = false }
-}, { immediate: true })
+}
+watch(id, () => void load(), { immediate: true })
 function adapter(item: ClientExtension) { return qq.adapters.find((value) => value.id === item.adapterId) }
 async function rename() { error.value = ''; saved.value = false; try { await ext.rename(id.value, name.value); saved.value = true } catch (err) { error.value = String(err) } }
 function openAdd() { addOpen.value = true; extensionName.value = ''; adapterId.value = ''; addError.value = '' }
@@ -42,11 +43,11 @@ async function remove() { error.value = ''; try { await ext.remove(id.value); aw
 </script>
 <template>
   <section class="detail-page" aria-labelledby="detail-title">
-    <header class="detail-head"><button type="button" class="btn btn-ghost" aria-label="返回客户端" :disabled="busy" @click="router.push('/ext')"><ArrowLeft :size="17" /></button><div><h1 id="detail-title">{{ client?.name || '客户端' }}</h1><p>{{ client?.id }}</p></div></header>
+    <header class="detail-head"><button type="button" class="btn btn-ghost" aria-label="返回客户端" :disabled="busy" @click="router.push('/ext')"><ArrowLeft :size="17" /></button><div><h1 id="detail-title">{{ client?.name || '客户端' }}</h1><p v-if="client">ID：{{ client.id }}</p></div></header>
     <div class="detail-content">
       <p v-if="loading" class="hint" role="status">正在加载客户端…</p>
       <p v-if="error && !deleteOpen" class="error" role="alert">{{ error }}</p>
-      <button v-if="!loading && !client" type="button" class="btn" @click="router.go(0)">重新加载</button>
+      <button v-if="!loading && !client" type="button" class="btn" @click="load">重新加载</button>
       <template v-if="client && !loading">
         <form class="name-form" @submit.prevent="rename"><label>名称<input v-model="name" type="text" required :disabled="busy" /></label><button type="submit" class="btn" :disabled="busy || !name.trim()">保存名称</button><span v-if="saved" class="saved" role="status">已保存</span></form>
         <div class="section-head"><h2>扩展</h2><button type="button" class="btn btn-primary" :disabled="busy" @click="openAdd"><Plus :size="14" />添加 QQ 扩展</button></div>
