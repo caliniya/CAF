@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	persona "github.com/caliniya/caf/core/Persona"
@@ -16,23 +16,23 @@ import (
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
-func useChatTaskCore(t *testing.T) *core.Core {
+func useChatTaskCore(t *testing.T) *backend.Core {
 	t.Helper()
 	root := t.TempDir()
-	configs := []core.Config{{
+	configs := []backend.Config{{
 		ID: "provider-1", Name: "Test Provider", ServerAddress: "https://example.test/v1",
 		Protocol: "chat-completions", APIKey: "secret-key",
 		Model: []apiImpl.Model{{ID: "model-1", Name: "Model 1"}}, EnabledModel: "model-1",
 	}}
-	instance := &core.Core{
+	instance := &backend.Core{
 		Paths: &platform.Paths{Data: root},
 		FS:    &desktopBackend.DesktopFileSystem{},
-		Configs: &core.Configs{
+		Configs: &backend.Configs{
 			ALLConfig:     &configs,
 			EnablesConfig: &configs[0],
 		},
 	}
-	core.Platform = instance
+	backend.Platform = instance
 	return instance
 }
 

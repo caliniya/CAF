@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	platform "github.com/caliniya/caf/platform"
 )
 
@@ -35,7 +35,7 @@ func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
 	if _, err := instance.CreateExtensionClient("duplicate", "FIRST-CLIENT"); err == nil {
 		t.Fatal("accepted case-insensitive duplicate ID")
 	}
-	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	list, err := reloaded.ListExtensionClients()
 	if err != nil || len(list) != 1 || list[0].ID != client.ID {
 		t.Fatalf("client did not persist: %+v / %v", list, err)
@@ -217,7 +217,7 @@ func TestExtensionClientsMultipleNamedQQBindings(t *testing.T) {
 	if err := instance.DeleteQQAdapter(first.ID); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	client, err = reloaded.GetExtensionClient(client.ID)
 	if err != nil || len(client.Extensions) != 1 || !client.Extensions[0].Enabled {
 		t.Fatalf("binding did not persist: %+v / %v", client, err)

@@ -1,4 +1,4 @@
-package Core
+package Backend
 
 import (
 	"encoding/json"

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 	platform "github.com/caliniya/caf/platform"
 )
@@ -40,7 +40,7 @@ func TestExtensionUIDescribesFormsAndInformation(t *testing.T) {
 	}
 	values["status"] = "changed"
 	connectReverseWS(t, address, "10001", "")
-	nextExtensionEvent(t, client, "onebot11qq.status")
+	nextExtensionEvent(t, client, "qq.status")
 	if client.UIValues()["status"] != "已连接" {
 		t.Fatal("runtime UI values did not follow connection")
 	}
@@ -140,7 +140,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	create := func(clientID, token string) *core.ExtensionOption {
+	create := func(clientID, token string) *backend.ExtensionOption {
 		t.Helper()
 		preview, err := instance.GetQQAdapterAddress()
 		if err != nil {
@@ -214,7 +214,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 	if err != nil || len(options) != 1 || !options[0].Enabled || !options[0].Running {
 		t.Fatalf("deleting affected other client: %+v / %v", options, err)
 	}
-	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	options, err = reloaded.ListClientExtensions(secondClient.ID)
 	if err != nil || len(options) != 1 || options[0].ID != second.ID {
 		t.Fatalf("ownership not persisted: %+v / %v", options, err)

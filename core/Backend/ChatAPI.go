@@ -1,4 +1,4 @@
-package Core
+package Backend
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
 
-// Emit 由后端(desktop)注入的事件推送实现,core 不依赖 wails。
+// Emit 由桌面宿主注入，Backend 不依赖 Wails。
 // 未注入时为空操作,便于测试与其他宿主复用。
 var Emit = func(event string, data ...any) {}
 

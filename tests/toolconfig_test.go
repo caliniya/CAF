@@ -5,9 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	maintool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool"
+	backend "github.com/caliniya/caf/core/Backend"
 )
 
 func boolPtr(v bool) *bool { return &v }
@@ -120,7 +120,7 @@ func TestToolSetDetailsIncludeParameterSchemas(t *testing.T) {
 	}
 	// 禁用工具也需要在模块详情中可见。
 	agenttool.Tools["WriteFile"].Meta().Enabled = false
-	sets := (&core.Core{}).ListToolSets()
+	sets := (&backend.Core{}).ListToolSets()
 	if len(sets) != 1 || len(sets[0].Kits) != 1 {
 		t.Fatalf("工具集和模块列表错误：%+v", sets)
 	}

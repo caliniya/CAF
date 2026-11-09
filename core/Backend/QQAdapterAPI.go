@@ -1,4 +1,4 @@
-package Core
+package Backend
 
 import (
 	"context"
@@ -383,7 +383,7 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 				Event       extension.Event `json:"event"`
 			}{id, envelope})
 			Emit("qq:event", struct {
-				AdapterID string   `json:"adapterId"`
+				AdapterID string           `json:"adapterId"`
 				Event     onebot11qq.Event `json:"event"`
 			}{id, event})
 		}

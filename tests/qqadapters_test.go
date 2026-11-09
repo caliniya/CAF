@@ -11,15 +11,15 @@ import (
 	"testing"
 	"time"
 
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 	"github.com/gorilla/websocket"
 )
 
-func useQQAdapterCore(t *testing.T) *core.Core {
+func useQQAdapterCore(t *testing.T) *backend.Core {
 	t.Helper()
-	instance := &core.Core{
+	instance := &backend.Core{
 		Paths: &platform.Paths{Data: t.TempDir()},
 		FS:    &desktopBackend.DesktopFileSystem{},
 	}
@@ -27,7 +27,7 @@ func useQQAdapterCore(t *testing.T) *core.Core {
 	return instance
 }
 
-func waitQQAdapter(t *testing.T, instance *core.Core, id, state, account string) *core.QQAdapter {
+func waitQQAdapter(t *testing.T, instance *backend.Core, id, state, account string) *backend.QQAdapter {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -72,7 +72,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	if second.ID == first.ID || second.Address == first.Address || second.QQ != "" {
 		t.Fatalf("adapters must have separate endpoints: %+v / %+v", first, second)
 	}
-	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	adapters, err := reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 2 {
 		t.Fatalf("failed to restore adapter list: %+v / %v", adapters, err)
@@ -93,7 +93,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	if err := instance.DeleteQQAdapter(second.ID); err != nil {
 		t.Fatal(err)
 	}
-	reloaded = &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded = &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	adapters, err = reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 1 || adapters[0].Name != "Renamed" {
 		t.Fatalf("edits/deletion did not persist: %+v / %v", adapters, err)
@@ -138,7 +138,7 @@ func TestQQAdaptersRealLifecycleAndDetectedAccount(t *testing.T) {
 	// 等待事件消费者将自动识别的 QQ 号写入配置。
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+		reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 		details, err := reloaded.GetQQAdapter(adapter.ID)
 		if err == nil && details.QQ == "10001" {
 			break
@@ -230,7 +230,7 @@ func TestQQAdaptersFailuresPreserveConfigurationAndRuntime(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(instance.Paths.Data, "qq", "adapters.json"), []byte("invalid JSON"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
 	if _, err := reloaded.ListQQAdapters(); err == nil {
 		t.Fatal("silently accepted corrupted adapter configuration")
 	}

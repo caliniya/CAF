@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	platform "github.com/caliniya/caf/platform"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
@@ -23,7 +23,7 @@ func writeConfig(t *testing.T, content string) string {
 
 func useConfigFile(t *testing.T, file string) {
 	t.Helper()
-	core.Platform = &core.Core{
+	backend.Platform = &backend.Core{
 		Paths: &platform.Paths{ConfigFile: file},
 		FS:    &desktopBackend.DesktopFileSystem{},
 	}
@@ -33,11 +33,11 @@ func TestLoadConfigReadsFile(t *testing.T) {
 	file := writeConfig(t, `{"config":[{"ServerAddress":"https://example.com","APIKey":"sk-test","Model":["m1","m2"]}]}`)
 	useConfigFile(t, file)
 
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	got := core.Platform.Configs
+	got := backend.Platform.Configs
 	if got == nil || got.ALLConfig == nil || len(*got.ALLConfig) != 1 {
 		t.Fatalf("unexpected configs: %+v", got)
 	}
@@ -50,7 +50,7 @@ func TestLoadConfigReadsFile(t *testing.T) {
 func TestLoadConfigReportsMalformedJSON(t *testing.T) {
 	useConfigFile(t, writeConfig(t, "{"))
 
-	if err := core.LoadConfig(); err == nil {
+	if err := backend.LoadConfig(); err == nil {
 		t.Fatal("malformed json accepted")
 	}
 }
@@ -58,7 +58,7 @@ func TestLoadConfigReportsMalformedJSON(t *testing.T) {
 func TestLoadConfigReportsMissingFile(t *testing.T) {
 	useConfigFile(t, filepath.Join(t.TempDir(), "MainConfig.json"))
 
-	if err := core.LoadConfig(); err == nil {
+	if err := backend.LoadConfig(); err == nil {
 		t.Fatal("missing file accepted")
 	}
 }
@@ -69,11 +69,11 @@ func TestSelectConfigPersistsChoice(t *testing.T) {
 		{"ServerAddress":"https://second","APIKey":"sk-2","Model":["m2","m3"]}
 	]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	selected, err := core.Platform.SelectConfig(1)
+	selected, err := backend.Platform.SelectConfig(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,10 +82,10 @@ func TestSelectConfigPersistsChoice(t *testing.T) {
 	}
 
 	// 重新加载后选择应保留。
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	enabled := core.Platform.Configs.EnablesConfig
+	enabled := backend.Platform.Configs.EnablesConfig
 	if enabled == nil || enabled.ServerAddress != "https://second" {
 		t.Fatalf("selection not persisted: %+v", enabled)
 	}
@@ -93,16 +93,16 @@ func TestSelectConfigPersistsChoice(t *testing.T) {
 
 func TestSelectConfigRejectsBadIndex(t *testing.T) {
 	useConfigFile(t, writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}]}`))
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, index := range []int{-1, 1, 99} {
-		if _, err := core.Platform.SelectConfig(index); err == nil {
+		if _, err := backend.Platform.SelectConfig(index); err == nil {
 			t.Fatalf("index %d accepted", index)
 		}
 	}
-	if core.Platform.Configs.EnablesConfig != nil {
+	if backend.Platform.Configs.EnablesConfig != nil {
 		t.Fatal("failed selection should not enable anything")
 	}
 }
@@ -113,21 +113,21 @@ func TestSelectModelPersistsChoice(t *testing.T) {
 		{"ServerAddress":"https://second","APIKey":"sk-2","Model":["m2","m3"]}
 	]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectConfig(1); err != nil {
+	if _, err := backend.Platform.SelectConfig(1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectModel("m3"); err != nil {
+	if _, err := backend.Platform.SelectModel("m3"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 重新加载后提供商和模型都应保留，且启用项指回数组元素。
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	cfg := core.Platform.Configs
+	cfg := backend.Platform.Configs
 	if cfg.EnablesConfig == nil || cfg.EnablesConfig.ServerAddress != "https://second" || cfg.EnablesConfig.EnabledModel != "m3" {
 		t.Fatalf("unexpected state: %+v", cfg)
 	}
@@ -141,28 +141,28 @@ func TestSelectModelPersistsChoice(t *testing.T) {
 
 func TestSelectModelRequiresProvider(t *testing.T) {
 	useConfigFile(t, writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}]}`))
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := core.Platform.SelectModel("m1"); err == nil {
+	if _, err := backend.Platform.SelectModel("m1"); err == nil {
 		t.Fatal("model accepted without enabled config")
 	}
 }
 
 func TestSelectModelRejectsUnknownModel(t *testing.T) {
 	useConfigFile(t, writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}]}`))
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectConfig(0); err != nil {
+	if _, err := backend.Platform.SelectConfig(0); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := core.Platform.SelectModel("nope"); err == nil {
+	if _, err := backend.Platform.SelectModel("nope"); err == nil {
 		t.Fatal("unknown model accepted")
 	}
-	if core.Platform.Configs.EnablesConfig.EnabledModel != "" {
+	if backend.Platform.Configs.EnablesConfig.EnabledModel != "" {
 		t.Fatal("failed model selection should not stick")
 	}
 }
@@ -173,43 +173,43 @@ func TestSelectConfigRemembersModelPerProvider(t *testing.T) {
 		{"ServerAddress":"https://second","APIKey":"sk-2","Model":["m2","m3"]}
 	]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
 	// 各选各的模型。
-	if _, err := core.Platform.SelectConfig(0); err != nil {
+	if _, err := backend.Platform.SelectConfig(0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectModel("m1"); err != nil {
+	if _, err := backend.Platform.SelectModel("m1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectConfig(1); err != nil {
+	if _, err := backend.Platform.SelectConfig(1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectModel("m2"); err != nil {
+	if _, err := backend.Platform.SelectModel("m2"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 来回切换：启用模型随配置走，互不覆盖。
-	if _, err := core.Platform.SelectConfig(0); err != nil {
+	if _, err := backend.Platform.SelectConfig(0); err != nil {
 		t.Fatal(err)
 	}
-	if got := core.Platform.Configs.EnablesConfig.EnabledModel; got != "m1" {
+	if got := backend.Platform.Configs.EnablesConfig.EnabledModel; got != "m1" {
 		t.Fatalf("first provider forgot its model: %q", got)
 	}
-	if _, err := core.Platform.SelectConfig(1); err != nil {
+	if _, err := backend.Platform.SelectConfig(1); err != nil {
 		t.Fatal(err)
 	}
-	if got := core.Platform.Configs.EnablesConfig.EnabledModel; got != "m2" {
+	if got := backend.Platform.Configs.EnablesConfig.EnabledModel; got != "m2" {
 		t.Fatalf("second provider forgot its model: %q", got)
 	}
 
 	// 重新加载后依然成立。
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	cfg := core.Platform.Configs
+	cfg := backend.Platform.Configs
 	if cfg.EnablesConfig == nil || cfg.EnablesConfig.EnabledModel != "m2" {
 		t.Fatalf("unexpected state after reload: %+v", cfg)
 	}
@@ -221,10 +221,10 @@ func TestLoadConfigDefaultsToFirstModel(t *testing.T) {
 	],"EnablesConfig":{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1","m2"]}}`)
 	useConfigFile(t, file)
 
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	enabled := core.Platform.Configs.EnablesConfig
+	enabled := backend.Platform.Configs.EnablesConfig
 	if enabled == nil || enabled.EnabledModel != "m1" {
 		t.Fatalf("default model not applied: %+v", enabled)
 	}
@@ -234,10 +234,10 @@ func TestLoadConfigMigratesLegacyModelNames(t *testing.T) {
 	file := writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1","m2"]}]}`)
 	useConfigFile(t, file)
 
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	models := (*core.Platform.Configs.ALLConfig)[0].Model
+	models := (*backend.Platform.Configs.ALLConfig)[0].Model
 	if len(models) != 2 || models[0].ID != "m1" || models[0].Name != "m1" {
 		t.Fatalf("legacy models not converted: %+v", models)
 	}
@@ -253,11 +253,11 @@ func TestLoadConfigMigratesLegacyModelNames(t *testing.T) {
 func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
 	file := writeConfig(t, `{"config":[]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	configs, err := core.Platform.AddModelConfig("测试服务", "https://example.com/v1", "chat-completions", "sk-test", []apiImpl.Model{{
+	configs, err := backend.Platform.AddModelConfig("测试服务", "https://example.com/v1", "chat-completions", "sk-test", []apiImpl.Model{{
 		ID:              "m1",
 		Name:            "Model One",
 		MaxContext:      32768,
@@ -272,10 +272,10 @@ func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
 	if got := configs.EnablesConfig.Model[0].MaxContext; got != 32768 {
 		t.Fatalf("model metadata not retained: %d", got)
 	}
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if got := core.Platform.Configs.EnablesConfig.Model[0].ID; got != "m1" {
+	if got := backend.Platform.Configs.EnablesConfig.Model[0].ID; got != "m1" {
 		t.Fatalf("model config not persisted: %q", got)
 	}
 }
@@ -283,11 +283,11 @@ func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
 func TestRefreshModelConfigPersistsUpdatedModels(t *testing.T) {
 	file := writeConfig(t, `{"config":[{"ServerAddress":"https://old.example/v1/chat/completions","APIKey":"sk-test","Model":[{"id":"keep","name":"Keep"},{"id":"remove","name":"Remove"}],"EnabledModel":"keep"}],"EnablesConfig":{"ServerAddress":"https://old.example/v1/chat/completions","APIKey":"sk-test","Model":[{"id":"keep","name":"Keep"},{"id":"remove","name":"Remove"}],"EnabledModel":"keep"}}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	configs, err := core.Platform.RefreshModelConfig(0, "https://new.example/chat/completions", []apiImpl.Model{{ID: "keep", Name: "Keep updated"}, {ID: "new", Name: "New"}})
+	configs, err := backend.Platform.RefreshModelConfig(0, "https://new.example/chat/completions", []apiImpl.Model{{ID: "keep", Name: "Keep updated"}, {ID: "new", Name: "New"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,10 +298,10 @@ func TestRefreshModelConfigPersistsUpdatedModels(t *testing.T) {
 	if configs.EnablesConfig != &(*configs.ALLConfig)[0] {
 		t.Fatal("enabled config no longer points to refreshed entry")
 	}
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if got := core.Platform.Configs.EnablesConfig; got == nil || got.ServerAddress != "https://new.example/chat/completions" || got.EnabledModel != "keep" {
+	if got := backend.Platform.Configs.EnablesConfig; got == nil || got.ServerAddress != "https://new.example/chat/completions" || got.EnabledModel != "keep" {
 		t.Fatalf("refreshed config not persisted: %+v", got)
 	}
 }
@@ -309,14 +309,14 @@ func TestRefreshModelConfigPersistsUpdatedModels(t *testing.T) {
 func TestRefreshModelConfigRejectsEmptyModelsWithoutChanges(t *testing.T) {
 	file := writeConfig(t, `{"config":[{"ServerAddress":"https://old.example","APIKey":"sk-test","Model":[{"id":"keep"}],"EnabledModel":"keep"}]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := core.Platform.RefreshModelConfig(0, "https://new.example", nil); err == nil {
+	if _, err := backend.Platform.RefreshModelConfig(0, "https://new.example", nil); err == nil {
 		t.Fatal("empty model list accepted")
 	}
-	entry := (*core.Platform.Configs.ALLConfig)[0]
+	entry := (*backend.Platform.Configs.ALLConfig)[0]
 	if entry.ServerAddress != "https://old.example" || len(entry.Model) != 1 || entry.EnabledModel != "keep" {
 		t.Fatalf("failed refresh changed existing config: %+v", entry)
 	}
@@ -327,10 +327,10 @@ func TestLoadConfigToleratesNoEnabledEntry(t *testing.T) {
 		{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}
 	]}`))
 
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if core.Platform.Configs.EnablesConfig != nil {
+	if backend.Platform.Configs.EnablesConfig != nil {
 		t.Fatal("unexpected enabled entry")
 	}
 }
@@ -342,10 +342,10 @@ func TestLoadConfigDropsStaleEnabledEntry(t *testing.T) {
 	],"EnablesConfig":{"ServerAddress":"https://ghost","APIKey":"sk-x","Model":["m9"]},"EnabledModel":"m9"}`)
 	useConfigFile(t, file)
 
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	cfg := core.Platform.Configs
+	cfg := backend.Platform.Configs
 	if cfg.EnablesConfig != nil {
 		t.Fatalf("stale enabled entry kept: %+v", cfg)
 	}
@@ -357,14 +357,14 @@ func TestRenameConfigPersistsChoice(t *testing.T) {
 		{"ServerAddress":"https://second","APIKey":"sk-2","Model":["m2","m3"]}
 	]}`)
 	useConfigFile(t, file)
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := core.Platform.SelectConfig(0); err != nil {
+	if _, err := backend.Platform.SelectConfig(0); err != nil {
 		t.Fatal(err)
 	}
 
-	state, err := core.Platform.RenameConfig(0, "  主力配置  ")
+	state, err := backend.Platform.RenameConfig(0, "  主力配置  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,10 +373,10 @@ func TestRenameConfigPersistsChoice(t *testing.T) {
 	}
 
 	// 重新加载后名称保留，且启用项同步带上了新名称。
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
-	cfg := core.Platform.Configs
+	cfg := backend.Platform.Configs
 	if (*cfg.ALLConfig)[0].Name != "主力配置" {
 		t.Fatalf("rename not persisted: %+v", (*cfg.ALLConfig)[0])
 	}
@@ -387,16 +387,16 @@ func TestRenameConfigPersistsChoice(t *testing.T) {
 
 func TestRenameConfigRejectsBadIndex(t *testing.T) {
 	useConfigFile(t, writeConfig(t, `{"config":[{"ServerAddress":"https://only","APIKey":"sk-1","Model":["m1"]}]}`))
-	if err := core.LoadConfig(); err != nil {
+	if err := backend.LoadConfig(); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, index := range []int{-1, 1} {
-		if _, err := core.Platform.RenameConfig(index, "x"); err == nil {
+		if _, err := backend.Platform.RenameConfig(index, "x"); err == nil {
 			t.Fatalf("index %d accepted", index)
 		}
 	}
-	if (*core.Platform.Configs.ALLConfig)[0].Name != "" {
+	if (*backend.Platform.Configs.ALLConfig)[0].Name != "" {
 		t.Fatal("failed rename should not change anything")
 	}
 }

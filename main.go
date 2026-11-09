@@ -5,8 +5,8 @@ import (
 	"io/fs"
 	"log"
 
-	core "github.com/caliniya/caf/core"
 	agent "github.com/caliniya/caf/core/Agent"
+	backend "github.com/caliniya/caf/core/Backend"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
@@ -19,15 +19,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	core.Init()
+	backend.Init()
 	// 在启动期注册所有工具集，之后 AgentTool.ToolSets / Tools / ToolList 即可用。
-	// 放在 main 而不是 core.Init()，避免 core → Agent → FileTool → core 的 import 环。
+	// 放在 main 而不是 backend.Init()，避免 Backend → Agent → FileTool → Backend 的 import 环。
 	agent.InitTool()
 
 	if err := desktopBackend.Init(assets); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("数据目录：%s", core.Platform.Paths.Data)
+	log.Printf("数据目录：%s", backend.Platform.Paths.Data)
 
 }

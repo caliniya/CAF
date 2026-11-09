@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	core "github.com/caliniya/caf/core"
+	backend "github.com/caliniya/caf/core/Backend"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -19,14 +19,14 @@ func Init(assets fs.FS) error {
 		return errors.New("必须提供前端")
 	}
 	fileSystem := &DesktopFileSystem{}
-	core.Platform.FS = fileSystem
+	backend.Platform.FS = fileSystem
 
 	path, err := DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 	if err == nil {
-		core.Platform.Paths = &path
+		backend.Platform.Paths = &path
 
-		core.Platform.Paths.ConfigFile = filepath.Join(
-			core.Platform.Paths.Data, "config", "MainConfig.json")
+		backend.Platform.Paths.ConfigFile = filepath.Join(
+			backend.Platform.Paths.Data, "config", "MainConfig.json")
 	} else {
 		return err
 	}
@@ -38,17 +38,17 @@ func Init(assets fs.FS) error {
 		OnStartup: func(ctx context.Context) {
 			// 原生文件夹选择器需要桌面运行时上下文。
 			fileSystem.ctx = ctx
-			// 把事件推送能力注入 core,core 自身不依赖 wails。
-			core.Emit = func(event string, data ...any) {
+			// 把事件推送能力注入 Backend，后端 API 包自身不依赖 Wails。
+			backend.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)
 			}
-			core.Platform.StartExtensionClients()
+			backend.Platform.StartExtensionClients()
 		},
 		OnShutdown: func(ctx context.Context) {
-			core.Platform.CloseQQAdapters()
+			backend.Platform.CloseQQAdapters()
 		},
 		Bind: []interface{}{
-			core.Platform,
+			backend.Platform,
 		},
 	})
 }

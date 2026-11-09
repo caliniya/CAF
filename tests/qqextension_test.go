@@ -113,7 +113,7 @@ func TestQQExtensionDescriptorAndLifecycle(t *testing.T) {
 func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
 	instance, address := useQQExtension(t, onebot11qq.ReverseWSConfig{AccessToken: "token"})
 	connection := connectReverseWS(t, address, "10001", "token")
-	nextExtensionEvent(t, instance, "onebot11qq.status")
+	nextExtensionEvent(t, instance, "qq.status")
 	writeOneBotPacket(t, connection, map[string]any{
 		"post_type": "message", "message_type": "group", "sub_type": "normal",
 		"time": 123, "self_id": 10001, "message_id": 77, "group_id": 23456, "user_id": 30003,
@@ -122,7 +122,7 @@ func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
 			{"type": "image", "data": map[string]any{"file": "image.jpg"}},
 		},
 	})
-	event := nextExtensionEvent(t, instance, "onebot11qq.message")
+	event := nextExtensionEvent(t, instance, "qq.message")
 	if event.ID != "77" || event.Scope != "group:23456" || !event.Time.Equal(time.Unix(123, 0)) {
 		t.Fatalf("lost event identity/scope/time: %+v", event)
 	}
@@ -136,23 +136,23 @@ func TestQQExtensionPreservesDomainEventsAndRouting(t *testing.T) {
 		"time": 124, "self_id": 10001, "message_id": 78, "user_id": 30003,
 		"message": []map[string]any{{"type": "text", "data": map[string]any{"text": "private"}}},
 	})
-	if event := nextExtensionEvent(t, instance, "onebot11qq.message"); event.Scope != "private:30003" {
+	if event := nextExtensionEvent(t, instance, "qq.message"); event.Scope != "private:30003" {
 		t.Fatalf("incorrect private scope: %+v", event)
 	}
 	writeOneBotPacket(t, connection, map[string]any{
 		"post_type": "request", "request_type": "group", "sub_type": "add", "time": 125,
 		"self_id": 10001, "user_id": 30003, "group_id": 23456, "flag": "request-flag", "comment": "join",
 	})
-	if event := nextExtensionEvent(t, instance, "onebot11qq.request"); event.Scope != "group:23456" {
+	if event := nextExtensionEvent(t, instance, "qq.request"); event.Scope != "group:23456" {
 		t.Fatalf("incorrect request scope: %+v", event)
 	}
 	_ = connection.Close()
-	nextExtensionEvent(t, instance, "onebot11qq.status")
+	nextExtensionEvent(t, instance, "qq.status")
 	if status := instance.Status(); status.State != extension.StateRunning || *status.Connected {
 		t.Fatalf("disconnect incorrectly ended extension: %+v", status)
 	}
 	connectReverseWS(t, address, "10001", "token")
-	nextExtensionEvent(t, instance, "onebot11qq.status")
+	nextExtensionEvent(t, instance, "qq.status")
 	if !*instance.Status().Connected {
 		t.Fatal("reconnect did not restore extension connection")
 	}
@@ -169,7 +169,7 @@ func TestQQExtensionInvokeAndUnknownSendResult(t *testing.T) {
 		t.Fatalf("unexpected unknown capability error: %v", err)
 	}
 	connection := connectReverseWS(t, address, "10001", "")
-	nextExtensionEvent(t, instance, "onebot11qq.status")
+	nextExtensionEvent(t, instance, "qq.status")
 	arguments, _ := json.Marshal(qqTestGroupMessage("test"))
 	type invocation struct {
 		result json.RawMessage

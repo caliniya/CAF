@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	maintool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool"
+	backend "github.com/caliniya/caf/core/Backend"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
 
@@ -102,10 +102,10 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 			defer server.Close()
 			instance.Configs.EnablesConfig.ServerAddress = server.URL
 			var events []map[string]string
-			previousEmit := core.Emit
-			t.Cleanup(func() { core.Emit = previousEmit })
-			core.Emit = func(event string, data ...any) {
-				if event != core.EventChatTool {
+			previousEmit := backend.Emit
+			t.Cleanup(func() { backend.Emit = previousEmit })
+			backend.Emit = func(event string, data ...any) {
+				if event != backend.EventChatTool {
 					return
 				}
 				var payload map[string]string

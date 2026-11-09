@@ -8,17 +8,17 @@ import (
 	"reflect"
 	"testing"
 
-	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	filetool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/FileTool"
+	backend "github.com/caliniya/caf/core/Backend"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
 )
 
 func useFileToolKit(t *testing.T) *filetool.FileTool {
 	t.Helper()
-	previous := core.Platform
-	t.Cleanup(func() { core.Platform = previous })
-	core.Platform = &core.Core{FS: &desktopBackend.DesktopFileSystem{}}
+	previous := backend.Platform
+	t.Cleanup(func() { backend.Platform = previous })
+	backend.Platform = &backend.Core{FS: &desktopBackend.DesktopFileSystem{}}
 	return filetool.InitFileTool()
 }
 
@@ -368,11 +368,11 @@ func TestFileToolSymlinks(t *testing.T) {
 }
 
 func TestFileToolUninitializedFileSystem(t *testing.T) {
-	previous := core.Platform
-	t.Cleanup(func() { core.Platform = previous })
+	previous := backend.Platform
+	t.Cleanup(func() { backend.Platform = previous })
 	kit := filetool.InitFileTool()
-	for _, instance := range []*core.Core{nil, {}} {
-		core.Platform = instance
+	for _, instance := range []*backend.Core{nil, {}} {
+		backend.Platform = instance
 		for id, tool := range kit.Tools {
 			if _, err := tool.Fun(agenttool.CreateContext(t.TempDir(), agenttool.PermissionFullAccess), map[string]any{
 				"path": []string{"."}, "pattern": "*", "content": "文本",

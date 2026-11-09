@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	core "github.com/caliniya/caf/core"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	backend "github.com/caliniya/caf/core/Backend"
 	platform "github.com/caliniya/caf/platform"
 )
 
@@ -62,8 +62,8 @@ func resolveFilePath(ctx *agenttool.ToolContext, arg map[string]any) (string, er
 }
 
 func fileSystem() (platform.FilePlatform, error) {
-	if core.Platform == nil || core.Platform.FS == nil {
+	if backend.Platform == nil || backend.Platform.FS == nil {
 		return nil, errors.New("文件系统尚未初始化")
 	}
-	return core.Platform.FS, nil
+	return backend.Platform.FS, nil
 }
