@@ -429,6 +429,11 @@ func (c *Core) DeleteQQAdapter(id string) error {
 			}
 		}
 	}
+	return c.deleteQQAdapterLocked(id)
+}
+
+// 调用方持有 extMu，确保删除期间客户端归属不会发生变化。
+func (c *Core) deleteQQAdapterLocked(id string) error {
 	c.qqMu.Lock()
 	defer c.qqMu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)

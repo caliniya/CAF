@@ -1,8 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { CreateExtensionClient, DeleteExtensionClient, ListExtensionClients, RenameExtensionClient,
-  RemoveExtensionClientQQ, SetExtensionClientQQ, ListExtensionTypes, ListExtensions, CreateExtension,
-  UpdateExtensionParameters, SetClientExtensionEnabled, DeleteExtension,
+  RemoveExtensionClientQQ, SetExtensionClientQQ, ListExtensionTypes, ListClientExtensions, CreateClientExtension,
+  UpdateClientExtensionParameters, SetClientExtensionEnabled, DeleteClientExtension,
   type ExtensionClient, type ExtensionDescriptor, type ExtensionOption } from '../api'
 
 export const useExtensionStore = defineStore('extensions', () => {
@@ -62,8 +62,9 @@ export const useExtensionStore = defineStore('extensions', () => {
     optionsRefreshing = true
     const before = revision
     try {
-      const [descriptors, result] = await Promise.all([ListExtensionTypes(), ListExtensions()])
-      if (before === revision && !pending.value.length) { types.value = descriptors; options.value = result; optionsLoaded.value = true; optionsError.value = '' }
+      const [descriptors, owners] = await Promise.all([ListExtensionTypes(), ListExtensionClients()])
+      const result = (await Promise.all(owners.map((client) => ListClientExtensions(client.id)))).flat()
+      if (before === revision && !pending.value.length) { types.value = descriptors; clients.value = owners; loaded.value = true; options.value = result; optionsLoaded.value = true; optionsError.value = '' }
     } catch (err) { optionsError.value = String(err) }
     finally { optionsRefreshing = false }
   }
@@ -74,27 +75,25 @@ export const useExtensionStore = defineStore('extensions', () => {
     let stopped = false
     return () => { if (stopped) return; stopped = true; if (--watchers === 0) { clearInterval(polling); polling = undefined } }
   }
-  async function createOption(type: string, parameters: Record<string, string>) {
-    const result = await mutate('new-extension', () => CreateExtension(type, parameters))
+  async function createOption(clientId: string, type: string, parameters: Record<string, string>) {
+    const result = await mutate('new-extension:' + clientId, () => CreateClientExtension(clientId, type, parameters))
+    options.value.push(result)
     await refreshOptions()
     return result
   }
-  async function updateOption(id: string, parameters: Record<string, string>) {
-    await mutate('extension:' + id, () => UpdateExtensionParameters(id, parameters))
+  async function updateOption(clientId: string, id: string, parameters: Record<string, string>) {
+    await mutate('extension:' + id, () => UpdateClientExtensionParameters(clientId, id, parameters))
     await Promise.all([refreshOptions(), refresh()])
   }
   async function enableOption(clientId: string, id: string, enabled: boolean) {
     await mutate('extension:' + id, async () => replace(await SetClientExtensionEnabled(clientId, id, enabled)))
     await refreshOptions()
   }
-  async function deleteOption(id: string) {
-    await mutate('extension:' + id, () => DeleteExtension(id))
+  async function deleteOption(clientId: string, id: string) {
+    await mutate('extension:' + id, () => DeleteClientExtension(clientId, id))
     options.value = options.value.filter((item) => item.id !== id)
-  }
-  async function detachOption(clientId: string, id: string) {
-    await mutate('extension:' + id, async () => replace(await RemoveExtensionClientQQ(clientId, id)))
     await refreshOptions()
   }
   return { clients, loading, loaded, error, pending, refresh, replace, create, rename, setQQ, removeQQ, remove,
-    types, options, optionsLoaded, optionsError, refreshOptions, watchOptions, createOption, updateOption, enableOption, deleteOption, detachOption }
+    types, options, optionsLoaded, optionsError, refreshOptions, watchOptions, createOption, updateOption, enableOption, deleteOption }
 })

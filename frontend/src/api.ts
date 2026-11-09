@@ -28,6 +28,11 @@ export interface Configs {
 }
 
 interface CoreBindings {
+  ListClientExtensions(clientId: string): Promise<ExtensionOption[]>
+  CreateClientExtension(clientId: string, type: string, parameters: Record<string, string>): Promise<ExtensionOption>
+  GetClientExtensionParameters(clientId: string, id: string): Promise<Record<string, string>>
+  UpdateClientExtensionParameters(clientId: string, id: string, parameters: Record<string, string>): Promise<void>
+  DeleteClientExtension(clientId: string, id: string): Promise<void>
   ListExtensionTypes(): Promise<ExtensionDescriptor[]>
   ListExtensions(): Promise<ExtensionOption[]>
   GetExtensionParameters(id: string): Promise<Record<string, string>>
@@ -280,6 +285,11 @@ async function bridge(): Promise<CoreBindings> {
 }
 
 // QQ 适配器管理。
+export function ListClientExtensions(clientId: string): Promise<ExtensionOption[]> { return bridge().then((c) => c.ListClientExtensions(clientId)) }
+export function CreateClientExtension(clientId: string, type: string, parameters: Record<string, string>): Promise<ExtensionOption> { return bridge().then((c) => c.CreateClientExtension(clientId, type, parameters)) }
+export function GetClientExtensionParameters(clientId: string, id: string): Promise<Record<string, string>> { return bridge().then((c) => c.GetClientExtensionParameters(clientId, id)) }
+export function UpdateClientExtensionParameters(clientId: string, id: string, parameters: Record<string, string>): Promise<void> { return bridge().then((c) => c.UpdateClientExtensionParameters(clientId, id, parameters)) }
+export function DeleteClientExtension(clientId: string, id: string): Promise<void> { return bridge().then((c) => c.DeleteClientExtension(clientId, id)) }
 export function ListExtensionTypes(): Promise<ExtensionDescriptor[]> { return bridge().then((c) => c.ListExtensionTypes()) }
 export function ListExtensions(): Promise<ExtensionOption[]> { return bridge().then((c) => c.ListExtensions()) }
 export function GetExtensionParameters(id: string): Promise<Record<string, string>> { return bridge().then((c) => c.GetExtensionParameters(id)) }

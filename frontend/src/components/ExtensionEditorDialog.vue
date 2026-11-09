@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, useId, watch } from 'vue'
-import { GetExtensionParameters, type ExtensionOption } from '../api'
+import { GetClientExtensionParameters, type ExtensionOption } from '../api'
 import { useExtensionStore } from '../stores/extensions'
 import ExtensionWindow from './ExtensionWindow.vue'
 import ExtensionParameterFields from './ExtensionParameterFields.vue'
 import ConfirmationDialog from './ConfirmationDialog.vue'
-const props = defineProps<{ open: boolean; option?: ExtensionOption; clientId?: string }>()
+import ExtensionTypeCatalog from './ExtensionTypeCatalog.vue'
+const props = defineProps<{ open: boolean; option?: ExtensionOption; clientId: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const ext = useExtensionStore()
 const selectedType = ref('')
@@ -43,7 +44,7 @@ watch(() => props.open, async (open) => {
   loading.value = false
   if (!open || !props.option) return
   loading.value = true
-  try { const result = await GetExtensionParameters(props.option.id); if (current === generation) values.value = result }
+  try { const result = await GetClientExtensionParameters(props.clientId, props.option.id); if (current === generation) values.value = result }
   catch (err) { if (current === generation) error.value = String(err) }
   finally { if (current === generation) loading.value = false }
 }, { immediate: true })
@@ -51,8 +52,8 @@ async function save() {
   if (!valid.value || busy.value) return
   busy.value = true; error.value = ''
   try {
-    if (props.option) await ext.updateOption(props.option.id, values.value)
-    else await ext.createOption(selectedType.value, values.value)
+    if (props.option) await ext.updateOption(props.clientId, props.option.id, values.value)
+    else await ext.createOption(props.clientId, selectedType.value, values.value)
     emit('saved'); emit('close')
   } catch (err) { error.value = String(err) }
   finally { busy.value = false }
@@ -60,33 +61,25 @@ async function save() {
 async function remove() {
   if (!props.option) return
   busy.value = true; error.value = ''
-  try { await ext.deleteOption(props.option.id); deleteOpen.value = false; emit('close') }
-  catch (err) { error.value = String(err) }
-  finally { busy.value = false }
-}
-async function detach() {
-  if (!props.clientId || !props.option) return
-  busy.value = true; error.value = ''
-  try { await ext.detachOption(props.clientId, props.option.id); emit('close') }
+  try { await ext.deleteOption(props.clientId, props.option.id); deleteOpen.value = false; emit('close') }
   catch (err) { error.value = String(err) }
   finally { busy.value = false }
 }
 </script>
 <template>
-  <ExtensionWindow :open="open" :title="option ? '编辑扩展 · ' + option.name : '添加新的扩展'" :busy="busy" @close="emit('close')">
+  <ExtensionWindow :open="open" :title="option ? '编辑扩展 · ' + option.name : descriptor ? '创建扩展 · ' + descriptor.name : '新建扩展'" :busy="busy" @close="emit('close')">
     <p v-if="loading" class="muted" role="status">正在加载参数…</p>
+    <ExtensionTypeCatalog v-else-if="!option && !selectedType" :types="ext.types" selectable :busy="busy" @select="selectedType = $event" />
     <form v-else :id="formId" @submit.prevent="save">
-      <label v-if="!option" class="type-select">扩展类型<select v-model="selectedType" required :disabled="busy"><option value="" disabled>选择要创建的扩展</option><option v-for="type in ext.types" :key="type.type" :value="type.type">{{ type.name }}</option></select></label>
       <p v-if="descriptor?.description" class="description">{{ descriptor.description }}</p>
       <ExtensionParameterFields v-if="descriptor" :fields="descriptor.parameters" :values="values" :busy="busy" :running="option?.running" @change="(key, value) => values[key] = value" />
-      <p v-if="option?.clientName" class="owner">所属客户端：{{ option.clientName }}</p>
     </form>
     <p v-if="error && !deleteOpen" class="error" role="alert">{{ error }}</p>
     <template #footer>
-      <button v-if="option && clientId && option.clientId === clientId" type="button" class="btn btn-danger-outline" :disabled="busy" @click="detach">移出客户端</button>
-      <button v-else-if="option && !option.clientId" type="button" class="btn btn-danger-outline" :disabled="busy" @click="error = ''; deleteOpen = true">删除扩展</button>
+      <button v-if="option" type="button" class="btn btn-danger-outline" :disabled="busy" @click="error = ''; deleteOpen = true">删除扩展</button>
+      <button v-else-if="selectedType" type="button" class="btn btn-ghost" :disabled="busy" @click="selectedType = ''">返回类型列表</button>
       <span class="spacer"></span><button type="button" class="btn btn-ghost" :disabled="busy" @click="emit('close')">取消</button>
-      <button type="submit" class="btn btn-primary" :form="formId" :disabled="busy || loading || !valid">{{ busy ? '处理中…' : option ? '保存修改' : '创建扩展' }}</button>
+      <button v-if="option || selectedType" type="submit" class="btn btn-primary" :form="formId" :disabled="busy || loading || !valid">{{ busy ? '处理中…' : option ? '保存修改' : '创建扩展' }}</button>
     </template>
   </ExtensionWindow>
   <ConfirmationDialog :open="deleteOpen" title="删除扩展" :message="'确定删除扩展「' + (option?.name ?? '') + '」？'" confirm-label="删除" danger :busy="busy" :error="error" @cancel="deleteOpen = false" @confirm="remove" />

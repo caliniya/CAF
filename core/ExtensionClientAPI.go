@@ -220,12 +220,16 @@ func (c *Core) RenameExtensionClient(id, name string) (*ExtensionClient, error) 
 
 // SetExtensionClientQQ 绑定 QQ 实现。启用时启动监听，停用时关闭连接。
 func (c *Core) SetExtensionClientQQ(id, adapterID, name string, enabled bool) (*ExtensionClient, error) {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	return c.setExtensionClientQQLocked(id, adapterID, name, enabled)
+}
+
+func (c *Core) setExtensionClientQQLocked(id, adapterID, name string, enabled bool) (*ExtensionClient, error) {
 	name = strings.TrimSpace(name)
 	if !extensionCommandName.MatchString(name) {
 		return nil, errors.New("扩展名称必填，仅支持文字、数字、下划线和短横线，最长 32 个字符")
 	}
-	c.extMu.Lock()
-	defer c.extMu.Unlock()
 	client, err := c.readExtensionClientLocked(id)
 	if err != nil {
 		return nil, err

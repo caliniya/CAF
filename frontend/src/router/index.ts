@@ -4,7 +4,6 @@ import ConfigsPage from '../pages/ConfigsPage.vue'
 import SettingsGeneralPage from '../pages/SettingsGeneralPage.vue'
 import ExtClientsPage from '../pages/ExtClientsPage.vue'
 import ExtClientPage from '../pages/ExtClientPage.vue'
-import ExtAllExtensionsPage from '../pages/ExtAllExtensionsPage.vue'
 import { APP_AREAS, readAppArea } from '../navigation'
 
 // 桌面应用用 hash 路由：不依赖服务器路径重写，刷新后停留在当前页。
@@ -15,9 +14,9 @@ const router = createRouter({
     { path: '/', redirect: () => APP_AREAS[readAppArea()].path },
     { path: '/chat', component: ChatPage, meta: { title: '对话', mode: 'chat', area: 'agent' } },
     { path: '/ext', component: ExtClientsPage, meta: { title: '客户端', area: 'ext' } },
-    { path: '/ext/extensions', component: ExtAllExtensionsPage, meta: { title: '所有扩展', area: 'ext' } },
+    { path: '/ext/extensions', redirect: '/ext' },
     { path: '/ext/clients/:clientId', component: ExtClientPage, meta: { title: '编辑客户端', area: 'ext' } },
-    { path: '/ext/clients/:clientId/qq/:id', redirect: '/ext/extensions' },
+    { path: '/ext/clients/:clientId/qq/:id', redirect: '/ext' },
     { path: '/qq', redirect: '/ext' },
     { path: '/qq/clients', redirect: '/ext' },
     { path: '/qq/clients/:id', redirect: '/ext' },

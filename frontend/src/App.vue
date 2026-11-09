@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
-import { Check, ChevronDown, Monitor, Puzzle } from '@lucide/vue'
+import { Check, ChevronDown, Monitor } from '@lucide/vue'
 import { useChatStore } from './stores/chat'
 import SidebarTasks from './components/SidebarTasks.vue'
 import { APP_AREAS, readAppArea, saveAppArea, type AppArea } from './navigation'
@@ -192,7 +192,6 @@ function toggleSettings() {
       </template>
 
       <nav v-else class="nav" aria-label="扩展模式">
-        <RouterLink to="/ext/extensions" class="nav-item"><Puzzle :size="15" :stroke-width="1.7" aria-hidden="true" /><span>所有扩展</span></RouterLink>
         <RouterLink to="/ext" class="nav-item" exact-active-class="router-link-active" active-class="" :class="{ 'router-link-active': route.path.startsWith('/ext/clients') }">
           <Monitor :size="15" :stroke-width="1.7" aria-hidden="true" />
           <span>客户端</span>

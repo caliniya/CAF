@@ -111,12 +111,16 @@ func (c *Core) CreateExtension(kind string, parameters map[string]string) (*Exte
 
 // UpdateExtensionParameters 同步实例参数及绑定名称，失败时恢复已写入的适配器配置。
 func (c *Core) UpdateExtensionParameters(id string, parameters map[string]string) error {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	return c.updateExtensionParametersLocked(id, parameters)
+}
+
+func (c *Core) updateExtensionParametersLocked(id string, parameters map[string]string) error {
 	name, token, selfID, port, err := parseOneBot11Parameters(parameters)
 	if err != nil {
 		return err
 	}
-	c.extMu.Lock()
-	defer c.extMu.Unlock()
 	clients, err := c.listExtensionClientsLocked()
 	if err != nil {
 		return err
@@ -155,11 +159,136 @@ func (c *Core) UpdateExtensionParameters(id string, parameters map[string]string
 }
 
 func (c *Core) SetClientExtensionEnabled(clientID, extensionID string, enabled bool) (*ExtensionClient, error) {
-	parameters, err := c.GetExtensionParameters(extensionID)
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	client, i, err := c.clientExtensionLocked(clientID, extensionID)
 	if err != nil {
 		return nil, err
 	}
-	return c.SetExtensionClientQQ(clientID, extensionID, parameters["name"], enabled)
+	return c.setExtensionClientQQLocked(clientID, extensionID, client.Extensions[i].Name, enabled)
 }
 
 func (c *Core) DeleteExtension(id string) error { return c.DeleteQQAdapter(id) }
+
+// clientExtensionLocked 验证实例归属，禁止跨客户端读取、编辑和删除。
+func (c *Core) clientExtensionLocked(clientID, extensionID string) (*ExtensionClient, int, error) {
+	client, err := c.readExtensionClientLocked(clientID)
+	if err != nil {
+		return nil, -1, err
+	}
+	for i, item := range client.Extensions {
+		if item.AdapterID == extensionID {
+			return client, i, nil
+		}
+	}
+	return nil, -1, errors.New("扩展不属于此客户端")
+}
+
+func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	client, err := c.readExtensionClientLocked(clientID)
+	if err != nil {
+		return nil, err
+	}
+	c.qqMu.Lock()
+	defer c.qqMu.Unlock()
+	if err := c.loadQQAdaptersLocked(); err != nil {
+		return nil, err
+	}
+	options := make([]ExtensionOption, 0, len(client.Extensions))
+	for _, binding := range client.Extensions {
+		i, err := c.qqAdapterIndexLocked(binding.AdapterID)
+		if err != nil {
+			return nil, err
+		}
+		view := c.qqAdapterViewLocked(c.qqAdapters[i])
+		label := "未启动"
+		if view.State == "disconnected" {
+			label = "未连接"
+		} else if view.State == "connected" {
+			label = "已连接"
+		}
+		values := map[string]string{"status": label, "address": view.Address}
+		if running := c.qqClients[binding.AdapterID]; running != nil && running.client != nil {
+			values = running.client.UIValues()
+		}
+		options = append(options, ExtensionOption{ID: binding.AdapterID, Type: binding.Type, Name: binding.Name, ClientID: client.ID, ClientName: client.Name, Enabled: binding.Enabled, Running: view.State != "stopped", Values: values, LastError: view.LastError})
+	}
+	return options, nil
+}
+
+// CreateClientExtension 创建独立实例并保存到当前客户端，初始为停用。
+func (c *Core) CreateClientExtension(clientID, kind string, parameters map[string]string) (*ExtensionOption, error) {
+	if kind != qq.ExtensionType {
+		return nil, errors.New("不支持的扩展类型")
+	}
+	name, token, selfID, port, err := parseOneBot11Parameters(parameters)
+	if err != nil {
+		return nil, err
+	}
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	client, err := c.readExtensionClientLocked(clientID)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range client.Extensions {
+		if item.Name == name {
+			return nil, errors.New("该客户端已存在同名扩展")
+		}
+	}
+	adapter, err := c.createQQAdapter(name, token, selfID, port)
+	if err != nil {
+		return nil, err
+	}
+	client.Extensions = append(client.Extensions, ClientExtension{Type: kind, Name: name, AdapterID: adapter.ID})
+	if err := c.saveExtensionClientLocked(client); err != nil {
+		_ = c.deleteQQAdapterLocked(adapter.ID)
+		return nil, err
+	}
+	return &ExtensionOption{ID: adapter.ID, Type: kind, Name: name, ClientID: client.ID, ClientName: client.Name, Values: map[string]string{"status": "未启动", "address": adapter.Address}}, nil
+}
+
+func (c *Core) GetClientExtensionParameters(clientID, extensionID string) (map[string]string, error) {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	client, i, err := c.clientExtensionLocked(clientID, extensionID)
+	if err != nil {
+		return nil, err
+	}
+	adapter, err := c.GetQQAdapter(extensionID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"name": client.Extensions[i].Name, "token": adapter.Token, "selfId": adapter.SelfID, "port": strconv.Itoa(adapter.Port)}, nil
+}
+
+func (c *Core) UpdateClientExtensionParameters(clientID, extensionID string, parameters map[string]string) error {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	if _, _, err := c.clientExtensionLocked(clientID, extensionID); err != nil {
+		return err
+	}
+	return c.updateExtensionParametersLocked(extensionID, parameters)
+}
+
+func (c *Core) DeleteClientExtension(clientID, extensionID string) error {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	client, i, err := c.clientExtensionLocked(clientID, extensionID)
+	if err != nil {
+		return err
+	}
+	previous := append([]ClientExtension{}, client.Extensions...)
+	client.Extensions = append(client.Extensions[:i:i], client.Extensions[i+1:]...)
+	if err := c.saveExtensionClientLocked(client); err != nil {
+		return err
+	}
+	if err := c.deleteQQAdapterLocked(extensionID); err != nil {
+		client.Extensions = previous
+		_ = c.saveExtensionClientLocked(client)
+		return err
+	}
+	return nil
+}

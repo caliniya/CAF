@@ -5,14 +5,14 @@ import type { ExtensionOption } from '../api'
 import { useExtensionStore } from '../stores/extensions'
 import ExtensionWindow from './ExtensionWindow.vue'
 import ExtensionEditorDialog from './ExtensionEditorDialog.vue'
-const props = defineProps<{ clientId?: string }>()
+const props = defineProps<{ clientId: string }>()
 const ext = useExtensionStore()
 const infoId = ref('')
 const editId = ref('')
 const error = ref('')
-const options = computed(() => props.clientId ? ext.options.filter((option) => !option.clientId || option.clientId === props.clientId) : ext.options)
-const info = computed(() => ext.options.find((option) => option.id === infoId.value))
-const editing = computed(() => ext.options.find((option) => option.id === editId.value))
+const options = computed(() => ext.options.filter((option) => option.clientId === props.clientId))
+const info = computed(() => options.value.find((option) => option.id === infoId.value))
+const editing = computed(() => options.value.find((option) => option.id === editId.value))
 function descriptor(option: ExtensionOption) { return ext.types.find((type) => type.type === option.type) }
 async function toggle(option: ExtensionOption, event: Event) {
   if (!props.clientId) return
@@ -27,11 +27,11 @@ async function toggle(option: ExtensionOption, event: Event) {
 <template>
   <p v-if="ext.optionsError || error" class="list-error" role="alert">{{ error || ext.optionsError }}<button type="button" class="btn btn-ghost btn-sm" @click="ext.refreshOptions">重试</button></p>
   <p v-if="!ext.optionsLoaded" class="empty" role="status">正在加载扩展…</p>
-  <p v-else-if="!options.length" class="empty">还没有可用的扩展。</p>
+  <p v-else-if="!options.length" class="empty">此客户端还没有扩展，点击「新建扩展」创建。</p>
   <ul v-else class="options-list" aria-label="扩展列表">
     <li v-for="option in options" :key="option.id" class="option-row" :aria-busy="ext.pending.includes('extension:' + option.id)">
       <Puzzle :size="19" class="option-icon" aria-hidden="true" />
-      <div class="option-identity"><strong>{{ option.name }}</strong><span>{{ descriptor(option)?.name ?? option.type }}</span><span v-if="!clientId && option.clientName">{{ option.clientName }} · {{ option.enabled ? '已启用' : '已停用' }}</span></div>
+      <div class="option-identity"><strong>{{ option.name }}</strong><span>{{ descriptor(option)?.name ?? option.type }}</span></div>
       <span v-for="field in descriptor(option)?.information.filter((value) => value.inList)" :key="field.key" class="inline-information">{{ option.values[field.key] || '—' }}</span>
       <input v-if="clientId" type="checkbox" class="switch" :checked="option.clientId === clientId && option.enabled" :disabled="ext.pending.includes('extension:' + option.id)" :aria-label="'启用扩展 ' + option.name" @change="toggle(option, $event)" />
       <div class="option-actions"><button type="button" class="btn btn-ghost row-action" :aria-label="'扩展信息 ' + option.name" title="扩展信息" @click="infoId = option.id"><Info :size="15" aria-hidden="true" /></button><button type="button" class="btn btn-ghost row-action" :disabled="ext.pending.includes('extension:' + option.id)" :aria-label="'编辑扩展 ' + option.name" title="编辑扩展" @click="editId = option.id"><Pencil :size="15" aria-hidden="true" /></button></div>
