@@ -55,7 +55,7 @@ export const useExtensionStore = defineStore('extensions', () => {
     return mutate(id, async () => { const client = await RemoveExtensionClientQQ(id, adapterId); replace(client); return client })
   }
   async function remove(id: string) {
-    return mutate(id, async () => { await DeleteExtensionClient(id); clients.value = clients.value.filter((item) => item.id !== id) })
+    return mutate(id, async () => { await DeleteExtensionClient(id); clients.value = clients.value.filter((item) => item.id !== id); options.value = options.value.filter((item) => item.clientId !== id) })
   }
   async function refreshOptions() {
     if (optionsRefreshing) return

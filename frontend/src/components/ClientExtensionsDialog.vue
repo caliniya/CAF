@@ -14,15 +14,21 @@ let stop: (() => void) | undefined
 const page = ref<'instances' | 'catalog'>('instances')
 const createOpen = ref(false)
 const panelId = useId()
+function onTabKeydown(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  page.value = event.key === 'Home' ? 'catalog' : event.key === 'End' ? 'instances' : page.value === 'instances' ? 'catalog' : 'instances'
+  document.getElementById(panelId + '-' + page.value + '-tab')?.focus()
+}
 watch(() => props.open, (open) => { stop?.(); stop = open ? ext.watchOptions() : undefined; page.value = 'instances'; createOpen.value = false }, { immediate:true })
 watch(() => props.client?.id, () => { page.value = 'instances'; createOpen.value = false })
 onUnmounted(() => stop?.())
 </script>
 <template>
   <ExtensionWindow :open="open" :title="(client?.name ?? '') + ' · 扩展'" wide @close="emit('close')">
-    <div class="extensions-toolbar"><div role="tablist" aria-label="扩展页面" class="extension-tabs">
-      <button :id="panelId + '-instances-tab'" type="button" role="tab" :aria-selected="page === 'instances'" :aria-controls="panelId" class="tab-button" :class="{ active: page === 'instances' }" @click="page = 'instances'">已创建扩展</button>
-      <button :id="panelId + '-catalog-tab'" type="button" role="tab" :aria-selected="page === 'catalog'" :aria-controls="panelId" class="tab-button" :class="{ active: page === 'catalog' }" @click="page = 'catalog'">所有扩展</button>
+    <div class="extensions-toolbar"><div role="tablist" aria-label="扩展页面" class="extension-tabs" @keydown="onTabKeydown">
+      <button :id="panelId + '-catalog-tab'" type="button" role="tab" :aria-selected="page === 'catalog'" :aria-controls="panelId" :tabindex="page === 'catalog' ? 0 : -1" class="tab-button" :class="{ active: page === 'catalog' }" @click="page = 'catalog'">所有扩展</button>
+      <button :id="panelId + '-instances-tab'" type="button" role="tab" :aria-selected="page === 'instances'" :aria-controls="panelId" :tabindex="page === 'instances' ? 0 : -1" class="tab-button" :class="{ active: page === 'instances' }" @click="page = 'instances'">已创建扩展</button>
     </div><button type="button" class="btn btn-primary" @click="createOpen = true"><Plus :size="14" aria-hidden="true" />新建扩展</button></div>
     <div :id="panelId" role="tabpanel" :aria-labelledby="panelId + (page === 'instances' ? '-instances-tab' : '-catalog-tab')">
       <ExtensionOptionsList v-if="client && page === 'instances'" :key="client.id" :client-id="client.id" />

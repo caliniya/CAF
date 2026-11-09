@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	core "github.com/caliniya/caf/core"
 	qq "github.com/caliniya/caf/core/Extension/QQ"
 	platform "github.com/caliniya/caf/platform"
 )
@@ -73,6 +74,9 @@ func TestExtensionUICreatesPortsListsDisabledAndEditsBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := instance.SetExtensionClientQQ(owner.ID, created.ID, parameters["name"], false); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := instance.SetClientExtensionEnabled(owner.ID, created.ID, true); err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +127,128 @@ func TestExtensionUICreatesPortsListsDisabledAndEditsBindings(t *testing.T) {
 	owner, err = instance.GetExtensionClient(owner.ID)
 	if err != nil || owner.Extensions[0].Type != qq.ExtensionType {
 		t.Fatalf("old type not migrated: %+v / %v", owner, err)
+	}
+}
+
+func TestClientExtensionsAreIndependent(t *testing.T) {
+	instance := useQQAdapterCore(t)
+	firstClient, err := instance.CreateExtensionClient("First", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondClient, err := instance.CreateExtensionClient("Second", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := func(clientID, token string) *core.ExtensionOption {
+		t.Helper()
+		preview, err := instance.GetQQAdapterAddress()
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := strings.Split(strings.TrimPrefix(preview, "ws://127.0.0.1:"), "/")[0]
+		option, err := instance.CreateClientExtension(clientID, qq.ExtensionType, map[string]string{"name": "助手", "token": token, "port": port})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if option.ClientID != clientID || option.Enabled || option.Running {
+			t.Fatalf("new extension not owned/stopped: %+v", option)
+		}
+		return option
+	}
+	first := create(firstClient.ID, "first-token")
+	second := create(secondClient.ID, "second-token")
+	if first.ID == second.ID || first.Values["address"] == second.Values["address"] {
+		t.Fatal("clients reused one extension instance")
+	}
+	for _, pair := range []struct{ clientID, instanceID string }{{firstClient.ID, first.ID}, {secondClient.ID, second.ID}} {
+		options, err := instance.ListClientExtensions(pair.clientID)
+		if err != nil || len(options) != 1 || options[0].ID != pair.instanceID {
+			t.Fatalf("client sees other extensions: %+v / %v", options, err)
+		}
+	}
+	if _, err := instance.CreateClientExtension(firstClient.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": "65001"}); err == nil {
+		t.Fatal("same-client name collision accepted")
+	}
+	if _, err := instance.GetClientExtensionParameters(secondClient.ID, first.ID); err == nil {
+		t.Fatal("cross-client parameter read accepted")
+	}
+	parameters, err := instance.GetClientExtensionParameters(firstClient.ID, first.ID)
+	if err != nil || parameters["token"] != "first-token" {
+		t.Fatalf("wrong client's token: %+v / %v", parameters, err)
+	}
+	parameters["name"] = "renamed"
+	if err := instance.UpdateClientExtensionParameters(secondClient.ID, first.ID, parameters); err == nil {
+		t.Fatal("cross-client edit accepted")
+	}
+	if _, err := instance.SetClientExtensionEnabled(secondClient.ID, first.ID, true); err == nil {
+		t.Fatal("cross-client enabling accepted")
+	}
+	if err := instance.DeleteClientExtension(secondClient.ID, first.ID); err == nil {
+		t.Fatal("cross-client delete accepted")
+	}
+	if err := instance.UpdateClientExtensionParameters(firstClient.ID, first.ID, parameters); err != nil {
+		t.Fatal(err)
+	}
+	secondParameters, err := instance.GetClientExtensionParameters(secondClient.ID, second.ID)
+	if err != nil || secondParameters["name"] != "助手" || secondParameters["token"] != "second-token" {
+		t.Fatalf("edit changed other client: %+v / %v", secondParameters, err)
+	}
+	if _, err := instance.SetClientExtensionEnabled(firstClient.ID, first.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := instance.SetClientExtensionEnabled(secondClient.ID, second.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.DeleteClientExtension(firstClient.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	options, err := instance.ListClientExtensions(firstClient.ID)
+	if err != nil || len(options) != 0 {
+		t.Fatalf("deleted extension still listed: %+v / %v", options, err)
+	}
+	if _, err := instance.GetQQAdapter(first.ID); err == nil {
+		t.Fatal("delete left global extension instance")
+	}
+	options, err = instance.ListClientExtensions(secondClient.ID)
+	if err != nil || len(options) != 1 || !options[0].Enabled || !options[0].Running {
+		t.Fatalf("deleting affected other client: %+v / %v", options, err)
+	}
+	reloaded := &core.Core{Paths: instance.Paths, FS: instance.FS}
+	options, err = reloaded.ListClientExtensions(secondClient.ID)
+	if err != nil || len(options) != 1 || options[0].ID != second.ID {
+		t.Fatalf("ownership not persisted: %+v / %v", options, err)
+	}
+}
+
+func TestClientExtensionCreationRollsBackFailedOwnershipSave(t *testing.T) {
+	instance := useQQAdapterCore(t)
+	owner, err := instance.CreateExtensionClient("Main", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := instance.GetQQAdapterAddress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strings.Split(strings.TrimPrefix(preview, "ws://127.0.0.1:"), "/")[0]
+	original := instance.FS
+	instance.FS = failingClientMetadataFS{original}
+	_, err = instance.CreateClientExtension(owner.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port})
+	instance.FS = original
+	if err == nil {
+		t.Fatal("created extension without persisted owner")
+	}
+	options, err := instance.ListQQAdapters()
+	if err != nil || len(options) != 0 {
+		t.Fatalf("failed creation left unowned instance: %+v / %v", options, err)
+	}
+	client, err := instance.GetExtensionClient(owner.ID)
+	if err != nil || len(client.Extensions) != 0 {
+		t.Fatalf("failed creation changed client: %+v / %v", client, err)
+	}
+	if _, err := instance.CreateClientExtension(owner.ID, qq.ExtensionType, map[string]string{"name": "助手", "token": "token", "port": port}); err != nil {
+		t.Fatalf("failed creation reserved port/name: %v", err)
 	}
 }
 

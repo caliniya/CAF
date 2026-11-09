@@ -1,6 +1,3 @@
-// Package Extension 定义 Agent 与外部软件之间的扩展契约。
-// 本包不依赖模型、QQ、桌面运行时或任何具体协议。
-// 实现的方法可以与 Events 的单消费者并发使用；Close 也允许并发调用。
 package Extension
 
 import (

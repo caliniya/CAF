@@ -38,7 +38,7 @@ watch(selectedType, () => {
     values.value.port = String(port)
   }
 })
-watch(() => props.open, async (open) => {
+watch(() => [props.open, props.clientId, props.option?.id] as const, async ([open]) => {
   const current = ++generation
   error.value = ''; deleteOpen.value = false; selectedType.value = ''; values.value = {}
   loading.value = false
