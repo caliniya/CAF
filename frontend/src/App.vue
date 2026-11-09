@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
-import { Check, ChevronDown, MessageCircle, Monitor } from '@lucide/vue'
+import { Check, ChevronDown, Monitor } from '@lucide/vue'
 import { useChatStore } from './stores/chat'
 import SidebarTasks from './components/SidebarTasks.vue'
 import { APP_AREAS, readAppArea, saveAppArea, type AppArea } from './navigation'
@@ -14,7 +14,7 @@ const inSettings = computed(() => route.path.startsWith('/settings'))
 const selectedArea = ref<AppArea>(readAppArea())
 const areaOptions = [
   { id: 'agent', ...APP_AREAS.agent },
-  { id: 'qq', ...APP_AREAS.qq },
+  { id: 'ext', ...APP_AREAS.ext },
 ] as const
 const activeArea = computed(() => APP_AREAS[selectedArea.value])
 const areaMenuOpen = ref(false)
@@ -26,7 +26,7 @@ const areaMenuId = useId() + '-area-menu'
 watch(
   () => route.meta.area,
   (area) => {
-    if (area !== 'agent' && area !== 'qq') return
+    if (area !== 'agent' && area !== 'ext') return
     selectedArea.value = area
     saveAppArea(area)
   },
@@ -191,12 +191,8 @@ function toggleSettings() {
         <SidebarTasks />
       </template>
 
-      <nav v-else class="nav" aria-label="QQ">
-        <RouterLink to="/qq" class="nav-item">
-          <MessageCircle :size="15" :stroke-width="1.7" aria-hidden="true" />
-          <span>消息</span>
-        </RouterLink>
-        <RouterLink to="/qq/clients" class="nav-item">
+      <nav v-else class="nav" aria-label="扩展模式">
+        <RouterLink to="/ext" class="nav-item">
           <Monitor :size="15" :stroke-width="1.7" aria-hidden="true" />
           <span>客户端</span>
         </RouterLink>

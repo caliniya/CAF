@@ -22,6 +22,7 @@ type Core struct {
 	qqMu       sync.Mutex
 	qqAdapters []qqAdapterConfig
 	qqClients  map[string]*qqAdapterRuntime
+	extMu      sync.Mutex
 
 	ChatList map[string]chat.ChatTask
 }

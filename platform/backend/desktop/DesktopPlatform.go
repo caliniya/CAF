@@ -46,6 +46,7 @@ func Init(assets fs.FS) error {
 			core.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)
 			}
+			core.Platform.StartExtensionClients()
 		},
 		OnShutdown: func(ctx context.Context) {
 			core.Platform.CloseQQAdapters()

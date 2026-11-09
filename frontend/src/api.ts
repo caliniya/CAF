@@ -28,6 +28,13 @@ export interface Configs {
 }
 
 interface CoreBindings {
+  ListExtensionClients(): Promise<ExtensionClient[]>
+  GetExtensionClient(id: string): Promise<ExtensionClient>
+  CreateExtensionClient(name: string, id: string): Promise<ExtensionClient>
+  RenameExtensionClient(id: string, name: string): Promise<ExtensionClient>
+  DeleteExtensionClient(id: string): Promise<void>
+  SetExtensionClientQQ(id: string, adapterId: string, name: string, enabled: boolean): Promise<ExtensionClient>
+  RemoveExtensionClientQQ(id: string, adapterId: string): Promise<ExtensionClient>
   ListQQAdapters(): Promise<QQAdapter[]>
   GetQQAdapter(id: string): Promise<QQAdapter>
   GetQQAdapterAddress(): Promise<string>
@@ -69,6 +76,19 @@ interface CoreBindings {
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
   EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
+}
+
+export interface ClientExtension {
+  type: 'qq'
+  name: string
+  enabled: boolean
+  adapterId?: string
+}
+
+export interface ExtensionClient {
+  id: string
+  name: string
+  extensions: ClientExtension[]
 }
 
 export interface QQAdapter {
@@ -212,6 +232,14 @@ async function bridge(): Promise<CoreBindings> {
 }
 
 // QQ 适配器管理。
+export function ListExtensionClients(): Promise<ExtensionClient[]> { return bridge().then((c) => c.ListExtensionClients()) }
+export function GetExtensionClient(id: string): Promise<ExtensionClient> { return bridge().then((c) => c.GetExtensionClient(id)) }
+export function CreateExtensionClient(name: string, id: string): Promise<ExtensionClient> { return bridge().then((c) => c.CreateExtensionClient(name, id)) }
+export function RenameExtensionClient(id: string, name: string): Promise<ExtensionClient> { return bridge().then((c) => c.RenameExtensionClient(id, name)) }
+export function DeleteExtensionClient(id: string): Promise<void> { return bridge().then((c) => c.DeleteExtensionClient(id)) }
+export function SetExtensionClientQQ(id: string, adapterId: string, name: string, enabled: boolean): Promise<ExtensionClient> { return bridge().then((c) => c.SetExtensionClientQQ(id, adapterId, name, enabled)) }
+export function RemoveExtensionClientQQ(id: string, adapterId: string): Promise<ExtensionClient> { return bridge().then((c) => c.RemoveExtensionClientQQ(id, adapterId)) }
+
 export function ListQQAdapters(): Promise<QQAdapter[]> {
   return bridge().then((c) => c.ListQQAdapters())
 }

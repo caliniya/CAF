@@ -10,6 +10,7 @@ import { QQ_STATE_LABELS, useQQStore } from '../stores/qq'
 const route = useRoute()
 const router = useRouter()
 const qq = useQQStore()
+const backPath = computed(() => '/ext/clients/' + String(route.params.clientId))
 const details = ref<QQAdapter | null>(null)
 const input = ref<QQAdapterInput>({ name: '', token: '', selfId: '' })
 const loading = ref(true)
@@ -64,7 +65,7 @@ async function remove() {
   try {
     await qq.remove(details.value.id)
     deleteOpen.value = false
-    await router.push('/qq/clients')
+    await router.push(backPath.value)
   } catch (err) { deleteError.value = String(err) }
   finally { busy.value = false }
 }
@@ -74,8 +75,8 @@ async function remove() {
   <section class="edit-page" aria-labelledby="edit-title">
     <header class="edit-head">
       <button type="button" class="btn btn-ghost back-button" aria-label="返回客户端列表"
-        :disabled="busy" @click="router.push('/qq/clients')"><ArrowLeft :size="18" aria-hidden="true" /></button>
-      <h1 id="edit-title">编辑客户端</h1>
+        :disabled="busy" @click="router.push(backPath)"><ArrowLeft :size="18" aria-hidden="true" /></button>
+      <h1 id="edit-title">QQ 适配器配置</h1>
     </header>
     <div class="edit-content">
       <p v-if="loading" class="edit-hint" role="status">正在加载客户端…</p>
@@ -93,20 +94,20 @@ async function remove() {
         <p v-if="error" class="edit-error" role="alert">{{ error }}</p>
         <p v-if="saved" class="saved-message" role="status">修改已保存</p>
         <div class="edit-actions">
-          <button type="button" class="btn btn-ghost" :disabled="busy" @click="router.push('/qq/clients')">返回列表</button>
+          <button type="button" class="btn btn-ghost" :disabled="busy" @click="router.push(backPath)">返回客户端</button>
           <button type="submit" class="btn btn-primary" :disabled="busy || !input.name.trim() || !input.token.trim()">
             {{ busy ? '处理中…' : '保存修改' }}
           </button>
         </div>
         <div class="delete-section">
-          <div><h2>删除客户端</h2><p class="edit-hint">删除适配器及其配置，运行中的连接会同时关闭。</p></div>
+          <div><h2>删除适配器</h2><p class="edit-hint">请先在客户端中移除扩展绑定，再删除适配器。</p></div>
           <button type="button" class="btn btn-danger-outline" :disabled="busy"
             @click="deleteError = ''; deleteOpen = true"><Trash2 :size="14" aria-hidden="true" />删除</button>
         </div>
       </form>
     </div>
-    <ConfirmationDialog :open="deleteOpen" title="删除客户端" confirm-label="删除" danger
-      :message="'确定删除客户端「' + (details?.name ?? '') + '」？运行中的连接会关闭，适配器配置将被删除。'"
+    <ConfirmationDialog :open="deleteOpen" title="删除适配器" confirm-label="删除" danger
+      :message="'确定删除适配器「' + (details?.name ?? '') + '」？运行中的连接会关闭，适配器配置将被删除。'"
       :busy="busy" :error="deleteError" @cancel="deleteOpen = false" @confirm="remove" />
   </section>
 </template>

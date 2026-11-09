@@ -29,6 +29,7 @@ type qqAdapterConfig struct {
 type qqAdapterRuntime struct {
 	client qq.Extension
 	err    string
+	cancel context.CancelFunc
 }
 
 // QQAdapter 的列表响应不包含令牌；编辑时通过 GetQQAdapter 单独读取。
@@ -288,21 +289,32 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := client.Start(context.Background()); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := client.Start(ctx); err != nil {
+		cancel()
 		_ = client.Close()
 		return nil, err
 	}
 	if c.qqClients == nil {
 		c.qqClients = map[string]*qqAdapterRuntime{}
 	}
-	c.qqClients[id] = &qqAdapterRuntime{client: client}
-	go c.consumeQQAdapterEvents(id, client)
+	c.qqClients[id] = &qqAdapterRuntime{client: client, cancel: cancel}
+	go c.consumeQQAdapterEvents(ctx, id, client)
 	view := c.qqAdapterViewLocked(config)
 	return &view, nil
 }
 
 // 持续消费事件，避免消息堆积阻塞连接；上层可订阅 qq:event 继续分发。
-func (c *Core) consumeQQAdapterEvents(id string, client qq.Extension) {
+func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client qq.Extension) {
+	commands := make(chan qqCommandJob, 32)
+	go c.runQQCommands(ctx, id, client, commands)
+	defer func() {
+		c.qqMu.Lock()
+		defer c.qqMu.Unlock()
+		if running := c.qqClients[id]; running != nil && running.client == client {
+			running.cancel()
+		}
+	}()
 	for envelope := range client.Events() {
 		var event qq.Event
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
@@ -327,6 +339,12 @@ func (c *Core) consumeQQAdapterEvents(id string, client qq.Extension) {
 			}
 		}
 		c.qqMu.Unlock()
+		if event.Message != nil {
+			select {
+			case commands <- qqCommandJob{Message: *event.Message}:
+			default:
+			}
+		}
 		if Emit != nil {
 			Emit("extension:event", struct {
 				ExtensionID string          `json:"extensionId"`
@@ -341,6 +359,7 @@ func (c *Core) consumeQQAdapterEvents(id string, client qq.Extension) {
 	c.qqMu.Lock()
 	defer c.qqMu.Unlock()
 	if running := c.qqClients[id]; running != nil && running.client == client {
+		running.cancel()
 		running.err = client.Info().LastError
 		running.client = nil
 	}
@@ -354,6 +373,7 @@ func (c *Core) StopQQAdapter(id string) (*QQAdapter, error) {
 		return nil, err
 	}
 	if running := c.qqClients[id]; running != nil && running.client != nil {
+		running.cancel()
 		if err := running.client.Close(); err != nil {
 			return nil, err
 		}
@@ -364,6 +384,19 @@ func (c *Core) StopQQAdapter(id string) (*QQAdapter, error) {
 }
 
 func (c *Core) DeleteQQAdapter(id string) error {
+	c.extMu.Lock()
+	defer c.extMu.Unlock()
+	clients, err := c.listExtensionClientsLocked()
+	if err != nil {
+		return err
+	}
+	for _, owner := range clients {
+		for _, item := range owner.Extensions {
+			if item.AdapterID == id {
+				return errors.New("请先在客户端中解除 QQ 适配器绑定，再删除适配器")
+			}
+		}
+	}
 	c.qqMu.Lock()
 	defer c.qqMu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)
@@ -376,6 +409,7 @@ func (c *Core) DeleteQQAdapter(id string) error {
 		return err
 	}
 	if running := c.qqClients[id]; running != nil && running.client != nil {
+		running.cancel()
 		_ = running.client.Close()
 	}
 	delete(c.qqClients, id)
@@ -386,6 +420,9 @@ func (c *Core) CloseQQAdapters() {
 	c.qqMu.Lock()
 	defer c.qqMu.Unlock()
 	for id, running := range c.qqClients {
+		if running.cancel != nil {
+			running.cancel()
+		}
 		if running.client != nil {
 			_ = running.client.Close()
 		}

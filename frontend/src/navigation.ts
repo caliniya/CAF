@@ -1,15 +1,16 @@
-export type AppArea = 'agent' | 'qq'
+export type AppArea = 'agent' | 'ext'
 
 export const APP_AREAS = {
   agent: { name: 'Agent', path: '/chat' },
-  qq: { name: 'QQ', path: '/qq' },
+  ext: { name: 'Ext', path: '/ext' },
 } as const
 
 const AREA_KEY = 'caf.active-area'
 
 export function readAppArea(): AppArea {
   try {
-    return localStorage.getItem(AREA_KEY) === 'qq' ? 'qq' : 'agent'
+    const saved = localStorage.getItem(AREA_KEY)
+    return saved === 'ext' || saved === 'qq' ? 'ext' : 'agent'
   } catch {
     return 'agent'
   }

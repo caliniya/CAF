@@ -2,21 +2,24 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import ChatPage from '../pages/ChatPage.vue'
 import ConfigsPage from '../pages/ConfigsPage.vue'
 import SettingsGeneralPage from '../pages/SettingsGeneralPage.vue'
-import QQPage from '../pages/QQPage.vue'
-import QQClientsPage from '../pages/QQClientsPage.vue'
+import ExtClientsPage from '../pages/ExtClientsPage.vue'
+import ExtClientPage from '../pages/ExtClientPage.vue'
 import QQClientEditPage from '../pages/QQClientEditPage.vue'
 import { APP_AREAS, readAppArea } from '../navigation'
 
 // 桌面应用用 hash 路由：不依赖服务器路径重写，刷新后停留在当前页。
-// meta.area 标识 Agent 或 QQ；设置页保留进入前选择的界面。
+// meta.area 标识 Agent 或 Ext；设置页保留进入前选择的界面。
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', redirect: () => APP_AREAS[readAppArea()].path },
     { path: '/chat', component: ChatPage, meta: { title: '对话', mode: 'chat', area: 'agent' } },
-    { path: '/qq', component: QQPage, meta: { title: 'QQ', mode: 'qq', area: 'qq' } },
-    { path: '/qq/clients', component: QQClientsPage, meta: { title: '客户端', area: 'qq' } },
-    { path: '/qq/clients/:id', component: QQClientEditPage, meta: { title: '编辑客户端', area: 'qq' } },
+    { path: '/ext', component: ExtClientsPage, meta: { title: '客户端', area: 'ext' } },
+    { path: '/ext/clients/:clientId', component: ExtClientPage, meta: { title: '客户端扩展', area: 'ext' } },
+    { path: '/ext/clients/:clientId/qq/:id', component: QQClientEditPage, meta: { title: 'QQ 适配器', area: 'ext' } },
+    { path: '/qq', redirect: '/ext' },
+    { path: '/qq/clients', redirect: '/ext' },
+    { path: '/qq/clients/:id', redirect: '/ext' },
     {
       path: '/settings/models',
       component: ConfigsPage,
