@@ -69,6 +69,9 @@ func (c *Core) loadQQAdaptersLocked() error {
 	}
 	ids, ports := map[string]bool{}, map[int]bool{}
 	for _, config := range stored.Adapters {
+		if _, _, _, err := validateQQAdapter(config.Name, config.Token, config.SelfID); err != nil {
+			return fmt.Errorf("QQ 适配器配置无效：%w", err)
+		}
 		if config.ID == "" || ids[config.ID] || config.Port < 1 || config.Port > 65535 || ports[config.Port] {
 			return errors.New("QQ 适配器配置包含无效或重复的 ID / 端口")
 		}
