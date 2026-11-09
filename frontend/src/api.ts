@@ -28,6 +28,13 @@ export interface Configs {
 }
 
 interface CoreBindings {
+  ListExtensionTypes(): Promise<ExtensionDescriptor[]>
+  ListExtensions(): Promise<ExtensionOption[]>
+  GetExtensionParameters(id: string): Promise<Record<string, string>>
+  CreateExtension(type: string, parameters: Record<string, string>): Promise<ExtensionOption>
+  UpdateExtensionParameters(id: string, parameters: Record<string, string>): Promise<void>
+  SetClientExtensionEnabled(clientId: string, extensionId: string, enabled: boolean): Promise<ExtensionClient>
+  DeleteExtension(id: string): Promise<void>
   ListExtensionClients(): Promise<ExtensionClient[]>
   GetExtensionClient(id: string): Promise<ExtensionClient>
   CreateExtensionClient(name: string, id: string): Promise<ExtensionClient>
@@ -79,10 +86,51 @@ interface CoreBindings {
 }
 
 export interface ClientExtension {
-  type: 'qq'
+  type: string
   name: string
   enabled: boolean
   adapterId?: string
+}
+
+export interface ExtensionParameter {
+  key: string
+  label: string
+  kind: 'text' | 'secret' | 'integer'
+  required: boolean
+  default?: string
+  placeholder?: string
+  help?: string
+  pattern?: string
+  minimum?: number
+  maximum?: number
+  editableWhileRunning: boolean
+}
+
+export interface ExtensionInformation {
+  key: string
+  label: string
+  inList: boolean
+}
+
+export interface ExtensionDescriptor {
+  type: string
+  implementation: string
+  name: string
+  description?: string
+  parameters: ExtensionParameter[]
+  information: ExtensionInformation[]
+}
+
+export interface ExtensionOption {
+  id: string
+  type: string
+  name: string
+  clientId?: string
+  clientName?: string
+  enabled: boolean
+  running: boolean
+  values: Record<string, string>
+  lastError?: string
 }
 
 export interface ExtensionClient {
@@ -232,6 +280,13 @@ async function bridge(): Promise<CoreBindings> {
 }
 
 // QQ 适配器管理。
+export function ListExtensionTypes(): Promise<ExtensionDescriptor[]> { return bridge().then((c) => c.ListExtensionTypes()) }
+export function ListExtensions(): Promise<ExtensionOption[]> { return bridge().then((c) => c.ListExtensions()) }
+export function GetExtensionParameters(id: string): Promise<Record<string, string>> { return bridge().then((c) => c.GetExtensionParameters(id)) }
+export function CreateExtension(type: string, parameters: Record<string, string>): Promise<ExtensionOption> { return bridge().then((c) => c.CreateExtension(type, parameters)) }
+export function UpdateExtensionParameters(id: string, parameters: Record<string, string>): Promise<void> { return bridge().then((c) => c.UpdateExtensionParameters(id, parameters)) }
+export function SetClientExtensionEnabled(clientId: string, extensionId: string, enabled: boolean): Promise<ExtensionClient> { return bridge().then((c) => c.SetClientExtensionEnabled(clientId, extensionId, enabled)) }
+export function DeleteExtension(id: string): Promise<void> { return bridge().then((c) => c.DeleteExtension(id)) }
 export function ListExtensionClients(): Promise<ExtensionClient[]> { return bridge().then((c) => c.ListExtensionClients()) }
 export function GetExtensionClient(id: string): Promise<ExtensionClient> { return bridge().then((c) => c.GetExtensionClient(id)) }
 export function CreateExtensionClient(name: string, id: string): Promise<ExtensionClient> { return bridge().then((c) => c.CreateExtensionClient(name, id)) }

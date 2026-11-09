@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronRight, Monitor, Plus, Puzzle } from '@lucide/vue'
+import { Monitor, Plus, Puzzle, Pencil } from '@lucide/vue'
+import ClientExtensionsDialog from '../components/ClientExtensionsDialog.vue'
 import ExtensionClientDialog from '../components/ExtensionClientDialog.vue'
 import { useExtensionStore } from '../stores/extensions'
-import { useQQStore } from '../stores/qq'
 const router = useRouter()
 const ext = useExtensionStore()
-const qq = useQQStore()
 const open = ref(false)
 const busy = ref(false)
 const error = ref('')
+const extensionsClientId = ref('')
+const extensionsClient = computed(() => ext.clients.find((value) => value.id === extensionsClientId.value))
 let stop: (() => void) | undefined
-onMounted(() => { void ext.refresh(); stop = qq.watchStatus() })
+onMounted(() => { void ext.refresh(); stop = ext.watchOptions() })
 onUnmounted(() => stop?.())
 function openCreate() { error.value = ''; open.value = true }
 async function create(name: string, id: string) {
@@ -21,7 +22,8 @@ async function create(name: string, id: string) {
   catch (err) { error.value = String(err) }
   finally { busy.value = false }
 }
-function status(adapterId?: string) { return qq.adapters.find((item) => item.id === adapterId)?.state }
+function extensionName(type: string) { return ext.types.find((item) => item.type === type)?.name ?? 'Onebot11QQ' }
+function status(adapterId?: string) { return ext.options.find((item) => item.id === adapterId)?.values.status ?? '未启动' }
 </script>
 <template>
   <section class="ext-page" aria-labelledby="ext-title">
@@ -31,14 +33,15 @@ function status(adapterId?: string) { return qq.adapters.find((item) => item.id 
       <p v-if="ext.loading && !ext.loaded" class="hint" role="status">正在加载客户端…</p>
       <div v-else-if="!ext.clients.length && ext.loaded" class="empty"><Monitor :size="36" :stroke-width="1.3" /><h2>还没有客户端</h2><p>创建客户端，为它添加 QQ 等扩展。</p><button type="button" class="btn" @click="openCreate"><Plus :size="14" />新建客户端</button></div>
       <ul v-else class="ext-list" aria-label="扩展客户端">
-        <li v-for="client in ext.clients" :key="client.id"><button type="button" class="ext-client" @click="router.push('/ext/clients/' + client.id)">
+        <li v-for="client in ext.clients" :key="client.id" class="ext-client">
           <span class="avatar"><Monitor :size="20" /></span><span class="identity"><strong>{{ client.name }}</strong><span class="hint">ID：{{ client.id }}</span>
-            <span class="extensions"><span v-for="item in client.extensions" :key="item.adapterId" class="extension-tag" :class="{ connected: item.enabled && status(item.adapterId) === 'connected' }"><Puzzle :size="12" />QQ · {{ item.name }}<span>{{ !item.enabled ? '已停用' : status(item.adapterId) === 'connected' ? '已连接' : status(item.adapterId) === 'disconnected' ? '未连接' : '未启动' }}</span></span><span v-if="!client.extensions.length" class="hint">尚未添加扩展</span></span>
-          </span><ChevronRight :size="17" class="chevron" />
-        </button></li>
+            <span class="extensions"><span v-for="item in client.extensions" :key="item.adapterId" class="extension-tag" :class="{ connected: item.enabled && status(item.adapterId) === '已连接' }"><Puzzle :size="12" />{{ extensionName(item.type) }} · {{ item.name }}<span>{{ !item.enabled ? '已停用' : status(item.adapterId) }}</span></span><span v-if="!client.extensions.length" class="hint">尚未添加扩展</span></span>
+          </span><div class="client-actions"><button type="button" class="btn btn-ghost client-action" :aria-label="'客户端扩展 ' + client.name" title="扩展" @click="extensionsClientId = client.id"><Puzzle :size="16" /></button><button type="button" class="btn btn-ghost client-action" :aria-label="'编辑客户端 ' + client.name" title="编辑客户端" @click="router.push('/ext/clients/' + client.id)"><Pencil :size="16" /></button></div>
+        </li>
       </ul>
     </div>
     <ExtensionClientDialog :open="open" :busy="busy" :error="error" @cancel="open = false" @confirm="create" />
+    <ClientExtensionsDialog :open="!!extensionsClientId" :client="extensionsClient" @close="extensionsClientId = ''" />
   </section>
 </template>
 <style scoped>
@@ -54,6 +57,7 @@ h1 { font-size: 20px; font-weight: 600; } .ext-head p { margin-top: 4px; color: 
 .ext-list li + li { border-top: 1px solid var(--outline); }
 .ext-client { width: 100%; display: flex; align-items: center; gap: 16px; padding: 20px; border: 0; background: transparent; text-align: left; }
 .ext-client:hover { background: var(--page); }
+.client-actions { display:flex;gap:5px;flex-shrink:0; }.client-action { width:30px;padding:0;opacity:0;transition:opacity 120ms ease; }.ext-client:hover .client-action,.ext-client:focus-within .client-action { opacity:1; }@media(hover:none) { .client-action { opacity:1; } }
 .avatar { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; background: var(--tonal); color: var(--accent); }
 .identity { display: grid; flex: 1; min-width: 0; gap: 5px; } strong { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .extensions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }.extension-tag { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 3px 7px; border-radius: 5px; background: var(--page); font-size: 11px; color: var(--muted); }

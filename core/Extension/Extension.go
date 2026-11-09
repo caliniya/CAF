@@ -11,7 +11,8 @@ import (
 )
 
 // Extension 是一个已配置的扩展实例，由宿主绑定到 Agent。
-// QQ、B 站等是 Type，OneBot 11、LagrangeGo 等是 Implementation。
+// Onebot11QQ、未来的 LagrangeGoQQ 等分别是可创建的扩展类型。
+// 领域事件可以共用 qq.* 等命名空间。
 // 实例 ID、配置持久化、Agent 绑定和权限策略由宿主管理。
 type Extension interface {
 	Describe() Descriptor
@@ -36,35 +37,35 @@ type Extension interface {
 // Descriptor 描述扩展类型及其实现，不包含令牌或其他实例配置。
 // 返回值是快照，调用方修改它不能改变扩展的行为。
 type Descriptor struct {
-	Type           string       `json:"type"`
-	Implementation string       `json:"implementation"`
-	Name           string       `json:"name"`
-	Description    string       `json:"description,omitempty"`
-	Capabilities   []Capability `json:"capabilities"`
-	Parameters     []ParameterField `json:"parameters"`
+	Type           string             `json:"type"`
+	Implementation string             `json:"implementation"`
+	Name           string             `json:"name"`
+	Description    string             `json:"description,omitempty"`
+	Capabilities   []Capability       `json:"capabilities"`
+	Parameters     []ParameterField   `json:"parameters"`
 	Information    []InformationField `json:"information"`
 }
 
 // ParameterField 由扩展声明创建/编辑表单，不依赖具体前端框架。
 type ParameterField struct {
-	Key string `json:"key"`
-	Label string `json:"label"`
-	Kind string `json:"kind"` // text、secret、integer
-	Required bool `json:"required"`
-	Default string `json:"default,omitempty"`
-	Placeholder string `json:"placeholder,omitempty"`
-	Help string `json:"help,omitempty"`
-	Pattern string `json:"pattern,omitempty"`
-	Minimum int `json:"minimum,omitempty"`
-	Maximum int `json:"maximum,omitempty"`
-	EditableWhileRunning bool `json:"editableWhileRunning"`
+	Key                  string `json:"key"`
+	Label                string `json:"label"`
+	Kind                 string `json:"kind"` // text、secret、integer
+	Required             bool   `json:"required"`
+	Default              string `json:"default,omitempty"`
+	Placeholder          string `json:"placeholder,omitempty"`
+	Help                 string `json:"help,omitempty"`
+	Pattern              string `json:"pattern,omitempty"`
+	Minimum              int    `json:"minimum,omitempty"`
+	Maximum              int    `json:"maximum,omitempty"`
+	EditableWhileRunning bool   `json:"editableWhileRunning"`
 }
 
 // InformationField 总是在信息窗口展示，InList 额外在列表行显示纯文本。
 type InformationField struct {
-	Key string `json:"key"`
-	Label string `json:"label"`
-	InList bool `json:"inList"`
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	InList bool   `json:"inList"`
 }
 
 // Capability 的名称在一个扩展实例内唯一，例如 send_message。

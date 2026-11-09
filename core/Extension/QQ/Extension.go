@@ -15,7 +15,7 @@ import (
 )
 
 const (
-ExtensionType         = "onebot11qq"
+	ExtensionType         = "onebot11qq"
 	CapabilitySendMessage = "send_message"
 )
 
@@ -64,14 +64,14 @@ func OneBot11Descriptor() extension.Descriptor {
 		Type: ExtensionType, Implementation: "onebot11-reverse-ws", Name: "Onebot11QQ",
 		Description: "通过 OneBot 11 反向 WebSocket 接收 QQ 事件并发送消息",
 		Parameters: []extension.ParameterField{
-			{Key:"name", Label:"名称", Kind:"text", Required:true, Pattern:`^[\p{L}\p{N}_-]{1,32}$`, Help:"指令使用 /名称，同一客户端中名称不能重复。", EditableWhileRunning:true},
-			{Key:"token", Label:"Token", Kind:"secret", Required:true, Placeholder:"连接令牌"},
-			{Key:"selfId", Label:"QQ 号", Kind:"text", Pattern:`^[0-9]*$`, Placeholder:"留空时自动识别"},
-			{Key:"port", Label:"监听端口", Kind:"integer", Required:true, Default:"6701", Minimum:1, Maximum:65535},
+			{Key: "name", Label: "名称", Kind: "text", Required: true, Pattern: `^[\p{L}\p{N}_-]{1,32}$`, Help: "指令使用 /名称，同一客户端中名称不能重复。", EditableWhileRunning: true},
+			{Key: "token", Label: "Token", Kind: "secret", Required: true, Placeholder: "连接令牌"},
+			{Key: "selfId", Label: "QQ 号", Kind: "text", Pattern: `^[0-9]*$`, Placeholder: "留空时自动识别"},
+			{Key: "port", Label: "监听端口", Kind: "integer", Required: true, Default: "6701", Minimum: 1, Maximum: 65535},
 		},
 		Information: []extension.InformationField{
-			{Key:"status", Label:"适配器状态", InList:true},
-			{Key:"address", Label:"连接地址"},
+			{Key: "status", Label: "适配器状态", InList: true},
+			{Key: "address", Label: "连接地址"},
 		},
 		Capabilities: []extension.Capability{{
 			Name: CapabilitySendMessage, Description: "向 QQ 私聊或群聊发送消息",
@@ -103,13 +103,19 @@ func (instance *ReverseWSExtension) UIValues() map[string]string {
 	label := "未启动"
 	if status.State == extension.StateRunning {
 		label = "未连接"
-		if status.Connected != nil && *status.Connected { label = "已连接" }
+		if status.Connected != nil && *status.Connected {
+			label = "已连接"
+		}
 	}
 	host, port, err := net.SplitHostPort(instance.Address())
-	if err == nil && (host == "0.0.0.0" || host == "::") { host = "127.0.0.1" }
+	if err == nil && (host == "0.0.0.0" || host == "::") {
+		host = "127.0.0.1"
+	}
 	address := instance.Address()
-	if err == nil { address = net.JoinHostPort(host, port) }
-	return map[string]string{"status":label, "address":"ws://"+address+instance.client.config.Path}
+	if err == nil {
+		address = net.JoinHostPort(host, port)
+	}
+	return map[string]string{"status": label, "address": "ws://" + address + instance.client.config.Path}
 }
 
 func (instance *ReverseWSExtension) Status() extension.Status {

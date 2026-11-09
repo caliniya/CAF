@@ -42,7 +42,7 @@ type QQAdapter struct {
 	State     string `json:"state"`
 	LastError string `json:"lastError,omitempty"`
 	Token     string `json:"token,omitempty"`
-	Port int `json:"port"`
+	Port      int    `json:"port"`
 }
 
 func (c *Core) loadQQAdaptersLocked() error {
@@ -139,7 +139,7 @@ func (c *Core) nextQQAdapterPortLocked() (int, error) {
 func (c *Core) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
 	view := QQAdapter{
 		ID: config.ID, Name: config.Name, SelfID: config.SelfID,
-		QQ: config.SelfID, Address: qqAdapterAddress(config.Port), State: "stopped", Port:config.Port,
+		QQ: config.SelfID, Address: qqAdapterAddress(config.Port), State: "stopped", Port: config.Port,
 	}
 	if view.QQ == "" {
 		view.QQ = config.DetectedQQ
@@ -236,7 +236,9 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter
 	}
 	if port == 0 {
 		port, err = c.nextQQAdapterPortLocked()
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 	} else if err := c.validateQQPortLocked(port, ""); err != nil {
 		return nil, err
 	}
@@ -265,11 +267,15 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAda
 		return nil, err
 	}
 	previous := c.qqAdapters[i]
-	if port == 0 { port = previous.Port }
-	if err := c.validateQQPortLocked(port, id); err != nil { return nil, err }
+	if port == 0 {
+		port = previous.Port
+	}
+	if err := c.validateQQPortLocked(port, id); err != nil {
+		return nil, err
+	}
 	if running := c.qqClients[id]; running != nil && running.client != nil &&
 		(previous.Token != token || previous.SelfID != selfID || previous.Port != port) {
-		return nil, errors.New("请先停用 QQ 扩展，再修改 Token 或 QQ 号")
+		return nil, errors.New("请先停用扩展，再修改 Token、QQ 号或端口")
 	}
 	configs := append([]qqAdapterConfig{}, c.qqAdapters...)
 	configs[i].Name, configs[i].Token, configs[i].SelfID = name, token, selfID
@@ -285,9 +291,13 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAda
 }
 
 func (c *Core) validateQQPortLocked(port int, exceptID string) error {
-	if port < 1 || port > 65535 { return errors.New("监听端口必须在 1 到 65535 之间") }
+	if port < 1 || port > 65535 {
+		return errors.New("监听端口必须在 1 到 65535 之间")
+	}
 	for _, config := range c.qqAdapters {
-		if config.ID != exceptID && config.Port == port { return errors.New("该端口已被其他扩展使用") }
+		if config.ID != exceptID && config.Port == port {
+			return errors.New("该端口已被其他扩展使用")
+		}
 	}
 	return nil
 }

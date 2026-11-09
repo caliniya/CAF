@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	qq "github.com/caliniya/caf/core/Extension/QQ"
 	"io/fs"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	qq "github.com/caliniya/caf/core/Extension/QQ"
 )
 
 type ClientExtension struct {
@@ -80,7 +80,9 @@ func (c *Core) readExtensionClientLocked(id string) (*ExtensionClient, error) {
 	names, adapters := map[string]bool{}, map[string]bool{}
 	for i := range client.Extensions {
 		item := &client.Extensions[i]
-		if item.Type == "qq" { item.Type = qq.ExtensionType }
+		if item.Type == "qq" {
+			item.Type = qq.ExtensionType
+		}
 		if item.Type != qq.ExtensionType || !extensionCommandName.MatchString(item.Name) || item.AdapterID == "" || names[item.Name] || adapters[item.AdapterID] {
 			return nil, errors.New("客户端扩展配置包含无效或重复的名称、适配器")
 		}
