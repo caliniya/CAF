@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
 
 // QQClient 对应一个机器人账号。客户端只负责收发，上层负责事件分发和聊天调度。
@@ -15,7 +13,7 @@ type QQClient interface {
 	// Events 是单消费者事件流；上层应持续读取，再分发给界面和 Agent。
 	// Close 后通道关闭；暂时掉线不会关闭，重新连接后继续输出事件。
 	Events() <-chan Event
-	SendMessage(context.Context, apiImpl.QQMessage) (SendResult, error)
+	SendMessage(context.Context, QQMessage) (SendResult, error)
 	// Close 释放连接和资源，可重复调用。
 	Close() error
 }

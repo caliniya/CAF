@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
-
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	"github.com/gorilla/websocket"
+	"time"
 )
 
 var errWSAccountMismatch = errors.New("OneBot 11 事件账号与连接账号不一致")
@@ -57,7 +55,7 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 	}
 	if _, exists := fields["post_type"]; !exists {
 		// 动作响应和事件共用连接，响应直接完成等待请求，不进入事件队列。
-		var response apiImpl.OneBot11ActionResponse
+		var response OneBot11ActionResponse
 		if err := json.Unmarshal(payload, &response); err != nil {
 			return fmt.Errorf("解析 OneBot 11 动作响应失败：%w", err)
 		}
@@ -68,7 +66,7 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 		session.respond(echo, response)
 		return nil
 	}
-	var header apiImpl.OneBot11EventHeader
+	var header OneBot11EventHeader
 	if err := json.Unmarshal(payload, &header); err != nil {
 		return err
 	}
@@ -83,8 +81,8 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 	}
 	event := Event{SelfID: selfID, Time: header.Time, Raw: bytes.Clone(payload)}
 	switch header.PostType {
-	case apiImpl.OneBot11PostMessage, apiImpl.OneBot11PostMessageSent:
-		var incoming apiImpl.OneBot11MessageEvent
+	case OneBot11PostMessage, OneBot11PostMessageSent:
+		var incoming OneBot11MessageEvent
 		if err := json.Unmarshal(payload, &incoming); err != nil {
 			return fmt.Errorf("解析 QQ 消息失败：%w", err)
 		}
@@ -98,8 +96,8 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 		}
 		event.Type, event.Message = EventMessage, &message
 		client.updateOwnNickname(session, incoming)
-	case apiImpl.OneBot11PostRequest:
-		var incoming apiImpl.OneBot11RequestEvent
+	case OneBot11PostRequest:
+		var incoming OneBot11RequestEvent
 		if err := json.Unmarshal(payload, &incoming); err != nil {
 			return fmt.Errorf("解析 QQ 申请事件失败：%w", err)
 		}
@@ -111,8 +109,8 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 			UserID: incoming.UserID.String(), GroupID: optionalOneBotID(incoming.GroupID),
 			Comment: incoming.Comment, Flag: incoming.Flag,
 		}
-	case apiImpl.OneBot11PostNotice:
-		var incoming apiImpl.OneBot11NoticeEvent
+	case OneBot11PostNotice:
+		var incoming OneBot11NoticeEvent
 		if err := json.Unmarshal(payload, &incoming); err != nil {
 			return fmt.Errorf("解析 QQ 通知失败：%w", err)
 		}
@@ -125,7 +123,7 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 			OperatorID: optionalOneBotID(incoming.OperatorID), TargetID: optionalOneBotID(incoming.TargetID),
 			MessageID: optionalOneBotID(incoming.MessageID),
 		}
-	case apiImpl.OneBot11PostMetaEvent:
+	case OneBot11PostMetaEvent:
 		return client.handleMetaEvent(session, payload)
 	default:
 		return fmt.Errorf("不支持的 OneBot 11 post_type %q", header.PostType)
@@ -141,7 +139,7 @@ func (client *ReverseWSClient) handlePayload(session *reverseWSSession, payload 
 	return nil
 }
 
-func optionalOneBotID(id apiImpl.OneBot11ID) string {
+func optionalOneBotID(id OneBot11ID) string {
 	if id == 0 {
 		return ""
 	}
@@ -149,7 +147,7 @@ func optionalOneBotID(id apiImpl.OneBot11ID) string {
 }
 
 func (client *ReverseWSClient) handleMetaEvent(session *reverseWSSession, payload []byte) error {
-	var incoming apiImpl.OneBot11MetaEvent
+	var incoming OneBot11MetaEvent
 	if err := json.Unmarshal(payload, &incoming); err != nil {
 		return err
 	}
@@ -180,7 +178,7 @@ func (client *ReverseWSClient) handleMetaEvent(session *reverseWSSession, payloa
 	return nil
 }
 
-func (client *ReverseWSClient) updateOwnNickname(session *reverseWSSession, event apiImpl.OneBot11MessageEvent) {
+func (client *ReverseWSClient) updateOwnNickname(session *reverseWSSession, event OneBot11MessageEvent) {
 	if event.Sender == nil || event.Sender.UserID != event.SelfID || event.Sender.Nickname == "" {
 		return
 	}

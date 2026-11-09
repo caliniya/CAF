@@ -4,15 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/websocket"
 	"sync"
 	"time"
-
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	"github.com/gorilla/websocket"
 )
 
 type reverseWSReply struct {
-	response apiImpl.OneBot11ActionResponse
+	response OneBot11ActionResponse
 	err      error
 }
 
@@ -79,7 +77,7 @@ func (session *reverseWSSession) forget(echo string) {
 	delete(session.pending, echo)
 }
 
-func (session *reverseWSSession) respond(echo string, response apiImpl.OneBot11ActionResponse) {
+func (session *reverseWSSession) respond(echo string, response OneBot11ActionResponse) {
 	session.mu.Lock()
 	reply := session.pending[echo]
 	delete(session.pending, echo)
@@ -122,7 +120,7 @@ func (session *reverseWSSession) write(ctx context.Context, payload []byte, time
 	return true, err
 }
 
-func (client *ReverseWSClient) SendMessage(ctx context.Context, message apiImpl.QQMessage) (SendResult, error) {
+func (client *ReverseWSClient) SendMessage(ctx context.Context, message QQMessage) (SendResult, error) {
 	fail := func(err error, attempted bool) (SendResult, error) {
 		return SendResult{}, &SendError{Err: err, MayHaveSent: attempted}
 	}
@@ -205,7 +203,7 @@ func (client *ReverseWSClient) SendMessage(ctx context.Context, message apiImpl.
 		}, response.Status != "failed")
 	}
 	var data struct {
-		MessageID *apiImpl.OneBot11ID `json:"message_id"`
+		MessageID *OneBot11ID `json:"message_id"`
 	}
 	if err := json.Unmarshal(response.Data, &data); err != nil {
 		return fail(fmt.Errorf("解析 OneBot 11 发送结果失败：%w", err), true)

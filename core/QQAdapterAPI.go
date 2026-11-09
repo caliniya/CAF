@@ -11,7 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	qq "github.com/caliniya/caf/NetClient/QQ"
+	extension "github.com/caliniya/caf/core/Extension"
+	qq "github.com/caliniya/caf/core/Extension/QQ"
 )
 
 const qqAdapterPath = "/onebot/v11/ws"
@@ -26,7 +27,7 @@ type qqAdapterConfig struct {
 }
 
 type qqAdapterRuntime struct {
-	client *qq.ReverseWSClient
+	client qq.Extension
 	err    string
 }
 
@@ -280,7 +281,7 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 		view := c.qqAdapterViewLocked(config)
 		return &view, nil
 	}
-	client, err := qq.NewReverseWSClient(qq.ReverseWSConfig{
+	client, err := qq.NewReverseWSExtension(qq.ReverseWSConfig{
 		Address: net.JoinHostPort("0.0.0.0", strconv.Itoa(config.Port)),
 		Path:    qqAdapterPath, AccessToken: config.Token, SelfID: config.SelfID,
 	})
@@ -301,8 +302,12 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 }
 
 // 持续消费事件，避免消息堆积阻塞连接；上层可订阅 qq:event 继续分发。
-func (c *Core) consumeQQAdapterEvents(id string, client *qq.ReverseWSClient) {
-	for event := range client.Events() {
+func (c *Core) consumeQQAdapterEvents(id string, client qq.Extension) {
+	for envelope := range client.Events() {
+		var event qq.Event
+		if err := json.Unmarshal(envelope.Data, &event); err != nil {
+			continue
+		}
 		c.qqMu.Lock()
 		running := c.qqClients[id]
 		if running == nil || running.client != client {
@@ -323,6 +328,10 @@ func (c *Core) consumeQQAdapterEvents(id string, client *qq.ReverseWSClient) {
 		}
 		c.qqMu.Unlock()
 		if Emit != nil {
+			Emit("extension:event", struct {
+				ExtensionID string          `json:"extensionId"`
+				Event       extension.Event `json:"event"`
+			}{id, envelope})
 			Emit("qq:event", struct {
 				AdapterID string   `json:"adapterId"`
 				Event     qq.Event `json:"event"`

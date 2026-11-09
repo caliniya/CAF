@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	qq "github.com/caliniya/caf/core/Extension/QQ"
+	"github.com/gorilla/websocket"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	qq "github.com/caliniya/caf/NetClient/QQ"
-	"github.com/gorilla/websocket"
 )
 
 func useReverseWS(t *testing.T, config qq.ReverseWSConfig) (*qq.ReverseWSClient, string) {
@@ -83,12 +81,12 @@ func writeOneBotPacket(t *testing.T, connection *websocket.Conn, value any) {
 	}
 }
 
-func readOneBotAction(t *testing.T, connection *websocket.Conn) apiImpl.OneBot11ActionRequest {
+func readOneBotAction(t *testing.T, connection *websocket.Conn) qq.OneBot11ActionRequest {
 	t.Helper()
 	if err := connection.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	var action apiImpl.OneBot11ActionRequest
+	var action qq.OneBot11ActionRequest
 	if err := connection.ReadJSON(&action); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +98,7 @@ type qqSendOutcome struct {
 	err    error
 }
 
-func sendQQAsync(client qq.QQClient, ctx context.Context, message apiImpl.QQMessage) <-chan qqSendOutcome {
+func sendQQAsync(client qq.QQClient, ctx context.Context, message qq.QQMessage) <-chan qqSendOutcome {
 	result := make(chan qqSendOutcome, 1)
 	go func() {
 		sent, err := client.SendMessage(ctx, message)
@@ -109,10 +107,10 @@ func sendQQAsync(client qq.QQClient, ctx context.Context, message apiImpl.QQMess
 	return result
 }
 
-func qqTestGroupMessage(text string) apiImpl.QQMessage {
-	return apiImpl.QQMessage{
-		Type: apiImpl.QQMessageGroup, GroupID: "23456",
-		Segments: []apiImpl.QQMessageSegment{apiImpl.QQText(text)},
+func qqTestGroupMessage(text string) qq.QQMessage {
+	return qq.QQMessage{
+		Type: qq.QQMessageGroup, GroupID: "23456",
+		Segments: []qq.QQMessageSegment{qq.QQText(text)},
 	}
 }
 
@@ -155,7 +153,7 @@ func TestQQReverseWSReceivesMessagesAndRequests(t *testing.T) {
 		})
 		event := nextQQEvent(t, client.Events(), qq.EventMessage)
 		if event.Message == nil || string(event.Message.Type) != messageType || event.Message.ID != "-101" ||
-			event.Message.SentBySelf || len(event.Message.Segments) != 2 || event.Message.Segments[1].Type != apiImpl.QQSegmentAt {
+			event.Message.SentBySelf || len(event.Message.Segments) != 2 || event.Message.Segments[1].Type != qq.QQSegmentAt {
 			t.Fatalf("消息没有转换成内部 QQ 协议：%+v", event.Message)
 		}
 	}
@@ -246,24 +244,24 @@ func TestQQReverseWSSendResponseCorrelation(t *testing.T) {
 	nextQQEvent(t, client.Events(), qq.EventStatus)
 	first := sendQQAsync(client, context.Background(), qqTestGroupMessage("first"))
 	firstAction := readOneBotAction(t, connection)
-	second := sendQQAsync(client, context.Background(), apiImpl.QQMessage{
-		Type: apiImpl.QQMessagePrivate, UserID: "12345",
-		Segments: []apiImpl.QQMessageSegment{apiImpl.QQText("second[CQ:at,qq=all]")},
+	second := sendQQAsync(client, context.Background(), qq.QQMessage{
+		Type: qq.QQMessagePrivate, UserID: "12345",
+		Segments: []qq.QQMessageSegment{qq.QQText("second[CQ:at,qq=all]")},
 	})
 	secondAction := readOneBotAction(t, connection)
 	if firstAction.Action != "send_group_msg" || secondAction.Action != "send_private_msg" ||
 		string(firstAction.Echo) == string(secondAction.Echo) {
 		t.Fatalf("动作名称或 echo 错误：%+v，%+v", firstAction, secondAction)
 	}
-	secondMessage, err := apiImpl.QQMessageFromOneBot11Action(secondAction)
+	secondMessage, err := qq.QQMessageFromOneBot11Action(secondAction)
 	if err != nil || len(secondMessage.Segments) != 1 || secondMessage.Segments[0].Data["text"] != "second[CQ:at,qq=all]" {
 		t.Fatalf("纯文本回复不能误解析为 CQ 消息：%+v，错误=%v", secondMessage, err)
 	}
 	// 对端逆序返回，验证响应依赖 echo 而不是发送顺序。
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "ok", RetCode: 0, Echo: secondAction.Echo, Data: json.RawMessage(`{"message_id":-202}`),
 	})
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "ok", RetCode: 0, Echo: firstAction.Echo, Data: json.RawMessage(`{"message_id":"201"}`),
 	})
 	if result := waitQQSend(t, first); result.err != nil || result.result.MessageID != "201" {
@@ -291,12 +289,12 @@ func TestQQReverseWSSendErrorsAndCancellation(t *testing.T) {
 		t.Fatalf("请求已发出后的取消必须标记发送结果未知：%v", result.err)
 	}
 	// 迟到响应不应该污染后续请求或断开连接。
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "ok", Echo: cancelledAction.Echo, Data: json.RawMessage(`{"message_id":1}`),
 	})
 	failed := sendQQAsync(client, context.Background(), qqTestGroupMessage("failed"))
 	failedAction := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "failed", RetCode: 100, Message: "发送被拒绝", Echo: failedAction.Echo, Data: json.RawMessage("null"),
 	})
 	result = waitQQSend(t, failed)
@@ -312,7 +310,7 @@ func TestQQReverseWSSendErrorsAndCancellation(t *testing.T) {
 	}
 	missingID := sendQQAsync(client, context.Background(), qqTestGroupMessage("missing ID"))
 	action := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage("{}"),
 	})
 	result = waitQQSend(t, missingID)
@@ -347,7 +345,7 @@ func TestQQReverseWSReconnectAndClose(t *testing.T) {
 	}
 	current := sendQQAsync(client, context.Background(), qqTestGroupMessage("new connection"))
 	action := readOneBotAction(t, secondConnection)
-	writeOneBotPacket(t, secondConnection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, secondConnection, qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":303}`),
 	})
 	if outcome := waitQQSend(t, current); outcome.err != nil || outcome.result.MessageID != "303" {
@@ -397,7 +395,7 @@ func TestQQReverseWSEventQueueDoesNotBlockResponses(t *testing.T) {
 	})
 	pending := sendQQAsync(client, context.Background(), qqTestGroupMessage("reply"))
 	action := readOneBotAction(t, connection)
-	writeOneBotPacket(t, connection, apiImpl.OneBot11ActionResponse{
+	writeOneBotPacket(t, connection, qq.OneBot11ActionResponse{
 		Status: "ok", Echo: action.Echo, Data: json.RawMessage(`{"message_id":4}`),
 	})
 	if outcome := waitQQSend(t, pending); outcome.err != nil {

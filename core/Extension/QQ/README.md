@@ -2,6 +2,16 @@
 
 `QQClient` 只提供账号状态、事件、发送消息和关闭客户端。聊天调度、会话记录与通知主人由上层处理。
 
+## QQ 扩展
+
+QQ 的扩展类型为 `qq`，OneBot 11 和 LagrangeGo 是具体实现。通用接口位于 [`Extension.go`](../Extension.go)，不依赖 QQ 或模型消息。QQ 专用 `Extension` 嵌入通用接口，并保留类型明确的 `Info()` 与 `SendMessage()`。
+
+QQ 扩展、消息类型以及 OneBot 11 的协议类型、编解码和 WebSocket 实现统一位于 `core/Extension/QQ`，Go 导入路径为 `github.com/caliniya/caf/core/Extension/QQ`。
+
+`NewReverseWSExtension` 创建 OneBot 11 的 QQ 扩展实现，提供 `Describe()`、`Status()`、`Start()`、`Events()`、`Invoke()`、`Close()`。`Events()` 输出通用事件，类型为 `qq.message` 等，`Data` 保留 `QQ.Event`；`Invoke(ctx, "send_message", arguments)` 使用 `QQMessage` 的 JSON 发送消息，返回 `SendResult` 的 JSON。扩展只接收事件、提供能力，Agent 决定会话路由及模型上下文。
+
+QQ 客户端管理已使用 `QQ.Extension`，并推送带实例 ID 的 `extension:event`；原有 `qq:event` 保留。底层 `ReverseWSClient` 仍可单独使用，扩展实现独占底层事件流，不能再用第二个消费者读取同一客户端。
+
 ## OneBot 11 反向 WebSocket
 
 `ReverseWSClient` 接受 OneBot 11 Universal 反向连接，事件和动作响应共用一条连接。可自行监听，也可作为 `http.Handler` 挂载到现有 HTTP 服务。
@@ -32,14 +42,14 @@ NapCat 位于 WSL、CAF 位于 Windows 时，URL 使用 WSL 能访问的 Windows
 
 `SelfID` 留空时，首次连接绑定机器人账号；同账号新连接替换旧连接。掉线保留客户端和事件流，等待对端再次反向连接。WebSocket Ping/Pong 检测失联，OneBot 心跳中的 `status.online` 单独表示 QQ 在线状态。
 
-发送消息使用内部 `APIImpl.QQMessage`：
+发送消息使用 QQ 扩展的 `QQ.QQMessage`：
 
 ```go
-result, err := client.SendMessage(ctx, APIImpl.QQMessage{
-    Type:    APIImpl.QQMessageGroup,
+result, err := client.SendMessage(ctx, QQ.QQMessage{
+    Type:    QQ.QQMessageGroup,
     GroupID: groupID,
-    Segments: []APIImpl.QQMessageSegment{
-        APIImpl.QQText(reply),
+    Segments: []QQ.QQMessageSegment{
+        QQ.QQText(reply),
     },
 })
 ```

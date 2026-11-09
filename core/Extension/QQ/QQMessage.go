@@ -1,4 +1,4 @@
-package APIImpl
+package QQ
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
 
 type QQMessageType string
@@ -101,26 +103,26 @@ func (message *QQMessage) UnmarshalJSON(data []byte) error {
 
 // ToChatMessage 将 QQ 消息编码成带版本标记的纯文本。
 // 外部消息使用 user，自身消息使用 assistant，不把外部正文升级成 system 指令。
-func (message QQMessage) ToChatMessage() (ChatMessage, error) {
+func (message QQMessage) ToChatMessage() (apiImpl.ChatMessage, error) {
 	if err := message.validate(); err != nil {
-		return ChatMessage{}, err
+		return apiImpl.ChatMessage{}, err
 	}
 	data, err := json.MarshalIndent(message, "", "  ")
 	if err != nil {
-		return ChatMessage{}, fmt.Errorf("编码 QQ 消息文本失败：%w", err)
+		return apiImpl.ChatMessage{}, fmt.Errorf("编码 QQ 消息文本失败：%w", err)
 	}
 	role := "user"
 	if message.SentBySelf {
 		role = "assistant"
 	}
-	return ChatMessage{Role: role, Content: QQMessageTextPrefix + string(data)}, nil
+	return apiImpl.ChatMessage{Role: role, Content: QQMessageTextPrefix + string(data)}, nil
 }
 
 // QQMessageFromChatMessage 解析 QQ 文本格式，或把普通模型正文包装为 text 段。
 // 普通正文不解析 CQ 码，因此模型输出 [CQ:...] 时不会意外发送图片或 @。
 // 普通正文没有路由信息，发送前由调用方填写 Type、UserID 或 GroupID。
 // Reasoning、ToolCalls 和 ToolCallID 不属于 QQ 正文，不参与转换。
-func QQMessageFromChatMessage(message ChatMessage) (QQMessage, error) {
+func QQMessageFromChatMessage(message apiImpl.ChatMessage) (QQMessage, error) {
 	if message.Role != "user" && message.Role != "assistant" {
 		return QQMessage{}, fmt.Errorf("角色 %q 不能转换为 QQ 聊天消息", message.Role)
 	}

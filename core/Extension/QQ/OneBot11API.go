@@ -1,4 +1,4 @@
-package APIImpl
+package QQ
 
 import "encoding/json"
 
