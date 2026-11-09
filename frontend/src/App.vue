@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
-import { Check, ChevronDown, MessageCircle } from '@lucide/vue'
+import { Check, ChevronDown, MessageCircle, Monitor } from '@lucide/vue'
 import { useChatStore } from './stores/chat'
 import SidebarTasks from './components/SidebarTasks.vue'
 import { APP_AREAS, readAppArea, saveAppArea, type AppArea } from './navigation'
@@ -195,6 +195,10 @@ function toggleSettings() {
         <RouterLink to="/qq" class="nav-item">
           <MessageCircle :size="15" :stroke-width="1.7" aria-hidden="true" />
           <span>消息</span>
+        </RouterLink>
+        <RouterLink to="/qq/clients" class="nav-item">
+          <Monitor :size="15" :stroke-width="1.7" aria-hidden="true" />
+          <span>客户端</span>
         </RouterLink>
       </nav>
 

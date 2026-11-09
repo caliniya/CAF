@@ -3,6 +3,8 @@ import ChatPage from '../pages/ChatPage.vue'
 import ConfigsPage from '../pages/ConfigsPage.vue'
 import SettingsGeneralPage from '../pages/SettingsGeneralPage.vue'
 import QQPage from '../pages/QQPage.vue'
+import QQClientsPage from '../pages/QQClientsPage.vue'
+import QQClientEditPage from '../pages/QQClientEditPage.vue'
 import { APP_AREAS, readAppArea } from '../navigation'
 
 // 桌面应用用 hash 路由：不依赖服务器路径重写，刷新后停留在当前页。
@@ -13,6 +15,8 @@ const router = createRouter({
     { path: '/', redirect: () => APP_AREAS[readAppArea()].path },
     { path: '/chat', component: ChatPage, meta: { title: '对话', mode: 'chat', area: 'agent' } },
     { path: '/qq', component: QQPage, meta: { title: 'QQ', mode: 'qq', area: 'qq' } },
+    { path: '/qq/clients', component: QQClientsPage, meta: { title: '客户端', area: 'qq' } },
+    { path: '/qq/clients/:id', component: QQClientEditPage, meta: { title: '编辑客户端', area: 'qq' } },
     {
       path: '/settings/models',
       component: ConfigsPage,

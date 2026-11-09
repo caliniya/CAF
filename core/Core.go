@@ -19,6 +19,10 @@ type Core struct {
 	chatMu      sync.Mutex
 	chatSending map[string]bool
 
+	qqMu       sync.Mutex
+	qqAdapters []qqAdapterConfig
+	qqClients  map[string]*qqAdapterRuntime
+
 	ChatList map[string]chat.ChatTask
 }
 

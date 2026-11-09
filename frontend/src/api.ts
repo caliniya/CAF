@@ -28,6 +28,14 @@ export interface Configs {
 }
 
 interface CoreBindings {
+  ListQQAdapters(): Promise<QQAdapter[]>
+  GetQQAdapter(id: string): Promise<QQAdapter>
+  GetQQAdapterAddress(): Promise<string>
+  CreateQQAdapter(name: string, token: string, selfId: string): Promise<QQAdapter>
+  UpdateQQAdapter(id: string, name: string, token: string, selfId: string): Promise<QQAdapter>
+  StartQQAdapter(id: string): Promise<QQAdapter>
+  StopQQAdapter(id: string): Promise<QQAdapter>
+  DeleteQQAdapter(id: string): Promise<void>
   SelectDirectory(defaultDirectory: string): Promise<string>
   ListWorkspaces(): Promise<Workspace[]>
   CreateWorkspace(name: string, path: string): Promise<Workspace>
@@ -61,6 +69,23 @@ interface CoreBindings {
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
   EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
+}
+
+export interface QQAdapter {
+  id: string
+  name: string
+  selfId: string
+  qq: string
+  address: string
+  state: 'stopped' | 'disconnected' | 'connected'
+  lastError?: string
+  token?: string
+}
+
+export interface QQAdapterInput {
+  name: string
+  token: string
+  selfId: string
 }
 
 export interface ChatSummary {
@@ -184,6 +209,39 @@ async function bridge(): Promise<CoreBindings> {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error('Wails 绑定尚未就绪')
+}
+
+// QQ 适配器管理。
+export function ListQQAdapters(): Promise<QQAdapter[]> {
+  return bridge().then((c) => c.ListQQAdapters())
+}
+
+export function GetQQAdapter(id: string): Promise<QQAdapter> {
+  return bridge().then((c) => c.GetQQAdapter(id))
+}
+
+export function GetQQAdapterAddress(): Promise<string> {
+  return bridge().then((c) => c.GetQQAdapterAddress())
+}
+
+export function CreateQQAdapter(input: QQAdapterInput): Promise<QQAdapter> {
+  return bridge().then((c) => c.CreateQQAdapter(input.name, input.token, input.selfId))
+}
+
+export function UpdateQQAdapter(id: string, input: QQAdapterInput): Promise<QQAdapter> {
+  return bridge().then((c) => c.UpdateQQAdapter(id, input.name, input.token, input.selfId))
+}
+
+export function StartQQAdapter(id: string): Promise<QQAdapter> {
+  return bridge().then((c) => c.StartQQAdapter(id))
+}
+
+export function StopQQAdapter(id: string): Promise<QQAdapter> {
+  return bridge().then((c) => c.StopQQAdapter(id))
+}
+
+export function DeleteQQAdapter(id: string): Promise<void> {
+  return bridge().then((c) => c.DeleteQQAdapter(id))
 }
 
 // 返回选中的文件夹路径；用户取消时返回空字符串。
