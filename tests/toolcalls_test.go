@@ -71,8 +71,8 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 				if !requestToolIDs["ReadFile"] {
 					t.Error("工具声明缺少 ReadFile")
 				}
-				if strings.Contains(string(data), "display_name") {
-					t.Error("展示名字段不能发送给模型")
+				if strings.Contains(string(data), "display_name") || strings.Contains(string(data), "display_type") || strings.Contains(string(data), "display_content") || strings.Contains(string(data), "tool_error") {
+					t.Error("展示字段不能发送给模型")
 				}
 				foundResult := false
 				for _, message := range request.Messages {
@@ -128,6 +128,9 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 			if len(events) != 2 || events[0]["event"] != "start" || events[1]["event"] != status {
 				t.Fatalf("工具状态事件错误：%+v", events)
 			}
+			if events[0]["displayType"] != "info" || events[0]["displayContent"] != "result" || events[1]["content"] == "" {
+				t.Fatalf("文件读取事件应包含展示方式和读取结果：%+v", events)
+			}
 			for _, event := range events {
 				if event["name"] != "读取文件" || event["toolId"] != "ReadFile" || event["callId"] != "call-1" || event["chatId"] != task.ID {
 					t.Fatalf("工具事件必须区分展示名、工具 ID 和调用 ID：%+v", event)
@@ -138,7 +141,7 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			call := loaded.Tree.Root.Next[0].Next[0].Child[0].ToolCalls[0]
-			if call.Name != "ReadFile" || call.DisplayName != "读取文件" || call.ID != "call-1" {
+			if call.Name != "ReadFile" || call.DisplayName != "读取文件" || call.ID != "call-1" || call.DisplayType != "info" || call.DisplayContent != "result" {
 				t.Fatalf("历史记录没有保存展示名和 ID：%+v", call)
 			}
 			if err := instance.SendChatMessage(task.ID, "继续", "high"); err != nil {

@@ -121,10 +121,15 @@ func TestToolSetDetailsIncludeParameterSchemas(t *testing.T) {
 	// 禁用工具也需要在模块详情中可见。
 	agenttool.Tools["WriteFile"].Meta().Enabled = false
 	sets := (&backend.Core{}).ListToolSets()
-	if len(sets) != 1 || len(sets[0].Kits) != 1 {
+	if len(sets) != 1 || len(sets[0].Kits) != 2 {
 		t.Fatalf("工具集和模块列表错误：%+v", sets)
 	}
-	kit := sets[0].Kits[0]
+	var kit backend.ToolKitDescriptor
+	for _, item := range sets[0].Kits {
+		if item.Name == "文件操作工具" {
+			kit = item
+		}
+	}
 	wantIDs := []string{"ListDirectory", "ReadFile", "SearchFiles", "WriteFile"}
 	if len(kit.Tools) != len(wantIDs) || !kit.DefaultEnabled {
 		t.Fatalf("工具详情或模块启用状态错误：%+v", kit)

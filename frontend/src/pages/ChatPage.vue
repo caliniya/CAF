@@ -9,6 +9,7 @@ import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
 import ToolKitDetailsDialog from '../components/ToolKitDetailsDialog.vue'
+import ToolCallDetails from '../components/ToolCallDetails.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -676,7 +677,7 @@ watch(
           :open="chat.sending && i === chat.messages.length - 1">
           <summary>模型工作过程</summary>
           <div class="process-body">
-            <template v-for="(item, pi) in m.process" :key="pi">
+            <template v-for="(item, pi) in m.process" :key="item.callId ? `${m.nodeId ?? i}:${item.callId}` : pi">
               <!-- 每轮思考单独可折叠；生成中自动展开，结束后交给用户控制 -->
               <details v-if="item.kind === 'reasoning'" class="process-reason"
                 :open="chat.sending && i === chat.messages.length - 1 ? true : undefined">
@@ -684,10 +685,7 @@ watch(
                 <p class="process-reasoning">{{ item.content }}</p>
               </details>
               <p v-else-if="item.kind === 'text'" class="process-text">{{ item.content }}</p>
-              <div v-else class="process-tool">
-                <span class="process-dot" :class="item.status" aria-hidden="true"></span>
-                执行 {{ item.name }}
-              </div>
+              <ToolCallDetails v-else :item="item" :chat-id="chat.session?.id" />
             </template>
           </div>
         </details>
@@ -1335,46 +1333,6 @@ watch(
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.process-tool {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.process-dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.process-dot.run {
-  background: var(--accent);
-  animation: process-pulse 1.1s ease-in-out infinite;
-}
-
-.process-dot.done {
-  background: #1e7d3c;
-}
-
-.process-dot.fail {
-  background: var(--danger);
-}
-
-@keyframes process-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
 }
 
 .branch {

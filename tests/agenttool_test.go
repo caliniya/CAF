@@ -69,7 +69,8 @@ func TestToolRegistryUsesIDAndAllowsSharedDisplayNames(t *testing.T) {
 	for _, id := range []string{"ReadFile", "OtherReadFile"} {
 		set := maintool.InitMainTool()
 		set.Name = id + "Set"
-		kit := set.List()[0]
+		kit := set.Get("文件操作工具")
+		set.ToolKits = map[string]agenttool.ToolKit{"文件操作工具": kit}
 		tool := kit.ListName()["ReadFile"]
 		tool.Meta().ID = id
 		// 此测试只注册一个工具，隔离重复展示名和 API ID 的行为。
@@ -100,7 +101,7 @@ func TestToolRegistryRejectsInvalidIDs(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			useToolRegistry(t)
 			set := maintool.InitMainTool()
-			set.List()[0].ListName()["ReadFile"].Meta().ID = id
+			set.Get("文件操作工具").ListName()["ReadFile"].Meta().ID = id
 			if err := agenttool.Add(set); err == nil {
 				t.Fatalf("应拒绝无效 ID %q", id)
 			}
@@ -119,11 +120,15 @@ func TestToolRegistryRejectsDuplicateIDs(t *testing.T) {
 	}
 	duplicate := maintool.InitMainTool()
 	duplicate.Name = "另一个工具集"
-	duplicate.List()[0].ListName()["ReadFile"].Meta().Name = "另一个读取文件工具"
+	duplicate.Get("文件操作工具").ListName()["ReadFile"].Meta().Name = "另一个读取文件工具"
 	if err := agenttool.Add(duplicate); err == nil {
 		t.Fatal("展示名称不同也不能注册相同的工具 ID")
 	}
-	if len(agenttool.Tools) != len(set.List()[0].List()) || len(agenttool.ToolSets) != 1 || len(agenttool.ToolList) != len(agenttool.Tools) {
+	count := 0
+	for _, kit := range set.List() {
+		count += len(kit.List())
+	}
+	if len(agenttool.Tools) != count || len(agenttool.ToolSets) != 1 || len(agenttool.ToolList) != len(agenttool.Tools) {
 		t.Fatal("重复 ID 注册失败不应修改工具表")
 	}
 }

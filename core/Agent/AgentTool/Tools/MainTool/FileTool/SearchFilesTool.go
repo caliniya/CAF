@@ -19,12 +19,14 @@ type SearchFiles struct {
 
 func (t *SearchFiles) Load() {
 	t.ToolMeta = agenttool.ToolMeta{
-		ID:           "SearchFiles",
-		Name:         "搜索文件",
-		Description:  "在指定文件夹中按文件名搜索文件。pattern 支持 *、?、[...] 通配符；没有通配符时按文件名包含匹配。默认递归且不区分大小写，不跟随符号链接目录。返回 JSON，包含匹配路径和是否因数量限制被截断。",
-		TimeoutParam: "timeout_seconds",
-		Permission:   agenttool.PermissionReadOnly,
-		Enabled:      true,
+		ID:             "SearchFiles",
+		Name:           "搜索文件",
+		DisplayType:    "info",
+		DisplayContent: "result",
+		Description:    "在指定文件夹中按文件名搜索文件。pattern 支持 *、?、[...] 通配符；没有通配符时按文件名包含匹配。默认递归且不区分大小写，不跟随符号链接目录。返回 JSON，包含匹配路径和是否因数量限制被截断。",
+		TimeoutParam:   "timeout_seconds",
+		Permission:     agenttool.PermissionReadOnly,
+		Enabled:        true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

@@ -14,9 +14,14 @@ type Core struct {
 	Configs *Configs
 	//APIClients *[]netclient.APIClient
 	FS platform.FilePlatform
+	// QQAdapterListenHost 指定 QQ 服务的监听主机，空值使用 0.0.0.0。
+	// 测试可设为 127.0.0.1，将端口探测和服务监听限制为本机。
+	QQAdapterListenHost string
 
-	chatMu      sync.Mutex
-	chatSending map[string]bool
+	chatMu              sync.Mutex
+	chatSending         map[string]bool
+	interactionMu       sync.Mutex
+	interactionRequests map[string]*pendingQuestion
 
 	qqMu       sync.Mutex
 	qqAdapters []qqAdapterConfig

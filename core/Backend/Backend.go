@@ -430,6 +430,14 @@ func fillToolDisplayNames(tree *chatstruct.ChatTree) {
 				if call.DisplayName == "" {
 					call.DisplayName = agenttool.DisplayName(call.Name)
 				}
+				if tool := agenttool.Tools[call.Name]; tool != nil && tool.Meta() != nil {
+					if call.DisplayType == "" {
+						call.DisplayType = tool.Meta().DisplayType
+					}
+					if call.DisplayContent == "" {
+						call.DisplayContent = tool.Meta().DisplayContent
+					}
+				}
 			}
 		}
 		pending = append(pending, node.Next...)
@@ -752,10 +760,12 @@ func (c *Core) SetChatReasoningEffort(id, effort string) (*chat.ChatTask, error)
 // 最小启停单位是 ToolKit，不是单个 Tool。
 
 type ToolDescriptor struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	Parameters     map[string]any `json:"parameters"`
+	DisplayType    string         `json:"displayType,omitempty"`
+	DisplayContent string         `json:"displayContent,omitempty"`
 }
 
 type ToolKitDescriptor struct {
@@ -793,7 +803,8 @@ func (c *Core) ListToolSets() []ToolSetDescriptor {
 				if tm := tool.Meta(); tm != nil {
 					tools = append(tools, ToolDescriptor{
 						ID: tm.ID, Name: tm.Name, Description: tm.Description,
-						Parameters: tm.ToType().Parameters,
+						Parameters:  tm.ToType().Parameters,
+						DisplayType: tm.DisplayType, DisplayContent: tm.DisplayContent,
 					})
 				}
 			}
@@ -1147,6 +1158,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			if len(delta.ToolCalls) > 0 {
 				for i := range delta.ToolCalls {
 					delta.ToolCalls[i].DisplayName = agenttool.DisplayName(delta.ToolCalls[i].Name)
+					if tool := agenttool.Tools[delta.ToolCalls[i].Name]; tool != nil && tool.Meta() != nil {
+						delta.ToolCalls[i].DisplayType = tool.Meta().DisplayType
+						delta.ToolCalls[i].DisplayContent = tool.Meta().DisplayContent
+					}
 				}
 				assistant.ToolCalls = append(assistant.ToolCalls, delta.ToolCalls...)
 			}
@@ -1175,26 +1190,38 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 
 		history = append(history, assistant)
 		for _, call := range assistant.ToolCalls {
-			EmitJSON(EventChatTool, map[string]string{
+			payload := map[string]string{
 				"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
 				"name": call.DisplayName, "event": "start",
-			})
-			output, callErr := executeToolCall(call, toolContext)
+				"displayType": call.DisplayType, "displayContent": call.DisplayContent,
+			}
+			if call.DisplayContent == "arguments" || strings.HasPrefix(call.DisplayContent, "arguments.") {
+				payload["content"] = call.Arguments
+			}
+			EmitJSON(EventChatTool, payload)
+			callContext := *toolContext
+			callContext.AskUser = func(ctx context.Context, question agenttool.UserQuestion) (string, error) {
+				return c.askUser(ctx, id, reply.ID, call.ID, question)
+			}
+			output, callErr := executeToolCall(call, &callContext)
+			toolError := ""
 			if callErr != nil {
-				EmitJSON(EventChatTool, map[string]string{
-					"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
-					"name":  call.DisplayName,
-					"event": "fail", "error": callErr.Error(),
-				})
+				payload["event"] = "fail"
+				toolError = callErr.Error()
+				payload["error"] = toolError
 				// 工具失败不能中断整轮，回一条 tool 消息让模型自己处理
 				output = "工具执行失败：" + callErr.Error()
 			} else {
-				EmitJSON(EventChatTool, map[string]string{
-					"chatId": id, "nodeId": reply.ID, "toolId": call.Name, "callId": call.ID,
-					"name": call.DisplayName, "event": "done",
-				})
+				payload["event"] = "done"
 			}
-			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output}
+			if call.DisplayContent == "result" {
+				payload["content"] = output
+			}
+			if call.DisplayType == "question" {
+				payload["answer"] = output
+			}
+			EmitJSON(EventChatTool, payload)
+			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output, ToolError: toolError}
 			history = append(history, toolMsg)
 			produced = append(produced, toolMsg)
 			reply.Child = produced
@@ -1239,8 +1266,14 @@ func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext) (string,
 	if err != nil {
 		return "", err
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+	parent := ctx.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	executionContext, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	callContext := *ctx
+	callContext.Context = executionContext
 
 	type result struct {
 		output string
@@ -1248,15 +1281,21 @@ func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext) (string,
 	}
 	done := make(chan result, 1)
 	go func() {
-		output, err := tool.Fun(ctx, args)
+		output, err := tool.Fun(&callContext, args)
 		done <- result{output: output, err: err}
 	}()
 
 	select {
 	case r := <-done:
+		if executionContext.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("执行超时（%s）", timeout)
+		}
 		return r.output, r.err
-	case <-timer.C:
-		return "", fmt.Errorf("执行超时（%s）", timeout)
+	case <-executionContext.Done():
+		if executionContext.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("执行超时（%s）", timeout)
+		}
+		return "", executionContext.Err()
 	}
 }
 

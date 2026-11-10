@@ -20,8 +20,9 @@ import (
 func useQQAdapterCore(t *testing.T) *backend.Core {
 	t.Helper()
 	instance := &backend.Core{
-		Paths: &platform.Paths{Data: t.TempDir()},
-		FS:    &desktopBackend.DesktopFileSystem{},
+		Paths:               &platform.Paths{Data: t.TempDir()},
+		FS:                  &desktopBackend.DesktopFileSystem{},
+		QQAdapterListenHost: "127.0.0.1",
 	}
 	t.Cleanup(instance.CloseQQAdapters)
 	return instance
@@ -194,7 +195,7 @@ func TestQQAdaptersFailuresPreserveConfigurationAndRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	endpoint, _ := url.Parse(adapter.Address)
-	occupied, err := net.Listen("tcp", net.JoinHostPort("0.0.0.0", endpoint.Port()))
+	occupied, err := net.Listen("tcp", endpoint.Host)
 	if err != nil {
 		t.Fatal(err)
 	}

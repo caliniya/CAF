@@ -13,6 +13,11 @@ type ToolMeta struct {
 	Name        string
 	Description string
 	Parameters  map[string]any
+	// DisplayType 是额外信息的展示类型，如 info、question；空值只展示工具调用行。
+	DisplayType string
+	// DisplayContent 指定信息来源：arguments（调用参数）、arguments.参数名或 result（执行结果）。
+	// info + arguments 在执行中展开，完成后折叠；参数字段和 result 默认折叠。
+	DisplayContent string
 	// Permission 是工具执行所需的最低权限；未设置时按只读处理。
 	Permission PermissionLevel
 

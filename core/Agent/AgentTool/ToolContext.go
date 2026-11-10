@@ -1,6 +1,7 @@
 package AgentTool
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 )
@@ -9,6 +10,10 @@ import (
 type ToolContext struct {
 	WorkSpace string
 	PermissionLevel
+	// Context 随本次工具执行超时而取消，等待交互的工具必须监听它。
+	Context context.Context
+	// AskUser 由宿主注入；工具模块通过它等待回答，不依赖桌面事件或后端包。
+	AskUser func(context.Context, UserQuestion) (string, error)
 }
 
 type PermissionLevel int

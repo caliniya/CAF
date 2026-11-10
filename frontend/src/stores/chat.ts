@@ -56,6 +56,11 @@ export interface ProcessItem {
   toolId?: string
   callId?: string
   status?: 'run' | 'done' | 'fail'
+  displayType?: string
+  displayContent?: string
+  requestId?: string
+  answer?: string
+  error?: string
 }
 
 export interface ChatMessage {
@@ -249,7 +254,8 @@ export const useChatStore = defineStore('chat', {
           last.process.push({ kind: 'text', content: last.content })
           last.content = ''
         }
-        last.process.push({ kind: 'tool', toolId: tool.toolId, callId: tool.callId, name: tool.name, status: 'run' })
+        last.process.push({ kind: 'tool', toolId: tool.toolId, callId: tool.callId, name: tool.name, status: 'run',
+          displayType: tool.displayType, displayContent: tool.displayContent, content: tool.content })
         return
       }
 
@@ -258,7 +264,16 @@ export const useChatStore = defineStore('chat', {
         const matches = tool.callId ? item.callId === tool.callId
           : tool.toolId ? item.toolId === tool.toolId : item.name === tool.name
         if (item.kind === 'tool' && matches && item.status === 'run') {
-          item.status = tool.event === 'fail' ? 'fail' : 'done'
+          if (tool.content !== undefined) item.content = tool.content
+          if (tool.displayType !== undefined) item.displayType = tool.displayType
+          if (tool.displayContent !== undefined) item.displayContent = tool.displayContent
+          if (tool.requestId !== undefined) item.requestId = tool.requestId
+          if (tool.answer !== undefined) item.answer = tool.answer
+          if (tool.error !== undefined) item.error = tool.error
+          if (tool.event !== 'update') {
+            item.status = tool.event === 'fail' ? 'fail' : 'done'
+            item.requestId = undefined
+          }
           return
         }
       }
@@ -325,19 +340,23 @@ export const useChatStore = defineStore('chat', {
           const finalIndex = children.lastIndexOf(final)
           const process: ProcessItem[] = []
 
-          for (let ci = 0; ci < finalIndex; ci++) {
+          for (let ci = 0; ci <= finalIndex; ci++) {
             const item = children[ci]
             if (item.role === 'tool') continue
             // 每轮思考单独成段：轮与轮之间会被工具调用隔开
             if (item.reasoning) process.push({ kind: 'reasoning', content: item.reasoning })
-            if ((item.content ?? '').trim()) process.push({ kind: 'text', content: item.content })
+            if (ci < finalIndex && (item.content ?? '').trim()) process.push({ kind: 'text', content: item.content })
             for (const call of item.tool_calls ?? []) {
-              process.push({ kind: 'tool', toolId: call.name, callId: call.id, name: call.display_name || call.name, status: 'done' })
+              const result = children.slice(ci + 1).find((entry) => entry.role === 'tool' && entry.tool_call_id === call.id)
+              process.push({ kind: 'tool', toolId: call.name, callId: call.id, name: call.display_name || call.name,
+                status: !result || result.tool_error ? 'fail' : 'done',
+                displayType: call.display_type, displayContent: call.display_content,
+                content: call.display_content === 'arguments' || call.display_content?.startsWith('arguments.') ? call.arguments : result?.content,
+                answer: call.display_type === 'question' ? result?.content : undefined,
+                error: result?.tool_error ?? (!result ? '调用未完成' : undefined),
+              })
             }
           }
-          // 最终轮的思考排在最终回复之前
-          if (final.reasoning) process.push({ kind: 'reasoning', content: final.reasoning })
-
           this.messages.push({
             role: 'assistant',
             content: final.content ?? '',

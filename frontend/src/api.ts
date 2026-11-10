@@ -85,6 +85,7 @@ interface CoreBindings {
   SetChatToolConfig(id: string, raw: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
+	SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void>
   EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
 }
@@ -197,8 +198,9 @@ export interface StoredChatMessage {
   role: string
   content: string
   reasoning?: string
-  tool_calls?: { id: string; name: string; arguments: string; display_name?: string }[]
+  tool_calls?: { id: string; name: string; arguments: string; display_name?: string; display_type?: string; display_content?: string }[]
   tool_call_id?: string
+  tool_error?: string
 }
 
 export interface ChatTask extends ChatSummary {
@@ -237,6 +239,8 @@ export interface ToolDescriptor {
   name: string
   description: string
   parameters: ToolParameterSchema | null
+  displayType?: string
+  displayContent?: string
 }
 
 export interface ToolKitDescriptor {
@@ -473,8 +477,17 @@ export interface ChatToolEvent {
   toolId?: string
   callId?: string
   name: string
-  event: 'start' | 'done' | 'fail'
+  event: 'start' | 'update' | 'done' | 'fail'
   error?: string
+  displayType?: string
+  displayContent?: string
+  content?: string
+  requestId?: string
+  answer?: string
+}
+
+export async function SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void> {
+  return (await bridge()).SubmitUserAnswer(chatId, requestId, answer)
 }
 
 function parseEvent<T>(data: unknown): T {

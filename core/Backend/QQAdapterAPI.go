@@ -119,6 +119,14 @@ func qqAdapterAddress(port int) string {
 	return "ws://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) + qqAdapterPath
 }
 
+func (c *Core) qqAdapterListenAddress(port int) string {
+	host := c.QQAdapterListenHost
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
 func (c *Core) nextQQAdapterPortLocked() (int, error) {
 	used := map[int]bool{}
 	for _, config := range c.qqAdapters {
@@ -126,7 +134,7 @@ func (c *Core) nextQQAdapterPortLocked() (int, error) {
 	}
 	for port := 6701; port <= 65535; port++ {
 		if !used[port] {
-			listener, err := net.Listen("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
+			listener, err := net.Listen("tcp", c.qqAdapterListenAddress(port))
 			if err == nil {
 				_ = listener.Close()
 				return port, nil
@@ -315,7 +323,7 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 		return &view, nil
 	}
 	client, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{
-		Address: net.JoinHostPort("0.0.0.0", strconv.Itoa(config.Port)),
+		Address: c.qqAdapterListenAddress(config.Port),
 		Path:    qqAdapterPath, AccessToken: config.Token, SelfID: config.SelfID,
 	})
 	if err != nil {

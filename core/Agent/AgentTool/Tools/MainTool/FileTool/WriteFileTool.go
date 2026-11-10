@@ -17,12 +17,14 @@ type WriteFile struct {
 
 func (t *WriteFile) Load() {
 	t.ToolMeta = agenttool.ToolMeta{
-		ID:           "WriteFile",
-		Name:         "覆盖写入文件",
-		Description:  "以 UTF-8 文本写入指定文件。均不传 start_line/end_line 时完整覆盖文件，不存在时创建，父文件夹必须已存在。传入任一行号时替换已有文件的指定行范围并保留其余内容，行号从 1 开始且包含结束行，范围越界时报错；末尾换行不额外计为空行。替换内容沿用选中范围的换行风格，必要时补齐行尾换行以保留后续行边界。content 可为空字符串，用于清空文件或删除选中的行。自动编辑权限下只能写入当前工作区。成功时返回 JSON，包含文件路径和实际写回文件的总字节数。",
-		TimeoutParam: "timeout_seconds",
-		Permission:   agenttool.PermissionAutoEdit,
-		Enabled:      true,
+		ID:             "WriteFile",
+		Name:           "覆盖写入文件",
+		DisplayType:    "info",
+		DisplayContent: "arguments.content",
+		Description:    "以 UTF-8 文本写入指定文件。均不传 start_line/end_line 时完整覆盖文件，不存在时创建，父文件夹必须已存在。传入任一行号时替换已有文件的指定行范围并保留其余内容，行号从 1 开始且包含结束行，范围越界时报错；末尾换行不额外计为空行。替换内容沿用选中范围的换行风格，必要时补齐行尾换行以保留后续行边界。content 可为空字符串，用于清空文件或删除选中的行。自动编辑权限下只能写入当前工作区。成功时返回 JSON，包含文件路径和实际写回文件的总字节数。",
+		TimeoutParam:   "timeout_seconds",
+		Permission:     agenttool.PermissionAutoEdit,
+		Enabled:        true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
