@@ -42,7 +42,3 @@ func NewChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *
 		Tree:            tree, CreatedAt: now, UpdatedAt: now,
 	}
 }
-
-func CreateChatTask(id, title, configID, model string, tree *chatstruct.ChatTree) *ChatTask {
-	return NewChatTask(id, title, configID, model, tree)
-}

@@ -29,13 +29,15 @@ func (c *Core) SelectDirectory(defaultDirectory string) (string, error) {
 	return c.FS.SelectDirectory(defaultDirectory)
 }
 
-// LoadConfigs 供前端调用：读取配置文件并返回解析后的结果。
+// LoadConfigs 读取配置；首次启动时创建空配置和所需目录。
 func (c *Core) LoadConfigs() (*Configs, error) {
-	if c == nil || c.Paths == nil {
-		return nil, errors.New("路径尚未初始化")
+	if c == nil || c.Paths == nil || c.Paths.ConfigFile == "" {
+		return nil, errors.New("配置路径尚未初始化")
 	}
-
-	if err := LoadConfig(); err != nil {
+	if c.FS == nil {
+		return nil, errors.New("文件系统尚未初始化")
+	}
+	if err := c.loadConfig(); err != nil {
 		return nil, fmt.Errorf("读取配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
@@ -69,7 +71,7 @@ func (c *Core) SelectConfig(index int) (*Configs, error) {
 	previousConfig := c.Configs.EnablesConfig
 	c.Configs.EnablesConfig = selected
 
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		c.Configs.EnablesConfig = previousConfig
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
@@ -98,7 +100,7 @@ func (c *Core) SelectModel(model string) (*Configs, error) {
 	previousModel := c.Configs.EnablesConfig.EnabledModel
 	c.Configs.EnablesConfig.EnabledModel = model
 
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		c.Configs.EnablesConfig.EnabledModel = previousModel
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
@@ -188,7 +190,7 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 	previousEnabled := c.Configs.EnablesConfig
 	*c.Configs.ALLConfig = append(*c.Configs.ALLConfig, entry)
 	c.Configs.EnablesConfig = &(*c.Configs.ALLConfig)[len(*c.Configs.ALLConfig)-1]
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		*c.Configs.ALLConfig = (*c.Configs.ALLConfig)[:len(*c.Configs.ALLConfig)-1]
 		c.Configs.EnablesConfig = previousEnabled
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
@@ -236,7 +238,7 @@ func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiI
 	}) {
 		entry.EnabledModel = cleanModels[0].ID
 	}
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		entry.ServerAddress = previousAddress
 		entry.Model = previousModels
 		entry.EnabledModel = previousEnabledModel
@@ -256,7 +258,7 @@ func (c *Core) RenameConfig(index int, name string) (*Configs, error) {
 	previousName := entry.Name
 	entry.Name = strings.TrimSpace(name)
 
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		entry.Name = previousName
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
@@ -288,7 +290,7 @@ func (c *Core) DeleteConfig(index int) (*Configs, error) {
 		c.Configs.EnablesConfig = nil
 	}
 
-	if err := SaveConfig(); err != nil {
+	if err := c.saveConfig(); err != nil {
 		*c.Configs.ALLConfig = previousAll
 		c.Configs.EnablesConfig = previousEnables
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)

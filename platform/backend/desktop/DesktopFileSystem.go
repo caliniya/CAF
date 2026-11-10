@@ -10,7 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// paltform.FilePlatform接口的桌面实现(其实就是调用go原生)
+// DesktopFileSystem 是 FilePlatform 的桌面实现。
 type DesktopFileSystem struct {
 	ctx context.Context
 }
@@ -59,20 +59,8 @@ func (fsys *DesktopFileSystem) MoveFile(source, destination string) error {
 	return os.Rename(source, destination)
 }
 
-func (fsys *DesktopFileSystem) RenameFile(name, newName string) error {
-	return os.Rename(name, newName)
-}
-
 func (fsys *DesktopFileSystem) CreateDirectory(name string, perm fs.FileMode) error {
 	return os.MkdirAll(name, perm)
-}
-
-func (fsys *DesktopFileSystem) CreateFile(name string, perm fs.FileMode) error {
-	file, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	return file.Close()
 }
 
 func (fsys *DesktopFileSystem) DeleteFile(name string) error {

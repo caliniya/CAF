@@ -1,11 +1,13 @@
 # Headless script/config regressions. Compatible with Windows PowerShell 5.1;
-# mock go so these checks never open a GUI, download modules or start a server.
+# Mock the installed Wails executable and go install; never start an application.
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $DevScript = Join-Path $ProjectRoot 'dev.ps1'
 $SavedData = $env:CAF_DATA_DIR
 $SavedExitCode = $global:LASTEXITCODE
 $SavedLocation = (Get-Location).Path
+$MockWailsExe = Join-Path $env:USERPROFILE 'go\bin\wails.exe'
+$WailsVersion = (Select-String -LiteralPath (Join-Path $ProjectRoot 'go.mod') -Pattern 'github.com/wailsapp/wails/v2 (v[0-9.]+)').Matches[0].Groups[1].Value
 $MockState = [pscustomobject]@{
     ExitCode = 0
     Throws = $false
@@ -13,6 +15,9 @@ $MockState = [pscustomobject]@{
     ObservedData = $null
     ObservedLocation = $null
     ObservedArgs = $null
+    Installed = $true
+    InstallExitCode = 0
+    InstallCalls = @()
 }
 
 function Assert-Equal($Actual, $Expected, [string]$Message) {
@@ -21,13 +26,27 @@ function Assert-Equal($Actual, $Expected, [string]$Message) {
     }
 }
 
-function go {
+function Invoke-MockWails {
     $MockState.Calls++
     $MockState.ObservedData = $env:CAF_DATA_DIR
     $MockState.ObservedLocation = (Get-Location).Path
     $MockState.ObservedArgs = $args -join '|'
     $global:LASTEXITCODE = $MockState.ExitCode
     if ($MockState.Throws) { throw 'mock command failure' }
+}
+
+Set-Alias -Name $MockWailsExe -Value Invoke-MockWails
+
+function Test-Path {
+    param([string]$Path)
+    if ($Path -eq $MockWailsExe) { return $MockState.Installed }
+    return Microsoft.PowerShell.Management\Test-Path -LiteralPath $Path
+}
+
+function go {
+    $MockState.InstallCalls += ($args -join '|')
+    $global:LASTEXITCODE = $MockState.InstallExitCode
+    if ($MockState.InstallExitCode -eq 0) { $MockState.Installed = $true }
 }
 
 function Assert-DevFailure([string]$ExpectedMessage) {
@@ -48,7 +67,7 @@ try {
     & $DevScript
     Assert-Equal $MockState.ObservedData $DefaultData 'default data directory'
     Assert-Equal $MockState.ObservedLocation $ProjectRoot 'Wails working directory'
-    Assert-Equal $MockState.ObservedArgs 'run|github.com/wailsapp/wails/v2/cmd/wails@v2.17.0|dev' 'fixed Wails CLI command'
+    Assert-Equal $MockState.ObservedArgs 'dev' 'installed Wails CLI command'
     Assert-Equal ([bool]$env:CAF_DATA_DIR) $false 'unset environment restoration'
     Assert-Equal (Get-Location).Path $CallerLocation 'caller working directory restoration'
 
@@ -85,6 +104,21 @@ try {
     Assert-Equal (Get-Location).Path $CallerLocation 'cwd restored after exception'
     Assert-Equal $MockState.Calls 7 'mock command invocations'
 
+    $MockState.Throws = $false
+    $MockState.Installed = $false
+    & $DevScript
+    Assert-Equal $MockState.InstallCalls.Count 1 'missing CLI installation'
+    Assert-Equal $MockState.InstallCalls[0] "install|github.com/wailsapp/wails/v2/cmd/wails@$WailsVersion" 'CLI version from go.mod'
+    Assert-Equal $MockState.Calls 8 'installed CLI runs dev'
+    Assert-Equal $env:CAF_DATA_DIR $InheritedData 'environment restored after installation'
+
+    $MockState.Installed = $false
+    $MockState.InstallExitCode = 13
+    Assert-DevFailure "go install wails@$WailsVersion failed"
+    Assert-Equal $MockState.Calls 8 'failed installation must not run dev'
+    Assert-Equal $env:CAF_DATA_DIR $InheritedData 'environment restored after failed installation'
+    Assert-Equal (Get-Location).Path $CallerLocation 'cwd restored after failed installation'
+
     $Launch = Get-Content (Join-Path $ProjectRoot '.vscode/launch.json') -Raw | ConvertFrom-Json
     $Tasks = Get-Content (Join-Path $ProjectRoot '.vscode/tasks.json') -Raw | ConvertFrom-Json
     $Config = $Launch.configurations[0]
@@ -94,10 +128,13 @@ try {
     Assert-Equal $Config.program '${workspaceFolder}/build/bin/CAF-debug.exe' 'debug executable path'
     Assert-Equal $Config.env.CAF_DATA_DIR '${workspaceFolder}/build/dev-data' 'debugger data path'
     Assert-Equal $BuildTask[0].options.env.CAF_DATA_DIR $Config.env.CAF_DATA_DIR 'pre-launch bindings share debugger data path'
-    Assert-Equal ($BuildTask[0].args -join '|') 'run|github.com/wailsapp/wails/v2/cmd/wails@v2.17.0|build|-debug|-platform|windows/amd64|-o|CAF-debug.exe' 'debug build command'
+    Assert-Equal $BuildTask[0].command '${env:USERPROFILE}\go\bin\wails.exe' 'debug build uses installed CLI'
+    Assert-Equal ($BuildTask[0].args -join '|') 'build|-debug|-platform|windows/amd64|-o|CAF-debug.exe' 'debug build command'
+    $EnsureTask = @($Tasks.tasks | Where-Object { $_.label -eq $BuildTask[0].dependsOn })
+    Assert-Equal $EnsureTask.Count 1 'debug build ensures the CLI exists'
     $Workspace = Get-Content (Join-Path $ProjectRoot 'CAF.code-workspace') -Raw | ConvertFrom-Json
     Assert-Equal ([bool]($Workspace.PSObject.Properties.Name -contains 'launch')) $false 'no conflicting workspace launch settings'
-    Write-Host 'Development script checks passed: 7 mocked runs plus VS Code configuration checks.'
+    Write-Host 'Development script checks passed: 8 mocked Wails runs, CLI installation and failure, plus VS Code configuration checks.'
 } finally {
     $env:CAF_DATA_DIR = $SavedData
     $global:LASTEXITCODE = $SavedExitCode

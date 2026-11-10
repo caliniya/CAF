@@ -2,7 +2,10 @@ package Backend
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"strings"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
@@ -70,22 +73,32 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func LoadConfig() error {
-	data, err := Platform.FS.ReadFile(Platform.Paths.ConfigFile)
+func (c *Core) loadConfig() error {
+	data, err := c.FS.ReadFile(c.Paths.ConfigFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		all := []Config{}
+		previous := c.Configs
+		c.Configs = &Configs{ALLConfig: &all}
+		if err := c.saveConfig(); err != nil {
+			c.Configs = previous
+			return fmt.Errorf("创建初始配置失败：%w", err)
+		}
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	Platform.Configs = &Configs{}
-	if err := json.Unmarshal(data, Platform.Configs); err != nil {
+	configs := &Configs{}
+	if err := json.Unmarshal(data, configs); err != nil {
 		return err
 	}
-	resolveEnabled()
+	configs.resolveEnabled()
 
 	// 旧字符串格式转换为结构体后立即保存，以持久化新配置格式。
 	needsSave := false
-	if Platform.Configs.ALLConfig != nil {
-		for i := range *Platform.Configs.ALLConfig {
-			entry := &(*Platform.Configs.ALLConfig)[i]
+	if configs.ALLConfig != nil {
+		for i := range *configs.ALLConfig {
+			entry := &(*configs.ALLConfig)[i]
 			needsSave = needsSave || entry.legacyModelFormat
 			if entry.ID == "" {
 				entry.ID = newID()
@@ -93,14 +106,17 @@ func LoadConfig() error {
 			}
 		}
 	}
+	previous := c.Configs
+	c.Configs = configs
 	if needsSave {
-		if err := SaveConfig(); err != nil {
+		if err := c.saveConfig(); err != nil {
+			c.Configs = previous
 			return fmt.Errorf("保存迁移后的模型配置失败：%w", err)
 		}
 	}
 
 	// 启用项没记住模型时默认选第一个，开箱即用；仅在内存中生效，随下次保存落盘。
-	if cfg := Platform.Configs.EnablesConfig; cfg != nil && cfg.EnabledModel == "" && len(cfg.Model) > 0 {
+	if cfg := configs.EnablesConfig; cfg != nil && cfg.EnabledModel == "" && len(cfg.Model) > 0 {
 		cfg.EnabledModel = cfg.Model[0].ID
 	}
 	return nil
@@ -108,8 +124,7 @@ func LoadConfig() error {
 
 // resolveEnabled 把文件里的 EnablesConfig（一份拷贝）指回配置数组里的对应项，
 // 后续选模型、写回时才不会和配置列表脱节；找不到对应项则视为过期数据，一并清空。
-func resolveEnabled() {
-	cfg := Platform.Configs
+func (cfg *Configs) resolveEnabled() {
 	if cfg.EnablesConfig == nil {
 		return
 	}
@@ -140,15 +155,24 @@ func sameConfig(a, b *Config) bool {
 	return true
 }
 
-// SaveConfig 把当前配置（含启用项）写回配置文件，先写临时文件再替换，避免写一半损坏原文件。
-func SaveConfig() error {
-	data, err := json.MarshalIndent(Platform.Configs, "", "    ")
+// saveConfig 创建所需目录，先写临时文件再替换配置，避免写一半损坏原文件。
+func (c *Core) saveConfig() error {
+	if c == nil || c.Paths == nil || c.Paths.ConfigFile == "" || c.FS == nil {
+		return errors.New("配置存储尚未初始化")
+	}
+	if c.Configs == nil {
+		return errors.New("配置尚未加载")
+	}
+	data, err := json.MarshalIndent(c.Configs, "", "    ")
 	if err != nil {
 		return err
 	}
-	tmp := Platform.Paths.ConfigFile + ".tmp"
-	if err := Platform.FS.WriteFile(tmp, data, 0o600); err != nil {
+	if err := c.FS.CreateDirectory(filepath.Dir(c.Paths.ConfigFile), 0o700); err != nil {
+		return fmt.Errorf("创建配置目录失败：%w", err)
+	}
+	tmp := c.Paths.ConfigFile + ".tmp"
+	if err := c.FS.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	return Platform.FS.MoveFile(tmp, Platform.Paths.ConfigFile)
+	return c.FS.MoveFile(tmp, c.Paths.ConfigFile)
 }

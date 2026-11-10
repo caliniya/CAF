@@ -29,5 +29,8 @@ func PathsFromExecutable(executable, dataOverride string) (platform.Paths, error
 		data = filepath.Join(root, data)
 	}
 	data = filepath.Clean(data)
-	return platform.Paths{Root: root, Data: data, Logs: filepath.Join(data, "logs")}, nil
+	return platform.Paths{
+		Root: root, Data: data, Logs: filepath.Join(data, "logs"),
+		ConfigFile: filepath.Join(data, "config", "MainConfig.json"),
+	}, nil
 }

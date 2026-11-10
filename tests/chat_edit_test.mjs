@@ -101,13 +101,17 @@ const renderer = createRenderer({
 const pinia = createPinia()
 setActivePinia(pinia)
 const chat = useChatStore()
+let editFinished
+chat.$onAction(({ name, after, onError }) => {
+  if (name === 'editMessage') editFinished = new Promise((resolve, reject) => { after(resolve); onError(reject) })
+})
 chat.session = structuredClone(originalSession)
 chat.rebuildMessages()
 const originalMessages = chat.messages.slice()
 const app = renderer.createApp({ render: () => h(ChatPage) })
 app.use(pinia)
 app.mount(root)
-const flush = async () => { await Promise.resolve(); await nextTick(); await Promise.resolve(); await nextTick() }
+const flush = async () => { await new Promise((resolve) => setImmediate(resolve)); await nextTick() }
 await flush()
 const clickEdit = () => {
   const row = find(root, (node) => node.type === 'div' && node.props.class === 'msg user'
@@ -151,13 +155,14 @@ assert.deepEqual(pending.process.map(({ kind, content, status }) => ({ kind, con
   { kind: 'text', content: '正在读取', status: undefined },
   { kind: 'tool', content: undefined, status: 'done' },
 ])
-assert.equal(find(root, (node) => node.props.innerHTML === '新回答')?.props.class, 'msg-body markdown-body')
+assert.ok(find(root, (node) => node.props.class === 'msg-body markdown-body' && node.props.innerHTML?.startsWith('新回答')))
 assert.equal(originalMessages[5].content, '后续回答')
 savedSession = structuredClone(originalSession)
 const parent = savedSession.tree.root.next[0].next[0]
 parent.next.push(userNode('new-user', '修改后的问题', [replyNode('new-reply', '新回答')]))
 parent.choice = 1
 completeEdit()
+await editFinished
 await flush()
 assert.equal(chat.sending, false)
 assert.equal(chat.messages[2].nodeId, 'new-user')
@@ -167,6 +172,7 @@ assert.equal(chat.messages[3].content, '新回答')
 savedSession = originalSession
 chat.session = structuredClone(originalSession)
 chat.rebuildMessages()
+await flush()
 clickEdit()
 await flush()
 editInput().props['onUpdate:modelValue']('另一个问题')
@@ -180,6 +186,7 @@ pressEnter()
 await flush()
 assert.equal(editCalls, 2, 'repeated Enter must submit only once')
 rejectEdit(new Error('编辑请求失败'))
+await editFinished
 await flush()
 assert.equal(chat.sending, false)
 assert.match(chat.error, /编辑请求失败/)

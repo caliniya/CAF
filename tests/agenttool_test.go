@@ -4,56 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	maintool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool"
 )
-
-type listEnableTestTool struct {
-	meta *agenttool.ToolMeta
-}
-
-func (t *listEnableTestTool) Load() {}
-
-func (t *listEnableTestTool) Meta() *agenttool.ToolMeta {
-	return t.meta
-}
-
-func (t *listEnableTestTool) Fun(*agenttool.ToolContext, map[string]any) (string, error) {
-	return "", nil
-}
-
-func (t *listEnableTestTool) ToType() *apiImpl.Tool {
-	return &apiImpl.Tool{}
-}
-
-func TestListEnable(t *testing.T) {
-	previousTools := agenttool.Tools
-	t.Cleanup(func() { agenttool.Tools = previousTools })
-
-	enabledTool := &listEnableTestTool{meta: &agenttool.ToolMeta{ID: "enabled", Name: "启用工具", Enabled: true}}
-	agenttool.Tools = map[string]agenttool.Tool{
-		"disabled": &listEnableTestTool{meta: &agenttool.ToolMeta{ID: "disabled", Name: "禁用工具"}},
-		"enabled":  enabledTool,
-		"nil-meta": &listEnableTestTool{},
-		"nil-tool": nil,
-	}
-
-	got := agenttool.ListEnable()
-	if len(got) != 1 || got[0] != enabledTool {
-		t.Fatalf("ListEnable() = %#v, want only enabled tool", got)
-	}
-}
-
-func TestListEnableWithoutTools(t *testing.T) {
-	previousTools := agenttool.Tools
-	t.Cleanup(func() { agenttool.Tools = previousTools })
-
-	agenttool.Tools = nil
-	if got := agenttool.ListEnable(); got != nil {
-		t.Fatalf("ListEnable() = %#v, want nil", got)
-	}
-}
 
 func useToolRegistry(t *testing.T) {
 	t.Helper()

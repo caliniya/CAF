@@ -615,9 +615,21 @@ async function submitEdit(message: (typeof chat.messages)[number]) {
     return
   }
   await streamReady
-  if (pageUnmounted) return
-  await chat.editMessage(message, text)
+  if (pageUnmounted || chat.sending) return
   cancelEdit()
+  await chat.editMessage(message, text)
+}
+
+function onEditKeydown(event: KeyboardEvent, message: (typeof chat.messages)[number]) {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelEdit()
+    return
+  }
+  if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+  event.preventDefault()
+  void submitEdit(message)
 }
 
 async function copyMessage(message: (typeof chat.messages)[number], event: MouseEvent) {
@@ -697,7 +709,7 @@ watch(
         <!-- 编辑中的用户消息 -->
         <template v-if="m.role === 'user' && m.nodeId && editingNodeId === m.nodeId">
           <textarea v-model="editDraft" class="msg-edit-input" rows="2"
-            @keydown.esc.prevent="cancelEdit" @keydown.enter.exact.prevent="submitEdit(m)"></textarea>
+            @keydown="onEditKeydown($event, m)"></textarea>
           <div class="msg-edit-actions">
             <button type="button" class="btn btn-ghost btn-sm" @click="cancelEdit">取消</button>
             <button type="button" class="btn btn-primary btn-sm" :disabled="!editDraft.trim()"

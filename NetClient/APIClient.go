@@ -101,16 +101,6 @@ func (c *APIClient) StreamChat(
 	if err != nil {
 		return fmt.Errorf("编码请求失败：%w", err)
 	}
-	// 只记录实际发出的控制参数，不输出正文、工具参数或认证信息。
-	var controls struct {
-		Thinking *struct {
-			Type string `json:"type"`
-		} `json:"thinking"`
-		ReasoningEffort string `json:"reasoning_effort"`
-	}
-	if json.Unmarshal([]byte(body), &controls) == nil {
-	}
-
 	url := strings.TrimRight(c.Config.ServerAddress, "/")
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {

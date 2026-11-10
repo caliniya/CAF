@@ -52,7 +52,7 @@ func TestEncodeRequestFixture(t *testing.T) {
 	}
 }
 
-func TestGetModelContextWindow(t *testing.T) {
+func TestFetchModelsReadsSingleModelMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -66,12 +66,12 @@ func TestGetModelContextWindow(t *testing.T) {
 	defer server.Close()
 
 	client := netclient.NewAPIClient(netclient.Options{ServerAddress: server.URL + "/v1", APIKey: "sk-test"})
-	got, err := client.GetModelContextWindow(context.Background(), "deepseek-chat")
+	models, err := client.FetchModels(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 128000 {
-		t.Fatalf("unexpected context window: %d", got)
+	if len(models) != 1 || models[0].ID != "deepseek-chat" || models[0].Name != "DeepSeek Chat" || models[0].MaxContext != 128000 {
+		t.Fatalf("unexpected model metadata: %+v", models)
 	}
 }
 

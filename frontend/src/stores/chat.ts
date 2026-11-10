@@ -557,11 +557,22 @@ export const useChatStore = defineStore('chat', {
     // 编辑用户消息：后端在该节点的父节点下挂新分支并重新生成，原分支保留
     async editMessage(message: ChatMessage, text: string) {
       if (!this.session || !message.nodeId || message.role !== 'user' || this.sending) return
-      if (!text.trim() || text.trim() === message.content) return
+      text = text.trim()
+      if (!text || text === message.content) return
+      const index = this.messages.indexOf(message)
+      if (index < 0) return
+      const effort = this.effort
+      // 新分支先替换可见的后续消息，让流式事件写入空回复；原分支留在会话树中。
+      this.messages = [
+        ...this.messages.slice(0, index),
+        { role: 'user', content: text },
+        { role: 'assistant', content: '', reasoningEffort: effort },
+      ]
+      this.usage = null
       this.error = ''
       this.sending = true
       try {
-        await EditChatMessage(this.session.id, message.nodeId, text.trim(), this.effort)
+        await EditChatMessage(this.session.id, message.nodeId, text, effort)
         await this.reloadSession()
       } catch (err) {
         this.error = String(err)

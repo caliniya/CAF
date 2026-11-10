@@ -21,17 +21,6 @@ type ChatNode struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
-// GetEach 按当前选中的分支顺序访问消息。
-func (n *ChatNode) GetEach(get func(*apiImpl.ChatMessage)) {
-	if n == nil || get == nil {
-		return
-	}
-	_ = n.walkCurrentPath(func(message *apiImpl.ChatMessage) error {
-		get(message)
-		return nil
-	}, make(map[*ChatNode]struct{}))
-}
-
 func CreateChatNode(messages ...apiImpl.ChatMessage) *ChatNode {
 	return &ChatNode{ID: newNodeID(), Child: append([]apiImpl.ChatMessage(nil), messages...), Next: []*ChatNode{}}
 }
@@ -60,19 +49,6 @@ func (n *ChatNode) AddNext(node *ChatNode) int {
 	n.Next = append(n.Next, node)
 	n.Choice = len(n.Next) - 1
 	return n.Choice
-}
-
-// BranchIndex 返回 node 在当前节点后续分支中的下标。
-func (n *ChatNode) BranchIndex(node *ChatNode) int {
-	if n == nil || node == nil {
-		return -1
-	}
-	for i, candidate := range n.Next {
-		if candidate == node {
-			return i
-		}
-	}
-	return -1
 }
 
 // SelectNext 选择一个已有的后续分支。

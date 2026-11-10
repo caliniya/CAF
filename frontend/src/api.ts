@@ -34,12 +34,7 @@ interface CoreBindings {
   UpdateClientExtensionParameters(clientId: string, id: string, parameters: Record<string, string>): Promise<void>
   DeleteClientExtension(clientId: string, id: string): Promise<void>
   ListExtensionTypes(): Promise<ExtensionDescriptor[]>
-  ListExtensions(): Promise<ExtensionOption[]>
-  GetExtensionParameters(id: string): Promise<Record<string, string>>
-  CreateExtension(type: string, parameters: Record<string, string>): Promise<ExtensionOption>
-  UpdateExtensionParameters(id: string, parameters: Record<string, string>): Promise<void>
   SetClientExtensionEnabled(clientId: string, extensionId: string, enabled: boolean): Promise<ExtensionClient>
-  DeleteExtension(id: string): Promise<void>
   ListExtensionClients(): Promise<ExtensionClient[]>
   GetExtensionClient(id: string): Promise<ExtensionClient>
   CreateExtensionClient(name: string, id: string): Promise<ExtensionClient>
@@ -47,14 +42,6 @@ interface CoreBindings {
   DeleteExtensionClient(id: string): Promise<void>
   SetExtensionClientQQ(id: string, adapterId: string, name: string, enabled: boolean): Promise<ExtensionClient>
   RemoveExtensionClientQQ(id: string, adapterId: string): Promise<ExtensionClient>
-  ListQQAdapters(): Promise<QQAdapter[]>
-  GetQQAdapter(id: string): Promise<QQAdapter>
-  GetQQAdapterAddress(): Promise<string>
-  CreateQQAdapter(name: string, token: string, selfId: string): Promise<QQAdapter>
-  UpdateQQAdapter(id: string, name: string, token: string, selfId: string): Promise<QQAdapter>
-  StartQQAdapter(id: string): Promise<QQAdapter>
-  StopQQAdapter(id: string): Promise<QQAdapter>
-  DeleteQQAdapter(id: string): Promise<void>
   SelectDirectory(defaultDirectory: string): Promise<string>
   ListWorkspaces(): Promise<Workspace[]>
   CreateWorkspace(name: string, path: string): Promise<Workspace>
@@ -63,7 +50,6 @@ interface CoreBindings {
   DeleteWorkspaceAndChats(id: string): Promise<void>
   SetChatWorkspace(id: string, workspaceId: string): Promise<ChatTask>
   LoadConfigs(): Promise<Configs>
-  GetModelContextWindow(): Promise<number>
   GetChatModelContextWindow(id: string): Promise<number>
   ProbeModels(serverAddress: string, apiKey: string): Promise<ModelProbeResult>
   AddModelConfig(name: string, serverAddress: string, protocol: Config['Protocol'], apiKey: string, models: Model[]): Promise<Configs>
@@ -142,23 +128,6 @@ export interface ExtensionClient {
   id: string
   name: string
   extensions: ClientExtension[]
-}
-
-export interface QQAdapter {
-  id: string
-  name: string
-  selfId: string
-  qq: string
-  address: string
-  state: 'stopped' | 'disconnected' | 'connected'
-  lastError?: string
-  token?: string
-}
-
-export interface QQAdapterInput {
-  name: string
-  token: string
-  selfId: string
 }
 
 export interface ChatSummary {
@@ -293,12 +262,7 @@ export function GetClientExtensionParameters(clientId: string, id: string): Prom
 export function UpdateClientExtensionParameters(clientId: string, id: string, parameters: Record<string, string>): Promise<void> { return bridge().then((c) => c.UpdateClientExtensionParameters(clientId, id, parameters)) }
 export function DeleteClientExtension(clientId: string, id: string): Promise<void> { return bridge().then((c) => c.DeleteClientExtension(clientId, id)) }
 export function ListExtensionTypes(): Promise<ExtensionDescriptor[]> { return bridge().then((c) => c.ListExtensionTypes()) }
-export function ListExtensions(): Promise<ExtensionOption[]> { return bridge().then((c) => c.ListExtensions()) }
-export function GetExtensionParameters(id: string): Promise<Record<string, string>> { return bridge().then((c) => c.GetExtensionParameters(id)) }
-export function CreateExtension(type: string, parameters: Record<string, string>): Promise<ExtensionOption> { return bridge().then((c) => c.CreateExtension(type, parameters)) }
-export function UpdateExtensionParameters(id: string, parameters: Record<string, string>): Promise<void> { return bridge().then((c) => c.UpdateExtensionParameters(id, parameters)) }
 export function SetClientExtensionEnabled(clientId: string, extensionId: string, enabled: boolean): Promise<ExtensionClient> { return bridge().then((c) => c.SetClientExtensionEnabled(clientId, extensionId, enabled)) }
-export function DeleteExtension(id: string): Promise<void> { return bridge().then((c) => c.DeleteExtension(id)) }
 export function ListExtensionClients(): Promise<ExtensionClient[]> { return bridge().then((c) => c.ListExtensionClients()) }
 export function GetExtensionClient(id: string): Promise<ExtensionClient> { return bridge().then((c) => c.GetExtensionClient(id)) }
 export function CreateExtensionClient(name: string, id: string): Promise<ExtensionClient> { return bridge().then((c) => c.CreateExtensionClient(name, id)) }
@@ -306,38 +270,6 @@ export function RenameExtensionClient(id: string, name: string): Promise<Extensi
 export function DeleteExtensionClient(id: string): Promise<void> { return bridge().then((c) => c.DeleteExtensionClient(id)) }
 export function SetExtensionClientQQ(id: string, adapterId: string, name: string, enabled: boolean): Promise<ExtensionClient> { return bridge().then((c) => c.SetExtensionClientQQ(id, adapterId, name, enabled)) }
 export function RemoveExtensionClientQQ(id: string, adapterId: string): Promise<ExtensionClient> { return bridge().then((c) => c.RemoveExtensionClientQQ(id, adapterId)) }
-
-export function ListQQAdapters(): Promise<QQAdapter[]> {
-  return bridge().then((c) => c.ListQQAdapters())
-}
-
-export function GetQQAdapter(id: string): Promise<QQAdapter> {
-  return bridge().then((c) => c.GetQQAdapter(id))
-}
-
-export function GetQQAdapterAddress(): Promise<string> {
-  return bridge().then((c) => c.GetQQAdapterAddress())
-}
-
-export function CreateQQAdapter(input: QQAdapterInput): Promise<QQAdapter> {
-  return bridge().then((c) => c.CreateQQAdapter(input.name, input.token, input.selfId))
-}
-
-export function UpdateQQAdapter(id: string, input: QQAdapterInput): Promise<QQAdapter> {
-  return bridge().then((c) => c.UpdateQQAdapter(id, input.name, input.token, input.selfId))
-}
-
-export function StartQQAdapter(id: string): Promise<QQAdapter> {
-  return bridge().then((c) => c.StartQQAdapter(id))
-}
-
-export function StopQQAdapter(id: string): Promise<QQAdapter> {
-  return bridge().then((c) => c.StopQQAdapter(id))
-}
-
-export function DeleteQQAdapter(id: string): Promise<void> {
-  return bridge().then((c) => c.DeleteQQAdapter(id))
-}
 
 // 返回选中的文件夹路径；用户取消时返回空字符串。
 export function SelectDirectory(defaultDirectory = ''): Promise<string> {
@@ -370,10 +302,6 @@ export function SetChatWorkspace(id: string, workspaceId: string): Promise<ChatT
 
 export function LoadConfigs(): Promise<Configs> {
   return bridge().then((c) => c.LoadConfigs())
-}
-
-export function GetModelContextWindow(): Promise<number> {
-  return bridge().then((c) => c.GetModelContextWindow())
 }
 
 export function GetChatModelContextWindow(id: string): Promise<number> {

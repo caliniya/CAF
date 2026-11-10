@@ -13,11 +13,8 @@ import (
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 )
 
-// ModelInfo 是模型元数据的兼容名称，实际结构统一使用 apiImpl.Model。
-type ModelInfo = apiImpl.Model
-
 // FetchModels 显式查询模型元数据(仅配置页面调用,对话链路不做任何探测)。
-func (c *APIClient) FetchModels(ctx context.Context) ([]ModelInfo, error) {
+func (c *APIClient) FetchModels(ctx context.Context) ([]apiImpl.Model, error) {
 	if c == nil || c.Config == nil {
 		return nil, errors.New("客户端未配置")
 	}
@@ -98,7 +95,7 @@ func modelEndpoints(serverAddress string) ([]string, error) {
 	return endpoints, nil
 }
 
-func parseModelsResponse(body []byte) ([]ModelInfo, error) {
+func parseModelsResponse(body []byte) ([]apiImpl.Model, error) {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
@@ -106,40 +103,22 @@ func parseModelsResponse(body []byte) ([]ModelInfo, error) {
 		return nil, fmt.Errorf("解析模型信息失败：%w", err)
 	}
 	if len(envelope.Data) > 0 {
-		var models []ModelInfo
+		var models []apiImpl.Model
 		if err := json.Unmarshal(envelope.Data, &models); err == nil {
 			return models, nil
 		}
-		var model ModelInfo
+		var model apiImpl.Model
 		if err := json.Unmarshal(envelope.Data, &model); err == nil && model.ID != "" {
-			return []ModelInfo{model}, nil
+			return []apiImpl.Model{model}, nil
 		}
 		return nil, errors.New("模型信息的 data 字段格式无效")
 	}
-	var model ModelInfo
+	var model apiImpl.Model
 	if err := json.Unmarshal(body, &model); err != nil {
 		return nil, fmt.Errorf("解析模型信息失败：%w", err)
 	}
 	if model.ID == "" {
 		return nil, errors.New("模型信息响应未包含模型 ID")
 	}
-	return []ModelInfo{model}, nil
-}
-
-// GetModelContextWindow 从模型元数据查询中读取指定模型的上下文窗口容量。
-// 注意:这是显式网络查询,仅配置页面调用;对话链路应从已保存的配置元数据读取。
-func (c *APIClient) GetModelContextWindow(ctx context.Context, model string) (int, error) {
-	models, err := c.FetchModels(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, item := range models {
-		if item.ID == model {
-			if item.MaxContext <= 0 {
-				return 0, fmt.Errorf("模型 %q 未提供有效的上下文窗口", model)
-			}
-			return item.MaxContext, nil
-		}
-	}
-	return 0, fmt.Errorf("模型列表中未找到 %q", model)
+	return []apiImpl.Model{model}, nil
 }

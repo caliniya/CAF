@@ -1,15 +1,6 @@
 package Backend
 
-import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-
-	netclient "github.com/caliniya/caf/NetClient"
-	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
-	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
-)
+import "encoding/json"
 
 // Emit 由桌面宿主注入，Backend 不依赖 Wails。
 // 未注入时为空操作,便于测试与其他宿主复用。
@@ -20,93 +11,6 @@ const (
 	EventChatDelta = "chat:delta" // 载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
 	EventChatTool  = "chat:tool"  // 载荷为 JSON 字符串，toolId/callId 用于识别，name 用于展示。
 )
-
-// deltaPayload 是 chat:delta 的事件载荷。
-type deltaPayload struct {
-	Content   string              `json:"content,omitempty"`
-	Reasoning string              `json:"reasoning,omitempty"`
-	Usage     *apiImpl.TokenUsage `json:"usage,omitempty"`
-}
-
-// SendMessage 供前端调用:用当前启用的配置发起一次流式对话。
-// history 由前端传入(user/assistant 交替),流式增量通过 chat:delta 事件推送;
-// 函数返回即代表对话结束,返回 error 表示失败。
-//
-// 每条请求都新建客户端与协议实例:协议实例持有 tool_call 分片聚合状态,
-// 共享会让并行对话互相污染。
-func (c *Core) SendMessage(history []apiImpl.ChatMessage, reasoningEffort string) error {
-	if c == nil || c.Configs == nil || c.Configs.EnablesConfig == nil {
-		return errors.New("尚未选择配置（提供商），请先选择配置")
-	}
-	cfg := c.Configs.EnablesConfig
-	if cfg.EnabledModel == "" {
-		return errors.New("尚未选定模型，请先选择模型")
-	}
-	if len(history) == 0 {
-		return errors.New("消息为空")
-	}
-	// 只接受 user/assistant 的对话历史,避免前端传入非法角色。
-	for i := range history {
-		role := history[i].Role
-		if role != "user" && role != "assistant" {
-			return fmt.Errorf("不支持的消息角色：%s", role)
-		}
-	}
-
-	client := netclient.NewAPIClient(netclient.Options{
-		ServerAddress: cfg.ServerAddress,
-		APIKey:        cfg.APIKey,
-		Model:         cfg.EnabledModel,
-	})
-	proto := &apiImpl.ChatCompletionAPI{}
-
-	req := apiImpl.ChatRequest{
-		Model:    cfg.EnabledModel,
-		Messages: history,
-		Thinking: reasoningEffort,
-	}
-
-	ctx := context.Background()
-	return client.StreamChat(ctx, req, proto, func(d apiImpl.Delta) {
-		if d.Done {
-			return
-		}
-		if d.Content != "" || d.Reasoning != "" || d.Usage != nil {
-			EmitJSON(EventChatDelta, deltaPayload{Content: d.Content, Reasoning: d.Reasoning, Usage: d.Usage})
-		}
-		if len(d.ToolCalls) > 0 {
-			// 工具执行尚未接入,先把调用声明推给前端展示。
-			for _, tc := range d.ToolCalls {
-				name := agenttool.DisplayName(tc.Name)
-				EmitJSON(EventChatTool, map[string]string{"toolId": tc.Name, "callId": tc.ID, "name": name, "event": "start"})
-				EmitJSON(EventChatTool, map[string]string{"toolId": tc.Name, "callId": tc.ID, "name": name, "event": "done"})
-			}
-		}
-	})
-}
-
-// GetModelContextWindow 返回当前启用模型的上下文窗口容量。
-// 只读取配置页探测时保存的模型元数据,不做任何网络请求;
-// 没有数据(未探测过或服务未提供)时返回错误,前端按未知处理。
-func (c *Core) GetModelContextWindow() (int, error) {
-	if c == nil || c.Configs == nil || c.Configs.EnablesConfig == nil {
-		return 0, errors.New("尚未选择配置（提供商），请先选择配置")
-	}
-	cfg := c.Configs.EnablesConfig
-	if cfg.EnabledModel == "" {
-		return 0, errors.New("尚未选定模型，请先选择模型")
-	}
-
-	for _, model := range cfg.Model {
-		if model.ID == cfg.EnabledModel {
-			if model.MaxContext <= 0 {
-				return 0, errors.New("该模型未保存上下文窗口数据，请在配置页重新探测")
-			}
-			return model.MaxContext, nil
-		}
-	}
-	return 0, errors.New("配置中未找到当前模型，请在配置页重新探测")
-}
 
 // EmitJSON 把结构体序列化成 JSON 字符串后推送——
 // 前端的事件载荷契约是 JSON 字符串。

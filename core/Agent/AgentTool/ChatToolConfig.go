@@ -1,7 +1,5 @@
 package AgentTool
 
-import "sort"
-
 // ChatToolConfig 是工具启停策略：纯数据、可序列化。
 // 同一类型用于两处——ChatTask.ToolConfig（对话级）与 Configs.ToolNormalConfig（全局默认）。
 //
@@ -82,29 +80,4 @@ func (c *ChatToolConfig) Normalize() {
 	if len(c.Sets) == 0 {
 		c.Sets = nil
 	}
-}
-
-func ListEnable() []Tool {
-	if len(Tools) == 0 {
-		return nil
-	}
-
-	ids := make([]string, 0, len(Tools))
-	for id := range Tools {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-
-	enabled := make([]Tool, 0, len(ids))
-	for _, id := range ids {
-		tool := Tools[id]
-		if tool == nil {
-			continue
-		}
-		meta := tool.Meta()
-		if meta != nil && meta.Enabled {
-			enabled = append(enabled, tool)
-		}
-	}
-	return enabled
 }

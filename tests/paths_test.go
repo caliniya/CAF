@@ -15,6 +15,9 @@ func TestPortableDefaults(t *testing.T) {
 	if err != nil || p.Root != root || p.Data != filepath.Join(root, "data") || p.Logs != filepath.Join(p.Data, "logs") {
 		t.Fatalf("unexpected paths: %+v, %v", p, err)
 	}
+	if p.ConfigFile != filepath.Join(p.Data, "config", "MainConfig.json") {
+		t.Fatalf("unexpected configuration path: %s", p.ConfigFile)
+	}
 	if _, err := os.Stat(p.Data); !os.IsNotExist(err) {
 		t.Fatal("path discovery created files", err)
 	}
@@ -28,7 +31,7 @@ func TestOverridesAreRelativeToExecutableNotWorkingDirectory(t *testing.T) {
 		if !filepath.IsAbs(want) {
 			want = filepath.Join(root, want)
 		}
-		if err != nil || p.Data != want {
+		if err != nil || p.Data != want || p.ConfigFile != filepath.Join(want, "config", "MainConfig.json") {
 			t.Fatalf("unexpected override: %+v, %v", p, err)
 		}
 	}

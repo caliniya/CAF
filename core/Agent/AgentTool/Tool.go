@@ -78,12 +78,9 @@ type ToolSetMeta struct {
 
 // 接口
 type ToolsSet interface {
-	Load()
-
 	Meta() ToolSetMeta
 
 	Get(string) ToolKit
-	ListMap() map[string]ToolKit
 	List() []ToolKit
 }
 
