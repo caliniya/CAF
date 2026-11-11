@@ -28,6 +28,10 @@ type TimeSample struct {
 	FallbackReason string     `json:"fallbackReason,omitempty"`
 }
 
+func (t *TimeSample) ToString() string {
+	return "UTC:" + "时间"
+}
+
 // TimeClient 可并发取时。构造后不要在请求期间修改配置。
 type TimeClient struct {
 	Endpoint string

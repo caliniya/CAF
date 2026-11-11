@@ -1,9 +1,9 @@
 package NetAPI
 
 type NetAPIClient struct {
-	Time TimeClient
+	TimeClient *TimeClient
 }
 
 func InitNetAPI() *NetAPIClient {
-	return &NetAPIClient{Time: *NewTimeClient(DefaultTimeEndpoint)}
+	return &NetAPIClient{TimeClient: NewTimeClient(DefaultTimeEndpoint)}
 }
