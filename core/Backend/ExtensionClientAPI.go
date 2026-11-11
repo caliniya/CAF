@@ -377,12 +377,12 @@ func (c *Core) StartExtensionClients() {
 				continue
 			}
 			if _, err := c.StartQQAdapter(item.AdapterID); err != nil {
-				c.qqMu.Lock()
-				if c.qqClients == nil {
-					c.qqClients = map[string]*qqAdapterRuntime{}
+				c.QQ.mu.Lock()
+				if c.QQ.clients == nil {
+					c.QQ.clients = map[string]*qqAdapterRuntime{}
 				}
-				c.qqClients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
-				c.qqMu.Unlock()
+				c.QQ.clients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
+				c.QQ.mu.Unlock()
 			}
 		}
 	}

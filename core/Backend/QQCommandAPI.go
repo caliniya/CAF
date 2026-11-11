@@ -72,11 +72,11 @@ func (c *Core) runQQCommands(ctx context.Context, adapterID string, client onebo
 			_, err := client.SendMessage(callCtx, reply)
 			cancel()
 			if err != nil && ctx.Err() == nil {
-				c.qqMu.Lock()
-				if running := c.qqClients[adapterID]; running != nil && running.client == client {
+				c.QQ.mu.Lock()
+				if running := c.QQ.clients[adapterID]; running != nil && running.client == client {
 					running.err = err.Error()
 				}
-				c.qqMu.Unlock()
+				c.QQ.mu.Unlock()
 			}
 		}
 	}

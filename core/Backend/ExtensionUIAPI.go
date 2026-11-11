@@ -33,13 +33,13 @@ func (c *Core) ListExtensions() ([]ExtensionOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.qqMu.Lock()
-	defer c.qqMu.Unlock()
+	c.QQ.mu.Lock()
+	defer c.QQ.mu.Unlock()
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return nil, err
 	}
-	options := make([]ExtensionOption, 0, len(c.qqAdapters))
-	for _, config := range c.qqAdapters {
+	options := make([]ExtensionOption, 0, len(c.QQ.adapters))
+	for _, config := range c.QQ.adapters {
 		view := c.qqAdapterViewLocked(config)
 		label := "未启动"
 		if view.State == "disconnected" {
@@ -48,7 +48,7 @@ func (c *Core) ListExtensions() ([]ExtensionOption, error) {
 			label = "已连接"
 		}
 		values := map[string]string{"status": label, "address": view.Address}
-		if running := c.qqClients[config.ID]; running != nil && running.client != nil {
+		if running := c.QQ.clients[config.ID]; running != nil && running.client != nil {
 			values = running.client.UIValues()
 		}
 		option := ExtensionOption{ID: config.ID, Type: onebot11qq.ExtensionType, Name: config.Name, Running: view.State != "stopped", Values: values, LastError: view.LastError}
@@ -191,8 +191,8 @@ func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) 
 	if err != nil {
 		return nil, err
 	}
-	c.qqMu.Lock()
-	defer c.qqMu.Unlock()
+	c.QQ.mu.Lock()
+	defer c.QQ.mu.Unlock()
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) 
 		if err != nil {
 			return nil, err
 		}
-		view := c.qqAdapterViewLocked(c.qqAdapters[i])
+		view := c.qqAdapterViewLocked(c.QQ.adapters[i])
 		label := "未启动"
 		if view.State == "disconnected" {
 			label = "未连接"
@@ -210,7 +210,7 @@ func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) 
 			label = "已连接"
 		}
 		values := map[string]string{"status": label, "address": view.Address}
-		if running := c.qqClients[binding.AdapterID]; running != nil && running.client != nil {
+		if running := c.QQ.clients[binding.AdapterID]; running != nil && running.client != nil {
 			values = running.client.UIValues()
 		}
 		options = append(options, ExtensionOption{ID: binding.AdapterID, Type: binding.Type, Name: binding.Name, ClientID: client.ID, ClientName: client.Name, Enabled: binding.Enabled, Running: view.State != "stopped", Values: values, LastError: view.LastError})

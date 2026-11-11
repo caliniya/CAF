@@ -20,9 +20,9 @@ import (
 func useQQAdapterCore(t *testing.T) *backend.Core {
 	t.Helper()
 	instance := &backend.Core{
-		Paths:               &platform.Paths{Data: t.TempDir()},
-		FS:                  &desktopBackend.DesktopFileSystem{},
-		QQAdapterListenHost: "127.0.0.1",
+		Paths: &platform.Paths{Data: t.TempDir()},
+		FS:    &desktopBackend.DesktopFileSystem{},
+		QQ:    backend.QQState{ListenHost: "127.0.0.1"},
 	}
 	t.Cleanup(instance.CloseQQAdapters)
 	return instance

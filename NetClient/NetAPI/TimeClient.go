@@ -14,7 +14,7 @@ import (
 
 const DefaultTimeEndpoint = "https://caf-netapi-caliniya.pages.dev/api/time"
 
-const defaultTimeTimeout = 4 * time.Second
+const defaultTimeTimeout = 10 * time.Second
 
 // TimeSample 保存本次取时结果。UTC 是估计的接收时刻，ServerUTC 是服务器原值。
 // RoundTripMS 的一半用于网络补偿，不表示绝对时钟误差的上限。

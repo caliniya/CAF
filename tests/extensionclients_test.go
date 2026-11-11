@@ -223,7 +223,7 @@ func TestExtensionClientsMultipleNamedQQBindings(t *testing.T) {
 		t.Fatalf("binding did not persist: %+v / %v", client, err)
 	}
 	instance.CloseQQAdapters()
-	reloaded.QQAdapterListenHost = instance.QQAdapterListenHost
+	reloaded.QQ.ListenHost = instance.QQ.ListenHost
 	reloaded.StartExtensionClients()
 	t.Cleanup(reloaded.CloseQQAdapters)
 	waitQQAdapter(t, reloaded, second.ID, "disconnected", "20002")
