@@ -3,6 +3,8 @@ package Backend
 import (
 	"sync"
 
+	//"github.com/caliniya/caf/NetClient"
+	"github.com/caliniya/caf/NetClient/NetAPI"
 	chat "github.com/caliniya/caf/core/Chat"
 	platform "github.com/caliniya/caf/platform"
 )
@@ -23,8 +25,12 @@ type Core struct {
 	extMu sync.Mutex
 
 	ChatList map[string]chat.ChatTask
+
+	APIClient *NetAPI.NetAPIClient
 }
 
 func Init() {
-	Platform = &Core{}
+	Platform = &Core{
+		APIClient: NetAPI.InitNetAPI(),
+	}
 }

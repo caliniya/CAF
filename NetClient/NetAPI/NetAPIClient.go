@@ -5,5 +5,5 @@ type NetAPIClient struct {
 }
 
 func InitNetAPI() *NetAPIClient {
-	return &NetAPIClient{}
+	return &NetAPIClient{Time: *NewTimeClient(DefaultTimeEndpoint)}
 }
