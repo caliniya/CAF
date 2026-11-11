@@ -1,4 +1,4 @@
-package NetClient
+package NetAPI
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func NewTimeClient(endpoint string) *TimeClient {
 		Endpoint: endpoint,
 		Timeout:  defaultTimeTimeout,
 		Client: &http.Client{
-			// 重定向不应悄悄改变记忆所记录的时间来源。
+			// 重定向不应悄悄改变取时结果所记录的时间来源。
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
