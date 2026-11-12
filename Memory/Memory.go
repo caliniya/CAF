@@ -35,7 +35,16 @@ func (m *Memory) SetDescription(data *description) *Memory {
 
 func (m *Memory) AddDescription(data *description) *Memory {
 	for _, v := range *data {
-		*m.Tag = append(*m.Tag, v)
+		b := false
+		for _, a := range *m.Tag {
+			if a == v {
+				b = true
+			}
+		}
+
+		if b != true {
+			*m.Tag = append(*m.Tag, v)
+		}
 	}
 	return m
 }
