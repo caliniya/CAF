@@ -1124,15 +1124,20 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	c.chatMu.Unlock()
 
 	tools := c.enabledTools(session)
+	modelPrompt, err := modelInfoPrompt(config.Model, session.Model, session.ReasoningEffort)
+	if err != nil {
+		return fmt.Errorf("编码模型信息失败：%w", err)
+	}
 	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
 	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
-	history := make([]apiImpl.ChatMessage, 0, len(messages)+1)
+	history := make([]apiImpl.ChatMessage, 0, len(messages)+3)
 	if session.Tree != nil && session.Tree.Root != nil {
 		active := persona.Resolve(session.Tree.Root.PersonaID)
 		if prompt, promptErr := active.Prompt(); promptErr == nil {
 			history = append(history, apiImpl.ChatMessage{Role: "system", Content: prompt})
 		}
 	}
+	history = append(history, apiImpl.ChatMessage{Role: "system", Content: modelPrompt})
 	if toolContext.WorkSpace != "" {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前工作区路径：" + toolContext.WorkSpace + "。文件工具的相对路径以此目录为起点。"})
 	} else {

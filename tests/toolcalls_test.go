@@ -58,6 +58,7 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
 				}
+				checkChatModelInfo(t, request, instance.Configs.EnablesConfig.Model[0], "high")
 				if len(request.Tools) != len(agenttool.Tools) {
 					t.Errorf("工具声明数量错误：%d，期望 %d", len(request.Tools), len(agenttool.Tools))
 				}

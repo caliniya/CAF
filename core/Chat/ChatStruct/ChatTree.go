@@ -30,6 +30,12 @@ func (tree *ChatTree) ToChatRequest(model string) (*apiImpl.ChatRequest, error) 
 	err := tree.Each(func(message *apiImpl.ChatMessage) {
 		messages = append(messages, *message)
 	})
+
+	messages = append(messages, apiImpl.ChatMessage{
+		Role:    "system",
+		Content: "模型信息:" + "模型:" + model + ";  上下文参数:",
+	})
+
 	if err != nil {
 		return nil, err
 	}
