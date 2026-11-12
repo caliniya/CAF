@@ -8,9 +8,10 @@ import (
 
 // 表示一个记忆单元
 type Memory struct {
-	data string //当前版本数据
+	Data string //当前版本数据
 	date string //最后修改日期
 
+	Tag *description
 }
 
 func (m *Memory) SetDate() string {
@@ -19,8 +20,22 @@ func (m *Memory) SetDate() string {
 
 func CreateMemory(data string) *Memory {
 	m := Memory{
-		data: data,
+		Data: data,
+		Tag:  &description{},
 	}
 	m.SetDate()
 	return &m
+}
+
+// 这会覆盖原来的
+func (m *Memory) SetDescription(data *description) *Memory {
+	m.Tag = data
+	return m
+}
+
+func (m *Memory) AddDescription(data *description) *Memory {
+	for _, v := range *data {
+		*m.Tag = append(*m.Tag, v)
+	}
+	return m
 }
