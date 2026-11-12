@@ -16,10 +16,13 @@ const DefaultTimeEndpoint = "https://caf-netapi-caliniya.pages.dev/api/time"
 
 const defaultTimeTimeout = 10 * time.Second
 
-// TimeSample 保存本次取时结果。UTC 是估计的接收时刻，ServerUTC 是服务器原值。
+// 北京时间使用固定 UTC+08:00，不依赖本机时区或时区数据库。
+var beijingLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+// TimeSample 保存本次取时结果。Time 是北京时间下估计的接收时刻，ServerUTC 是服务器 UTC 原值。
 // RoundTripMS 的一半用于网络补偿，不表示绝对时钟误差的上限。
 type TimeSample struct {
-	UTC            time.Time  `json:"utc"`
+	Time           time.Time  `json:"time"`
 	Source         string     `json:"source"`
 	Endpoint       string     `json:"endpoint"`
 	ServerUTC      *time.Time `json:"serverUtc,omitempty"`
@@ -29,7 +32,7 @@ type TimeSample struct {
 }
 
 func (t *TimeSample) ToString() string {
-	return "UTC:" + "时间"
+	return "时间:" + t.Time.Format("2006-01-02 15:04:05") + "; 时区:" + t.Time.Format("-07:00")
 }
 
 // TimeClient 可并发取时。构造后不要在请求期间修改配置。
@@ -54,9 +57,9 @@ func NewTimeClient(endpoint string) *TimeClient {
 	}
 }
 
-// Now 优先在线取时；网络、协议、超时或取消错误均回退到本机 UTC。
+// Now 优先在线取时；网络、协议、超时或取消错误均回退到本机时间，统一使用北京时间。
 // 调用者通过 Source 和 FallbackReason 判断是否使用了未经校验的本机时钟。
-func (c *TimeClient) Now(ctx context.Context) TimeSample {
+func (c *TimeClient) Now(ctx context.Context) *TimeSample {
 	if c == nil {
 		c = NewTimeClient("")
 	}
@@ -76,10 +79,10 @@ func (c *TimeClient) Now(ctx context.Context) TimeSample {
 
 	sample, err := c.fetch(ctx, endpoint)
 	if err == nil {
-		return sample
+		return &sample
 	}
-	return TimeSample{
-		UTC:            time.Now().UTC(),
+	return &TimeSample{
+		Time:           time.Now().In(beijingLocation),
 		Source:         "local",
 		Endpoint:       endpoint,
 		FallbackReason: err.Error(),
@@ -144,7 +147,7 @@ func (c *TimeClient) fetch(ctx context.Context, endpoint string) (TimeSample, er
 	}
 	serverUTC = serverUTC.UTC()
 	return TimeSample{
-		UTC:         serverUTC.Add(roundTrip / 2),
+		Time:        serverUTC.Add(roundTrip / 2).In(time.Local),
 		Source:      "cloudflare",
 		Endpoint:    endpoint,
 		ServerUTC:   &serverUTC,

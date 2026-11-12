@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"sync"
+	"time"
 
 	backend "github.com/caliniya/caf/core/Backend"
 	"github.com/wailsapp/wails/v2"
@@ -29,6 +31,10 @@ func Init(assets fs.FS) error {
 		return err
 	}
 
+	timeContext, stopTime := context.WithCancel(context.Background())
+	defer stopTime()
+	var startTime sync.Once
+
 	return wails.Run(&options.App{
 		Title: "CAF", Width: 980, Height: 680, MinWidth: 680, MinHeight: 500,
 		BackgroundColour: &options.RGBA{R: 245, G: 246, B: 250, A: 255},
@@ -42,7 +48,35 @@ func Init(assets fs.FS) error {
 			}
 			backend.Platform.StartExtensionClients()
 		},
+		OnDomReady: func(ctx context.Context) {
+			// 前端重载时仍只保留一个取时循环；网络请求不阻塞窗口启动。
+			startTime.Do(func() {
+				go func() {
+					for timeContext.Err() == nil {
+						sample := backend.Platform.APIClient.TimeClient.Now(timeContext)
+						if timeContext.Err() != nil {
+							return
+						}
+						source := "在线"
+						if sample.Source == "local" {
+							source = "脱机"
+						}
+						runtime.WindowSetTitle(ctx, "CAF | "+sample.ToString()+" ["+source+"]")
+						select {
+						case <-timeContext.Done():
+							return
+						case <-time.After(100 * time.Millisecond):
+						}
+					}
+				}()
+			})
+		},
+		OnBeforeClose: func(ctx context.Context) bool {
+			stopTime()
+			return false
+		},
 		OnShutdown: func(ctx context.Context) {
+			stopTime()
 			backend.Platform.CloseQQAdapters()
 		},
 		Bind: []interface{}{
