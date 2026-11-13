@@ -2,7 +2,7 @@ package Memory
 
 //表示某一段记忆,
 type Recollection struct {
-	Name string
+	Name string `json:""`
 	data map[*description]Memory
 }
 

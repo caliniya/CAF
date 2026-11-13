@@ -61,6 +61,8 @@ func (m *ToolMeta) ToType() *APIImpl.Tool {
 }
 
 type Tool interface {
+	// Load 初始化工具元信息，应在注册前调用。
+	Load()
 	Meta() *ToolMeta
 	Fun(*ToolContext, map[string]any) (string, error)
 

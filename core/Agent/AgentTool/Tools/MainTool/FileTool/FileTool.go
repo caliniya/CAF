@@ -26,10 +26,7 @@ func (f *FileTool) Meta() AgentTool.ToolKitMeta {
 }
 
 func InitFileTool() *FileTool {
-	tools := []interface {
-		AgentTool.Tool
-		Load()
-	}{
+	tools := []AgentTool.Tool{
 		&ReadFile{},
 		&ListDirectory{},
 		&SearchFiles{},

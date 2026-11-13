@@ -1075,6 +1075,8 @@ func (c *Core) endChatSend(id string) {
 // 一轮工具调用后模型会带着结果重新请求，限制轮数防止模型无限调用。
 const maxToolRounds = 10
 
+var errToolDisabled = errors.New("此工具被禁用")
+
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string) error {
 	modelIndex := slices.IndexFunc(config.Model, func(model apiImpl.Model) bool { return model.ID == session.Model })
 	if modelIndex < 0 {
@@ -1199,14 +1201,18 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			callContext.AskUser = func(ctx context.Context, question agenttool.UserQuestion) (string, error) {
 				return c.askUser(ctx, id, reply.ID, call.ID, question)
 			}
-			output, callErr := executeToolCall(call, &callContext)
+			output, callErr := executeToolCall(call, &callContext, tools)
 			toolError := ""
 			if callErr != nil {
 				payload["event"] = "fail"
 				toolError = callErr.Error()
 				payload["error"] = toolError
 				// 工具失败不能中断整轮，回一条 tool 消息让模型自己处理
-				output = "工具执行失败：" + callErr.Error()
+				if errors.Is(callErr, errToolDisabled) {
+					output = callErr.Error()
+				} else {
+					output = "工具执行失败：" + callErr.Error()
+				}
 			} else {
 				payload["event"] = "done"
 			}
@@ -1232,8 +1238,8 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	return c.saveReplyLocked(directory, session)
 }
 
-// executeToolCall 按 API 函数名（ToolMeta.ID）取工具实例、解析参数并执行，带超时保护。
-func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext) (string, error) {
+// executeToolCall 只执行本轮启用的工具，按 ToolMeta.ID 取实例并检查权限、参数和超时。
+func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext, enabledTools []apiImpl.Tool) (string, error) {
 	tool := agenttool.Tools[call.Name]
 	if tool == nil {
 		return "", fmt.Errorf("未找到工具 %q", call.Name)
@@ -1241,6 +1247,9 @@ func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext) (string,
 	meta := tool.Meta()
 	if meta == nil {
 		return "", errors.New("工具缺少元信息")
+	}
+	if !meta.Enabled || !slices.ContainsFunc(enabledTools, func(tool apiImpl.Tool) bool { return tool.Name == call.Name }) {
+		return "", errToolDisabled
 	}
 	required := meta.Permission
 	if required == 0 {

@@ -370,7 +370,7 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (detailsPersona.value || personaChange.value || workspaceDialogOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value) return
   if (toolsOpen.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -396,6 +396,9 @@ const activeConfig = computed(
   () => configs.configs.find((item) => item.ID === chat.session?.configId) ?? configs.enables,
 )
 const activeModel = computed(() => chat.session?.model || activeConfig.value?.EnabledModel || '')
+const modelChange = ref<{ chatId: string; configId: string; model: string } | null>(null)
+const modelChanging = ref(false)
+const modelChangeError = ref('')
 
 // 思考强度：四档，与后端 SendChatMessage 的 reasoningEffort 参数对应。
 const effortSteps = [
@@ -447,16 +450,20 @@ async function regenerateMessage(message: (typeof chat.messages)[number]) {
 }
 
 async function selectConfig(configId: string) {
+  if (modelChanging.value) return
   const config = configs.configs.find((item) => item.ID === configId)
   const model = config?.EnabledModel || config?.Model[0]?.id
   if (!config) return
-  try {
-    if (chat.session) {
-      if (!model) return
-      await chat.updateModel(configId, model)
-    } else {
-      await configs.selectConfig(configs.configs.indexOf(config))
+  if (chat.session) {
+    if (configId === chat.session.configId) {
+      openFlyout.value = ''
+      return
     }
+    if (model) requestModelChange(configId, model)
+    return
+  }
+  try {
+    await configs.selectConfig(configs.configs.indexOf(config))
     openFlyout.value = ''
   } catch (err) {
     chat.error = String(err)
@@ -464,13 +471,13 @@ async function selectConfig(configId: string) {
 }
 
 async function selectModel(model: string) {
-  if (!model || !activeConfig.value) return
+  if (!model || !activeConfig.value || modelChanging.value) return
+  if (chat.session) {
+    requestModelChange(chat.session.configId, model)
+    return
+  }
   try {
-    if (chat.session) {
-      await chat.updateModel(chat.session.configId, model)
-    } else {
-      await configs.selectModel(configs.configs.indexOf(activeConfig.value), model)
-    }
+    await configs.selectModel(configs.configs.indexOf(activeConfig.value), model)
     openFlyout.value = ''
     modelMenuOpen.value = false
   } catch (err) {
@@ -478,8 +485,35 @@ async function selectModel(model: string) {
   }
 }
 
+function requestModelChange(configId: string, model: string) {
+  if (!chat.session) return
+  closeMenus()
+  if (configId === chat.session.configId && model === chat.session.model) return
+  modelChangeError.value = ''
+  modelChange.value = { chatId: chat.session.id, configId, model }
+}
+
+async function confirmModelChange() {
+  const change = modelChange.value
+  if (!change || modelChanging.value) return
+  if (chat.session?.id !== change.chatId) {
+    modelChange.value = null
+    return
+  }
+  modelChanging.value = true
+  modelChangeError.value = ''
+  try {
+    await chat.updateModel(change.configId, change.model)
+    modelChange.value = null
+  } catch (err) {
+    modelChangeError.value = String(err)
+  } finally {
+    modelChanging.value = false
+  }
+}
+
 function closeMenusOnOutside(event: PointerEvent) {
-  if (detailsPersona.value || personaChange.value || workspaceDialogOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
     || settingsMenuAnchor.value?.contains(target) || workspaceMenuAnchor.value?.contains(target)) return
@@ -528,6 +562,7 @@ onDeactivated(() => {
   closeTools()
   detailsPersona.value = null
   personaChange.value = null
+  modelChange.value = null
   workspaceDialogOpen.value = false
 })
 
@@ -656,6 +691,8 @@ function missingReasoning(message: (typeof chat.messages)[number], index: number
     && !(chat.sending && index === chat.messages.length - 1)
     && !message.process?.some((item) => item.kind === 'reasoning' && item.content)
 }
+
+watch(() => chat.session?.id, () => { modelChange.value = null })
 
 watch(
   () => [chat.session?.id, chat.session?.configId, chat.session?.model],
@@ -1023,6 +1060,11 @@ watch(
     :message="`将当前对话的人设切换为「${personaChange?.persona.name ?? ''}」。\n在对话中途切换人设会降低对话质量，是否继续？`"
     confirm-label="确认切换" :busy="personaChanging" :error="personaChangeError"
     @confirm="confirmPersonaChange" @cancel="personaChange = null" />
+
+  <ConfirmationDialog :open="!!modelChange" title="切换模型或提供商"
+    message="在对话中切换模型或提供商会降低缓存命中率，并且可能影响模型能力。是否继续？"
+    confirm-label="确认切换" :busy="modelChanging" :error="modelChangeError"
+    @confirm="confirmModelChange" @cancel="modelChange = null" />
 
   <!-- 当前对话的工具设置 -->
   <Teleport to="body">

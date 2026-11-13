@@ -14,9 +14,177 @@ import (
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	maintool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool"
+	filetool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/FileTool"
 	backend "github.com/caliniya/caf/core/Backend"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
+
+func TestChatToolRejectsDisabledTools(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		chatEnabled      *bool
+		globalEnabled    *bool
+		disableSet       bool
+		disableKit       bool
+		disableTool      bool
+		invalidArguments bool
+		readOnly         bool
+		wantDisabled     bool
+	}{
+		{name: "chat-disabled", chatEnabled: boolPtr(false), wantDisabled: true},
+		{name: "global-disabled", globalEnabled: boolPtr(false), wantDisabled: true},
+		{name: "set-default-disabled", disableSet: true, wantDisabled: true},
+		{name: "kit-default-disabled", disableKit: true, wantDisabled: true},
+		{name: "tool-disabled", disableTool: true, wantDisabled: true},
+		{name: "chat-disable-over-global-enable", chatEnabled: boolPtr(false), globalEnabled: boolPtr(true), wantDisabled: true},
+		{name: "chat-enable-over-global-disable", chatEnabled: boolPtr(true), globalEnabled: boolPtr(false)},
+		{name: "global-enable-over-kit-default-disable", globalEnabled: boolPtr(true), disableKit: true},
+		{name: "kit-enable-cannot-enable-disabled-tool", chatEnabled: boolPtr(true), disableTool: true, wantDisabled: true},
+		{name: "disabled-before-argument-parsing", chatEnabled: boolPtr(false), invalidArguments: true, wantDisabled: true},
+		{name: "disabled-before-permission-check", chatEnabled: boolPtr(false), readOnly: true, wantDisabled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			useToolRegistry(t)
+			set := maintool.InitMainTool()
+			set.Enabled = !tc.disableSet
+			set.Get("文件操作工具").(*filetool.FileTool).Enabled = !tc.disableKit
+			set.Get("文件操作工具").ListName()["WriteFile"].Meta().Enabled = !tc.disableTool
+			if err := agenttool.Add(set); err != nil {
+				t.Fatal(err)
+			}
+			instance := useChatTaskCore(t)
+			globalConfig := &agenttool.ChatToolConfig{}
+			globalConfig.SetKit(set.Name, "文件操作工具", tc.globalEnabled)
+			instance.Configs.ToolNormalConfig = globalConfig
+			chatConfig := &agenttool.ChatToolConfig{Permission: agenttool.PermissionFullAccess}
+			if tc.readOnly {
+				chatConfig.Permission = agenttool.PermissionReadOnly
+			}
+			chatConfig.SetKit(set.Name, "文件操作工具", tc.chatEnabled)
+			path := filepath.Join(instance.Paths.Data, "tool-output.txt")
+			if err := os.WriteFile(path, []byte("原始内容"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			argumentJSON, err := json.Marshal(map[string]any{"path": []string{path}, "content": "修改后的内容"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			arguments := string(argumentJSON)
+			if tc.invalidArguments {
+				arguments = "{invalid"
+			}
+			toolResponse, err := json.Marshal(map[string]any{
+				"choices": []any{map[string]any{
+					"delta": map[string]any{"tool_calls": []any{map[string]any{
+						"index": 0, "id": "write-call", "type": "function",
+						"function": map[string]string{"name": "WriteFile", "arguments": arguments},
+					}}}, "finish_reason": "tool_calls",
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				var request apiImpl.ChatCompletionsRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("无法解析聊天请求：%v", err)
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				declared := false
+				for _, tool := range request.Tools {
+					if tool.Function.Name == "WriteFile" {
+						declared = true
+					}
+				}
+				if declared == tc.wantDisabled {
+					t.Errorf("工具声明与启停配置不一致：declared=%v disabled=%v", declared, tc.wantDisabled)
+				}
+				if requests == 2 {
+					last := request.Messages[len(request.Messages)-1]
+					if last.Role != "tool" || last.ToolCallID != "write-call" {
+						t.Errorf("没有回传对应调用的工具结果：%+v", last)
+					}
+					output, _ := last.Content.(string)
+					if tc.wantDisabled && output != "此工具被禁用" {
+						t.Errorf("禁用结果必须是原文，实际 %q", output)
+					}
+					if !tc.wantDisabled && strings.HasPrefix(output, "工具执行失败：") {
+						t.Errorf("显式启用的工具不应失败：%s", output)
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				if requests == 1 {
+					fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", toolResponse)
+				} else {
+					fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"完成\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+				}
+			}))
+			defer server.Close()
+			instance.Configs.EnablesConfig.ServerAddress = server.URL
+			var events []map[string]string
+			previousEmit := backend.Emit
+			t.Cleanup(func() { backend.Emit = previousEmit })
+			backend.Emit = func(event string, data ...any) {
+				if event != backend.EventChatTool {
+					return
+				}
+				var payload map[string]string
+				if err := json.Unmarshal([]byte(data[0].(string)), &payload); err != nil {
+					t.Fatal(err)
+				}
+				events = append(events, payload)
+			}
+			task, err := instance.CreateChat("", "", "", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			configJSON, err := json.Marshal(chatConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := instance.SetChatToolConfig(task.ID, string(configJSON)); err != nil {
+				t.Fatal(err)
+			}
+			if err := instance.SendChatMessage(task.ID, "写入文件", "high"); err != nil {
+				t.Fatal(err)
+			}
+			if requests != 2 {
+				t.Fatalf("工具结果后应继续对话，实际请求次数 %d", requests)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantContent, wantStatus := "修改后的内容", "done"
+			if tc.wantDisabled {
+				wantContent, wantStatus = "原始内容", "fail"
+			}
+			if string(content) != wantContent {
+				t.Fatalf("工具执行状态不正确，文件内容为 %q，期望 %q", content, wantContent)
+			}
+			if len(events) != 2 || events[0]["event"] != "start" || events[1]["event"] != wantStatus {
+				t.Fatalf("工具状态事件不正确：%+v", events)
+			}
+			if tc.wantDisabled && events[1]["error"] != "此工具被禁用" {
+				t.Fatalf("界面应收到禁用原因：%+v", events[1])
+			}
+			loaded, err := instance.GetChat(task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			messages := loaded.Tree.Root.Next[0].Next[0].Child
+			if len(messages) != 3 || messages[2].Content != "完成" {
+				t.Fatalf("对话没有保存工具结果和后续回复：%+v", messages)
+			}
+			if tc.wantDisabled && (messages[1].Content != "此工具被禁用" || messages[1].ToolError != "此工具被禁用") {
+				t.Fatalf("禁用结果没有保存到对话历史：%+v", messages[1])
+			}
+		})
+	}
+}
 
 func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 	for _, fail := range []bool{false, true} {
