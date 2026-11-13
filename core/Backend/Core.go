@@ -27,10 +27,13 @@ type Core struct {
 	ChatList map[string]chat.ChatTask
 
 	APIClient *NetAPI.NetAPIClient
+
+	Servers
 }
 
 func Init() {
 	Platform = &Core{
 		APIClient: NetAPI.InitNetAPI(),
+		Servers:   Servers{},
 	}
 }

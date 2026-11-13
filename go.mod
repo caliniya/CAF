@@ -1,6 +1,6 @@
 module github.com/caliniya/caf
 
-go 1.26.0
+go 1.27.3
 
 require (
 	github.com/gorilla/websocket v1.5.3

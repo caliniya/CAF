@@ -5,7 +5,6 @@ type MemoryServer struct {
 }
 
 func (m *MemoryServer) Init() *MemoryServer {
-
 	return m
 }
 
