@@ -920,15 +920,11 @@ func (c *Core) SendChatMessage(id, text, reasoningEffort string) error {
 	if session.Title == "新建对话" {
 		session.Title = titleFromMessage(text)
 	}
-	requestMessages, err := session.Tree.MessagesThrough(userNode.ID)
-	if err != nil {
-		return err
-	}
 	replyNode := chatstruct.CreateChatNode()
 	if err := session.Tree.AddNext(userNode.ID, replyNode); err != nil {
 		return err
 	}
-	return c.runChatNode(id, session, config, directory, replyNode, requestMessages, reasoningEffort)
+	return c.runChatNode(id, session, config, directory, replyNode, reasoningEffort)
 }
 
 func (c *Core) RegenerateChatMessage(id, nodeID, reasoningEffort string) error {
@@ -960,15 +956,11 @@ func (c *Core) RegenerateChatMessage(id, nodeID, reasoningEffort string) error {
 	if !parentOnPath {
 		return errors.New("只能重新生成当前分支上的回复")
 	}
-	requestMessages, err := session.Tree.MessagesThrough(parent.ID)
-	if err != nil {
-		return err
-	}
 	newReply := chatstruct.CreateChatNode()
 	if err := session.Tree.AddNext(parent.ID, newReply); err != nil {
 		return err
 	}
-	return c.runChatNode(id, session, config, directory, newReply, requestMessages, reasoningEffort)
+	return c.runChatNode(id, session, config, directory, newReply, reasoningEffort)
 }
 
 // EditChatMessage 编辑当前分支上的一条用户消息。
@@ -1011,15 +1003,11 @@ func (c *Core) EditChatMessage(id, nodeID, text, reasoningEffort string) error {
 	if err := session.Tree.AddNext(parentID, userNode); err != nil {
 		return err
 	}
-	requestMessages, err := session.Tree.MessagesThrough(userNode.ID)
-	if err != nil {
-		return err
-	}
 	replyNode := chatstruct.CreateChatNode()
 	if err := session.Tree.AddNext(userNode.ID, replyNode); err != nil {
 		return err
 	}
-	return c.runChatNode(id, session, config, directory, replyNode, requestMessages, reasoningEffort)
+	return c.runChatNode(id, session, config, directory, replyNode, reasoningEffort)
 }
 
 func hasUserMessage(node *chatstruct.ChatNode) bool {
@@ -1087,7 +1075,16 @@ func (c *Core) endChatSend(id string) {
 // 一轮工具调用后模型会带着结果重新请求，限制轮数防止模型无限调用。
 const maxToolRounds = 10
 
-func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, messages []apiImpl.ChatMessage, reasoningEffort string) error {
+func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string) error {
+	modelIndex := slices.IndexFunc(config.Model, func(model apiImpl.Model) bool { return model.ID == session.Model })
+	if modelIndex < 0 {
+		return fmt.Errorf("模型列表中未找到 %q", session.Model)
+	}
+	// 新回复是当前路径末尾的空节点，转换时只会包含它之前的消息。
+	request, err := session.Tree.ToChatRequest(config.Model[modelIndex])
+	if err != nil {
+		return err
+	}
 	toolContext, err := c.toolContextFor(session)
 	if err != nil {
 		return err
@@ -1124,9 +1121,11 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	c.chatMu.Unlock()
 
 	tools := c.enabledTools(session)
+	request.Thinking = session.ReasoningEffort
+	request.Tools = tools
 	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
 	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
-	history := make([]apiImpl.ChatMessage, 0, len(messages)+1)
+	history := make([]apiImpl.ChatMessage, 0, len(request.Messages)+2)
 	if session.Tree != nil && session.Tree.Root != nil {
 		active := persona.Resolve(session.Tree.Root.PersonaID)
 		if prompt, promptErr := active.Prompt(); promptErr == nil {
@@ -1138,19 +1137,14 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	} else {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前未使用工作区。自动编辑权限下只允许读取文件，不允许创建或修改文件。"})
 	}
-	history = append(history, messages...)
+	history = append(history, request.Messages...)
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
 
 	for round := 0; round <= maxToolRounds; round++ {
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
-		request := apiImpl.ChatRequest{
-			Model:    session.Model,
-			Messages: history,
-			Thinking: session.ReasoningEffort,
-			Tools:    tools,
-		}
-		streamErr := session.Client.StreamChat(context.Background(), request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
+		request.Messages = history
+		streamErr := session.Client.StreamChat(context.Background(), *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 			if delta.Content != "" {
 				assistant.Content += delta.Content
 			}

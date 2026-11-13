@@ -72,11 +72,11 @@ func TestChatTaskPersistenceUsesConfigIDAndTreeBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	messages, err := loaded.Tree.ToChatRequest(loaded.Model)
+	messages, err := loaded.Tree.ToChatRequest(instance.Configs.EnablesConfig.Model[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages.Messages) != 2 || messages.Messages[1].Content != "first" {
+	if len(messages.Messages) != 3 || messages.Messages[2].Content != "first" {
 		t.Fatalf("stored branch was not restored: %+v", messages.Messages)
 	}
 

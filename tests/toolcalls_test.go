@@ -75,7 +75,17 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					t.Error("展示字段不能发送给模型")
 				}
 				foundResult := false
+				modelInfoCount := 0
 				for _, message := range request.Messages {
+					if message.Role == "system" {
+						content, _ := message.Content.(string)
+						if strings.HasPrefix(content, "模型信息：") {
+							modelInfoCount++
+							if !strings.Contains(content, "模型名称：Model 1") || !strings.Contains(content, "模型 ID：model-1") {
+								t.Errorf("模型信息没有使用会话选中的模型：%s", content)
+							}
+						}
+					}
 					for _, call := range message.ToolCalls {
 						if call.ID != "call-1" || call.Function.Name != "ReadFile" {
 							t.Errorf("历史工具调用应保留调用 ID 和工具 ID，实际 %+v", call)
@@ -88,6 +98,9 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 							t.Errorf("工具结果没有正确回传：%+v", message)
 						}
 					}
+				}
+				if modelInfoCount != 1 {
+					t.Errorf("每次模型请求（包括工具续请求）应包含一条模型信息，实际 %d", modelInfoCount)
 				}
 				if requests > 1 && !foundResult {
 					t.Error("工具结果应保留在后续请求中")

@@ -21,8 +21,8 @@ type TreeRoot struct {
 	PersonaID string `json:"personaId,omitempty"`
 }
 
-// ToChatRequest 将当前分支转换为模型请求。
-func (tree *ChatTree) ToChatRequest(model string) (*apiImpl.ChatRequest, error) {
+// ToChatRequest 将当前分支转换为模型请求
+func (tree *ChatTree) ToChatRequest(model apiImpl.Model) (*apiImpl.ChatRequest, error) {
 	if tree == nil || tree.Root == nil {
 		return nil, errors.New("对话树尚未初始化")
 	}
@@ -31,18 +31,34 @@ func (tree *ChatTree) ToChatRequest(model string) (*apiImpl.ChatRequest, error) 
 		messages = append(messages, *message)
 	})
 
-	messages = append(messages, apiImpl.ChatMessage{
-		Role:    "system",
-		Content: "模型信息:" + "模型:" + model + ";  上下文参数:",
-	})
-
 	if err != nil {
 		return nil, err
 	}
 	if len(messages) == 0 {
 		return nil, errors.New("对话树没有消息")
 	}
-	return &apiImpl.ChatRequest{Model: model, Messages: messages}, nil
+	name := model.Name
+	if name == "" {
+		name = model.ID
+	}
+	modelInfo := apiImpl.ChatMessage{
+		Role: "system",
+		Content: fmt.Sprintf(
+			"模型信息：\n模型名称：%s\n模型 ID：%s\n上下文窗口（context_window）：%s\n最大输出 token 数（max_output_tokens）：%s",
+			name, model.ID, formatTokenLimit(model.MaxContext), formatTokenLimit(model.MaxOutputTokens),
+		),
+	}
+	return &apiImpl.ChatRequest{
+		Model:    model.ID,
+		Messages: append([]apiImpl.ChatMessage{modelInfo}, messages...),
+	}, nil
+}
+
+func formatTokenLimit(limit int) string {
+	if limit <= 0 {
+		return "未提供"
+	}
+	return fmt.Sprintf("%d tokens", limit)
 }
 
 // Start 在根节点下创建并选中一条新的对话起始分支。
