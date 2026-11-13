@@ -14,8 +14,9 @@ type Memory struct {
 	Tag *description
 }
 
-func (m *Memory) SetDate() string {
-	return Backend.Platform.APIClient.TimeClient.Now(context.Background()).ToString()
+func (m *Memory) Date() string {
+	m.date = Backend.Platform.APIClient.TimeClient.Now(context.Background()).ToString()
+	return m.date
 }
 
 func CreateMemory(data string) *Memory {
@@ -23,7 +24,7 @@ func CreateMemory(data string) *Memory {
 		Data: data,
 		Tag:  &description{},
 	}
-	m.SetDate()
+	m.Date()
 	return &m
 }
 
