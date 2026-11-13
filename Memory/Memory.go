@@ -8,15 +8,14 @@ import (
 
 // 表示一个记忆单元
 type Memory struct {
-	Data string //当前版本数据
-	date string //最后修改日期
-
-	Tag *description
+	Data       string       `json:"data"`
+	MemoryDate string       `json:"date"`
+	Tag        *description `json:"deaceription"`
 }
 
 func (m *Memory) Date() string {
-	m.date = Backend.Platform.APIClient.TimeClient.Now(context.Background()).ToString()
-	return m.date
+	m.MemoryDate = Backend.Platform.APIClient.TimeClient.Now(context.Background()).ToString()
+	return m.MemoryDate
 }
 
 func CreateMemory(data string) *Memory {

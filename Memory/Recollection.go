@@ -2,8 +2,8 @@ package Memory
 
 //表示某一段记忆,
 type Recollection struct {
-	Name string `json:""`
-	data map[*description]Memory
+	Name string                  `json:"name"`
+	Data map[*description]Memory `json:"data"`
 }
 
 func (r *description) Get(tags ...string) []string {
@@ -15,7 +15,7 @@ func (r *description) Get(tags ...string) []string {
 }
 
 func (r *Recollection) Search(f func(...string), tags ...string) {
-	data := r.data
+	data := r.Data
 	for k := range data {
 		k.Find(f, tags...)
 	}

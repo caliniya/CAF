@@ -9,12 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 const DefaultTimeEndpoint = "https://caf-netapi-caliniya.pages.dev/api/time"
 
 const defaultTimeTimeout = 10 * time.Second
+
+const defaultSyncInterval = 5 * time.Minute
+
+const defaultRetryInterval = 30 * time.Second
 
 // 北京时间使用固定 UTC+08:00，不依赖本机时区或时区数据库。
 var beijingLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
@@ -29,17 +34,34 @@ type TimeSample struct {
 	RequestID      string     `json:"requestId,omitempty"`
 	RoundTripMS    float64    `json:"roundTripMs"`
 	FallbackReason string     `json:"fallbackReason,omitempty"`
+	Cached         bool       `json:"cached"`
+	SampleAgeMS    float64    `json:"sampleAgeMs"`
 }
 
 func (t *TimeSample) ToString() string {
 	return "时间:" + t.Time.Format("2006-01-02 15:04:05") + "; 时区:" + t.Time.Format("-07:00")
 }
 
-// TimeClient 可并发取时。构造后不要在请求期间修改配置。
+// TimeClient 复用服务器取时基准，按单调时钟推进当前时间，可并发使用。
+// 调用方应长期复用同一实例；开始使用后不得复制实例或并发修改配置。
 type TimeClient struct {
 	Endpoint string
 	Client   *http.Client
 	Timeout  time.Duration
+	// SyncInterval 为成功取时后的校准间隔，非正值使用默认的 5 分钟。
+	SyncInterval time.Duration
+	// RetryInterval 为取时失败后的重试间隔，非正值使用默认的 30 秒。
+	RetryInterval time.Duration
+
+	mu         sync.Mutex
+	cache      *timeCache
+	refreshing chan struct{}
+}
+
+type timeCache struct {
+	sample   TimeSample
+	observed time.Time // 保留 time.Now() 的单调时钟部分，不转换时区或序列化。
+	nextSync time.Time
 }
 
 // NewTimeClient 使用默认 Cloudflare 地址，或传入完整的自定义时间接口地址。
@@ -48,8 +70,10 @@ func NewTimeClient(endpoint string) *TimeClient {
 		endpoint = DefaultTimeEndpoint
 	}
 	return &TimeClient{
-		Endpoint: endpoint,
-		Timeout:  defaultTimeTimeout,
+		Endpoint:      endpoint,
+		Timeout:       defaultTimeTimeout,
+		SyncInterval:  defaultSyncInterval,
+		RetryInterval: defaultRetryInterval,
 		Client: &http.Client{
 			// 重定向不应悄悄改变取时结果所记录的时间来源。
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -57,9 +81,19 @@ func NewTimeClient(endpoint string) *TimeClient {
 	}
 }
 
-// Now 优先在线取时；网络、协议、超时或取消错误均回退到本机时间，统一使用北京时间。
-// 调用者通过 Source 和 FallbackReason 判断是否使用了未经校验的本机时钟。
+// Now 首次或校准到期时请求服务器，其余调用在本地推进已保存的时间基准。
+// 取时失败后使用本机基准，等待 RetryInterval 再重试，避免离线时不断发请求。
+// Cached、SampleAgeMS 和原始 ServerUTC / RequestID 用于区分新取时与推算时间。
 func (c *TimeClient) Now(ctx context.Context) *TimeSample {
+	return c.now(ctx, false)
+}
+
+// Sync 主动校准一次，忽略缓存期限；与已经进行中的校准共享同一请求。
+func (c *TimeClient) Sync(ctx context.Context) *TimeSample {
+	return c.now(ctx, true)
+}
+
+func (c *TimeClient) now(ctx context.Context, force bool) *TimeSample {
 	if c == nil {
 		c = NewTimeClient("")
 	}
@@ -77,10 +111,70 @@ func (c *TimeClient) Now(ctx context.Context) *TimeSample {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	sample, err := c.fetch(ctx, endpoint)
-	if err == nil {
-		return &sample
+	c.mu.Lock()
+	if !force && c.cache != nil && c.cache.sample.Endpoint == endpoint && time.Now().Before(c.cache.nextSync) {
+		result := c.cachedNow()
+		c.mu.Unlock()
+		return result
 	}
+	if done := c.refreshing; done != nil {
+		c.mu.Unlock()
+		select {
+		case <-done:
+			c.mu.Lock()
+			result := c.cachedNow()
+			c.mu.Unlock()
+			return result
+		case <-ctx.Done():
+			// 等待者取消不应覆盖正在同步的共享缓存。
+			return localTimeSample(endpoint, ctx.Err())
+		}
+	}
+	done := make(chan struct{})
+	c.refreshing = done
+	c.mu.Unlock()
+
+	sample, err := c.fetch(ctx, endpoint)
+	observed := time.Now()
+	interval := c.SyncInterval
+	if interval <= 0 {
+		interval = defaultSyncInterval
+	}
+	if err != nil {
+		sample = *localTimeSample(endpoint, err)
+		interval = c.RetryInterval
+		if interval <= 0 {
+			interval = defaultRetryInterval
+		}
+	}
+	c.mu.Lock()
+	c.cache = &timeCache{sample: sample, observed: observed, nextSync: observed.Add(interval)}
+	c.refreshing = nil
+	close(done)
+	c.mu.Unlock()
+	// 返回值与内部缓存相互独立，调用者修改结果不会污染后续取时。
+	return cloneTimeSample(sample)
+}
+
+// cachedNow 的调用方持有 mu。elapsed 使用单调时钟，不受系统校时影响。
+func (c *TimeClient) cachedNow() *TimeSample {
+	result := cloneTimeSample(c.cache.sample)
+	elapsed := time.Since(c.cache.observed)
+	result.Time = result.Time.Add(elapsed)
+	result.Cached = true
+	result.SampleAgeMS = float64(elapsed) / float64(time.Millisecond)
+	return result
+}
+
+func cloneTimeSample(sample TimeSample) *TimeSample {
+	if sample.ServerUTC != nil {
+		serverUTC := *sample.ServerUTC
+		sample.ServerUTC = &serverUTC
+	}
+	return &sample
+}
+
+func localTimeSample(endpoint string, err error) *TimeSample {
 	return &TimeSample{
 		Time:           time.Now().In(beijingLocation),
 		Source:         "local",
@@ -147,7 +241,7 @@ func (c *TimeClient) fetch(ctx context.Context, endpoint string) (TimeSample, er
 	}
 	serverUTC = serverUTC.UTC()
 	return TimeSample{
-		Time:        serverUTC.Add(roundTrip / 2).In(time.Local),
+		Time:        serverUTC.Add(roundTrip / 2).In(beijingLocation),
 		Source:      "cloudflare",
 		Endpoint:    endpoint,
 		ServerUTC:   &serverUTC,
