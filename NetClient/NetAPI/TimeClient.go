@@ -17,7 +17,7 @@ const DefaultTimeEndpoint = "https://caf-netapi-caliniya.pages.dev/api/time"
 
 const defaultTimeTimeout = 10 * time.Second
 
-const defaultSyncInterval = 5 * time.Minute
+const defaultSyncInterval = time.Minute
 
 const defaultRetryInterval = 30 * time.Second
 
@@ -48,7 +48,7 @@ type TimeClient struct {
 	Endpoint string
 	Client   *http.Client
 	Timeout  time.Duration
-	// SyncInterval 为成功取时后的校准间隔，非正值使用默认的 5 分钟。
+	// SyncInterval 为成功取时后的校准间隔，非正值使用默认的 1 分钟。
 	SyncInterval time.Duration
 	// RetryInterval 为取时失败后的重试间隔，非正值使用默认的 30 秒。
 	RetryInterval time.Duration
