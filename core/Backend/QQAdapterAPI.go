@@ -296,8 +296,15 @@ func (c *Core) validateQQPortLocked(port int, exceptID string) error {
 }
 
 func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
+	return c.startQQAdapter(context.Background(), id)
+}
+
+func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, error) {
 	c.QQ.mu.Lock()
 	defer c.QQ.mu.Unlock()
+	if err := parent.Err(); err != nil {
+		return nil, err
+	}
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return nil, err
@@ -314,7 +321,7 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	if err := client.Start(ctx); err != nil {
 		cancel()
 		_ = client.Close()
@@ -447,15 +454,5 @@ func (c *Core) deleteQQAdapterLocked(id string) error {
 }
 
 func (c *Core) CloseQQAdapters() {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
-	for id, running := range c.QQ.clients {
-		if running.cancel != nil {
-			running.cancel()
-		}
-		if running.client != nil {
-			_ = running.client.Close()
-		}
-		delete(c.QQ.clients, id)
-	}
+	_ = c.QQ.Close(context.Background())
 }

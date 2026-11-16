@@ -1,6 +1,7 @@
 package Backend
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -365,18 +366,30 @@ func (c *Core) DeleteExtensionClient(id string) error {
 
 // StartExtensionClients 恢复已启用扩展的监听。连接仍由外部 QQ 实现发起。
 func (c *Core) StartExtensionClients() {
+	_ = c.startExtensionClients(context.Background())
+}
+
+func (c *Core) startExtensionClients(ctx context.Context) error {
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	clients, err := c.listExtensionClientsLocked()
 	if err != nil {
-		return
+		return err
 	}
+	var errs []error
 	for _, client := range clients {
 		for _, item := range client.Extensions {
 			if item.Type != onebot11qq.ExtensionType || !item.Enabled {
 				continue
 			}
-			if _, err := c.StartQQAdapter(item.AdapterID); err != nil {
+			if err := ctx.Err(); err != nil {
+				return errors.Join(append(errs, err)...)
+			}
+			if _, err := c.startQQAdapter(ctx, item.AdapterID); err != nil {
+				errs = append(errs, fmt.Errorf("启动 QQ 适配器 %s：%w", item.AdapterID, err))
 				c.QQ.mu.Lock()
 				if c.QQ.clients == nil {
 					c.QQ.clients = map[string]*qqAdapterRuntime{}
@@ -386,4 +399,5 @@ func (c *Core) StartExtensionClients() {
 			}
 		}
 	}
+	return errors.Join(errs...)
 }

@@ -15,7 +15,7 @@ type Core struct {
 	Paths   *platform.Paths
 	Configs *Configs
 	FS      platform.FilePlatform
-	QQ      QQState
+	QQ      QQServer
 
 	chatMu              sync.Mutex
 	chatSending         map[string]bool
@@ -36,4 +36,5 @@ func Init() {
 		APIClient: NetAPI.InitNetAPI(),
 		Servers:   Servers{},
 	}
+	Platform.Servers[QQServerName] = NewQQServer(Platform)
 }

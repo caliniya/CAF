@@ -22,7 +22,7 @@ func useQQAdapterCore(t *testing.T) *backend.Core {
 	instance := &backend.Core{
 		Paths: &platform.Paths{Data: t.TempDir()},
 		FS:    &desktopBackend.DesktopFileSystem{},
-		QQ:    backend.QQState{ListenHost: "127.0.0.1"},
+		QQ:    backend.QQServer{ListenHost: "127.0.0.1"},
 	}
 	t.Cleanup(instance.CloseQQAdapters)
 	return instance
