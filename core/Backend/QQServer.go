@@ -9,7 +9,7 @@ import (
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
-const QQServerName = "qq"
+const QQServerName = "qqServer"
 
 // QQServer 集中管理 QQ 监听配置、适配器配置和运行状态。
 // 使用后不得整体复制，内部包含保护 adapters 和 clients 的互斥锁。

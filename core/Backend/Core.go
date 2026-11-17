@@ -1,6 +1,7 @@
 package Backend
 
 import (
+	"context"
 	"sync"
 
 	//"github.com/caliniya/caf/NetClient"
@@ -37,4 +38,5 @@ func Init() {
 		Servers:   Servers{},
 	}
 	Platform.Servers[QQServerName] = NewQQServer(Platform)
+	Platform.Servers[QQServerName].Init(context.Background())
 }
