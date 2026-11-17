@@ -9,29 +9,34 @@ import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 )
 
-type pendingQuestion struct {
-	chatID  string
-	context context.Context
-	answer  chan string
-}
-
 // askUser 注册后再发事件，保证前端收到问题时已经可以提交答案。
 func (c *Core) askUser(ctx context.Context, chatID, nodeID, callID string, question agenttool.UserQuestion) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	requestID := newID()
-	pending := &pendingQuestion{chatID: chatID, context: ctx, answer: make(chan string, 1)}
-	c.interactionMu.Lock()
-	if c.interactionRequests == nil {
-		c.interactionRequests = make(map[string]*pendingQuestion)
+	c.Chat.mu.Lock()
+	serviceContext, err := c.Chat.contextLocked()
+	if err != nil {
+		c.Chat.mu.Unlock()
+		return "", err
 	}
-	c.interactionRequests[requestID] = pending
-	c.interactionMu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(serviceContext, cancel)
+	defer stop()
+	defer cancel()
+	pending := &pendingQuestion{chatID: chatID, context: ctx, cancel: cancel, answer: make(chan string, 1)}
+	c.Chat.interactionMu.Lock()
+	if c.Chat.interactionRequests == nil {
+		c.Chat.interactionRequests = make(map[string]*pendingQuestion)
+	}
+	c.Chat.interactionRequests[requestID] = pending
+	c.Chat.interactionMu.Unlock()
+	c.Chat.mu.Unlock()
 	defer func() {
-		c.interactionMu.Lock()
-		delete(c.interactionRequests, requestID)
-		c.interactionMu.Unlock()
+		c.Chat.interactionMu.Lock()
+		delete(c.Chat.interactionRequests, requestID)
+		c.Chat.interactionMu.Unlock()
 	}()
 	data, _ := json.Marshal(question)
 	EmitJSON(EventChatTool, map[string]string{
@@ -52,13 +57,13 @@ func (c *Core) SubmitUserAnswer(chatID, requestID, answer string) error {
 	if strings.TrimSpace(answer) == "" {
 		return errors.New("回答不能为空")
 	}
-	c.interactionMu.Lock()
-	defer c.interactionMu.Unlock()
-	pending := c.interactionRequests[requestID]
+	c.Chat.interactionMu.Lock()
+	defer c.Chat.interactionMu.Unlock()
+	pending := c.Chat.interactionRequests[requestID]
 	if pending == nil || pending.chatID != chatID || pending.context.Err() != nil {
 		return errors.New("问题已结束或不属于当前对话")
 	}
 	pending.answer <- answer
-	delete(c.interactionRequests, requestID)
+	delete(c.Chat.interactionRequests, requestID)
 	return nil
 }

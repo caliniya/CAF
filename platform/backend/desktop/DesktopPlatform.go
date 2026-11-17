@@ -46,6 +46,9 @@ func Init(assets fs.FS) error {
 			backend.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)
 			}
+			if err := backend.NewChatServer(backend.Platform).Start(ctx); err != nil {
+				runtime.LogError(ctx, "启动对话服务失败："+err.Error())
+			}
 			backend.Platform.StartExtensionClients()
 		},
 		OnDomReady: func(ctx context.Context) {
@@ -77,6 +80,11 @@ func Init(assets fs.FS) error {
 		},
 		OnShutdown: func(ctx context.Context) {
 			stopTime()
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := backend.Platform.Chat.Close(closeCtx); err != nil {
+				runtime.LogError(ctx, "关闭对话服务失败："+err.Error())
+			}
 			backend.Platform.CloseQQAdapters()
 		},
 		Bind: []interface{}{

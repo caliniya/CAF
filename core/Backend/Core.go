@@ -4,9 +4,7 @@ import (
 	"context"
 	"sync"
 
-	//"github.com/caliniya/caf/NetClient"
 	"github.com/caliniya/caf/NetClient/NetAPI"
-	chat "github.com/caliniya/caf/core/Chat"
 	platform "github.com/caliniya/caf/platform"
 )
 
@@ -17,15 +15,9 @@ type Core struct {
 	Configs *Configs
 	FS      platform.FilePlatform
 	QQ      QQServer
-
-	chatMu              sync.Mutex
-	chatSending         map[string]bool
-	interactionMu       sync.Mutex
-	interactionRequests map[string]*pendingQuestion
+	Chat    ChatServer
 
 	extMu sync.Mutex
-
-	ChatList map[string]chat.ChatTask
 
 	APIClient *NetAPI.NetAPIClient
 
@@ -39,4 +31,6 @@ func Init() {
 	}
 	Platform.Servers[QQServerName] = NewQQServer(Platform)
 	Platform.Servers[QQServerName].Init(context.Background())
+	Platform.Servers[ChatServerName] = NewChatServer(Platform)
+	_ = Platform.Chat.Init(context.Background())
 }
