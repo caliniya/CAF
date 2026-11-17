@@ -18,7 +18,6 @@ import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	memorytool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool"
 	create "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/CreateMemory"
-	"github.com/caliniya/caf/utils/id"
 )
 
 func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
@@ -52,11 +51,14 @@ func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := core.SetChatWorkspace(task.ID, workspace1.ID); err != nil {
+		t.Fatal(err)
+	}
 	global := settings.Libraries[0].ID
-	selected := []string{global, local1.ID, local2.ID}
-	updated, err := core.SetChatMemoryLibraries(task.ID, append(selected, global, "missing"))
+	selected := []string{global, local1.ID}
+	updated, err := core.SetChatMemoryLibraries(task.ID, append(selected, local2.ID, global, "missing"))
 	if err != nil || !reflect.DeepEqual(updated.MemoryLibraryIDs, selected) {
-		t.Fatalf("all scopes should be selectable, duplicates/missing removed: %+v / %v", updated, err)
+		t.Fatalf("only global/current workspace IDs should persist, duplicates/missing removed: %+v / %v", updated, err)
 	}
 	var persisted map[string]json.RawMessage
 	path := filepath.Join(core.Paths.Data, "chats", task.ID+".json")
@@ -69,12 +71,12 @@ func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := core.GetChat(task.ID)
-	if err != nil || !reflect.DeepEqual(loaded.MemoryLibraryIDs, []string{global, local2.ID}) {
+	if err != nil || !reflect.DeepEqual(loaded.MemoryLibraryIDs, []string{global}) {
 		t.Fatalf("deleted library was not pruned from session: %+v / %v", loaded, err)
 	}
 	memoryReadJSON(t, path, &persisted)
 	_ = json.Unmarshal(persisted["memoryLibraryIds"], &ids)
-	if len(ids) != 2 {
+	if len(ids) != 1 {
 		t.Fatal("pruning was not saved to disk")
 	}
 	other, err := core.CreateChat("", "", "", "")
@@ -106,6 +108,7 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 		{"auto_edit_local", 2, memory.ScopeWorkspace, true, true},
 		{"auto_approve_local", 3, memory.ScopeWorkspace, true, true},
 		{"full_local", 4, memory.ScopeWorkspace, true, true},
+		{"full_other_workspace", 4, memory.ScopeWorkspace, true, false},
 		{"auto_edit_global", 2, memory.ScopeGlobal, true, false},
 		{"auto_approve_global", 3, memory.ScopeGlobal, true, false},
 		{"auto_approve_other_global", 3, memory.ScopeGlobal, true, false},
@@ -125,6 +128,7 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 			}
 			memories, _ := core.Servers.Get[*memory.MemoryServer](memory.MemoryServerName)
 			libraryID := settings.Libraries[0].ID
+			workspaceID := ""
 			if test.name == "auto_approve_other_global" {
 				global, err := memories.CreateRecollection(context.Background(), "OtherGlobal", "", memory.ScopeGlobal, "")
 				if err != nil {
@@ -133,15 +137,32 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 				libraryID = global.ID
 			}
 			if test.scope == memory.ScopeWorkspace {
-				local, err := memories.EnsureWorkspace(context.Background(), id.MustNew(id.Workspace), "local")
+				workspace, err := core.CreateWorkspace("local", t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				workspaceID = workspace.ID
+				local, err := memories.EnsureWorkspace(context.Background(), workspace.ID, workspace.Name)
 				if err != nil {
 					t.Fatal(err)
 				}
 				libraryID = local.ID
+				if test.name == "full_other_workspace" {
+					other, err := core.CreateWorkspace("other", t.TempDir())
+					if err != nil {
+						t.Fatal(err)
+					}
+					workspaceID = other.ID
+				}
 			}
 			task, err := core.CreateChat("", "", "", "")
 			if err != nil {
 				t.Fatal(err)
+			}
+			if workspaceID != "" {
+				if _, err := core.SetChatWorkspace(task.ID, workspaceID); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if test.enabled {
 				if _, err := core.SetChatMemoryLibraries(task.ID, []string{libraryID}); err != nil {
@@ -171,8 +192,8 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 							found = true
 						}
 					}
-					if !found {
-						t.Error("enabled library IDs were not supplied to the model")
+					if found != (test.name != "full_other_workspace") {
+						t.Error("model context did not respect memory visibility")
 					}
 				}
 				if calls == 2 {

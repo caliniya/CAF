@@ -1,18 +1,22 @@
 import { defineStore } from 'pinia'
 import {
   CreateChat,
+  CreateMemoryLibrary,
   CreateWorkspace,
   DeleteChat,
+  DeleteMemoryLibrary,
   DeleteWorkspace,
   DeleteWorkspaceAndChats,
   EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
   GetChatMemorySettings,
+  GetWorkspaceMemorySettings,
   ListChats,
   ListPersonas,
   ListWorkspaces,
   RenameChat,
+  RenameMemoryLibrary,
   RenameWorkspace,
   RegenerateChatMessage,
   SendChatMessage,
@@ -21,9 +25,12 @@ import {
   SetChatReasoningEffort,
   SetChatToolConfig,
   SetChatMemoryLibraries,
+  SetMemoryLibraryScope,
   SetChatWorkspace,
   UpdateChatModel,
   type ChatTask as StoredChatTask,
+  type ChatMemorySettings,
+  type MemoryLibraryAction,
   type ChatSummary,
   type ChatToolConfig,
   type ChatDeltaEvent,
@@ -67,7 +74,7 @@ export interface ProcessItem {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
   process?: ProcessItem[]
   reasoningEffort?: string
@@ -176,10 +183,8 @@ export const useChatStore = defineStore('chat', {
     },
   },
   actions: {
-    async loadMemorySettings() {
-      const id = this.session?.id ?? ''
-      const settings = await GetChatMemorySettings(id)
-      if ((this.session?.id ?? '') !== id) return settings
+    applyMemorySettings(settings: ChatMemorySettings, chatId: string, workspaceId: string): ChatMemorySettings {
+      if ((this.session?.id ?? '') !== chatId || this.currentWorkspaceId !== workspaceId) return settings
       if (this.session) {
         this.session.memoryLibraryIds = settings.enabledIds
       } else {
@@ -189,8 +194,31 @@ export const useChatStore = defineStore('chat', {
       }
       return { ...settings, enabledIds: [...this.enabledMemoryLibraryIds] }
     },
+    async loadMemorySettings() {
+      const id = this.session?.id ?? ''
+      const workspaceId = this.currentWorkspaceId
+      const settings = id ? await GetChatMemorySettings(id) : await GetWorkspaceMemorySettings(workspaceId)
+      return this.applyMemorySettings(settings, id, workspaceId)
+    },
+    async manageMemoryLibrary(action: MemoryLibraryAction) {
+      if (this.sending || this.workspaceChanging) throw new Error('对话正在生成或切换工作区，暂时无法管理记忆')
+      const chatId = this.session?.id ?? ''
+      const workspaceId = this.currentWorkspaceId
+      const update = memorySettingsUpdates.then(async () => {
+        switch (action.kind) {
+          case 'create': await CreateMemoryLibrary(chatId, workspaceId, action.name, action.scope); break
+          case 'rename': await RenameMemoryLibrary(chatId, workspaceId, action.id, action.name); break
+          case 'delete': await DeleteMemoryLibrary(chatId, workspaceId, action.id); break
+          case 'scope': await SetMemoryLibraryScope(chatId, workspaceId, action.id, action.scope); break
+        }
+        const settings = chatId ? await GetChatMemorySettings(chatId) : await GetWorkspaceMemorySettings(workspaceId)
+        return this.applyMemorySettings(settings, chatId, workspaceId)
+      })
+      memorySettingsUpdates = update.then(() => undefined, () => undefined)
+      return await update
+    },
     async setMemoryLibraries(ids: string[]) {
-      if (this.sending) throw new Error('对话正在生成中，暂时无法修改记忆设置')
+      if (this.sending || this.workspaceChanging) throw new Error('对话正在生成中或切换工作区，暂时无法修改记忆设置')
       const id = this.session?.id
       if (!id) {
         this.pendingMemoryLibraryIds = [...new Set(ids)]
@@ -362,9 +390,8 @@ export const useChatStore = defineStore('chat', {
         const children = node.child ?? []
 
         for (const message of children) {
-          // 用户消息节点只有一条
-          if (message.role === 'user') {
-            this.messages.push({ role: 'user', content: message.content ?? '', ...meta })
+          if (message.role === 'user' || message.role === 'system') {
+            this.messages.push({ role: message.role, content: message.content ?? '', ...meta })
           }
         }
 
@@ -461,17 +488,28 @@ export const useChatStore = defineStore('chat', {
       this.workspacesLoaded = true
     },
     async selectWorkspace(workspaceId: string) {
-      if (this.sending || this.workspaceChanging) return
+      if (this.sending || this.workspaceChanging || workspaceId === this.currentWorkspaceId) return
+      const id = this.session?.id
       this.workspaceChanging = true
       try {
+        await effortUpdates
         await toolConfigUpdates
-        const id = this.session?.id
+        await memorySettingsUpdates
         if (id) {
           const session = await SetChatWorkspace(id, workspaceId)
-          if (this.session?.id === id) this.session = session
+          if (this.session?.id === id) {
+            this.session = session
+            this.pendingWorkspaceId = workspaceId
+            this.rebuildMessages()
+          }
           await this.loadChats()
+        } else {
+          const settings = await GetWorkspaceMemorySettings(workspaceId)
+          if (!this.session) {
+            this.pendingWorkspaceId = workspaceId
+            this.applyMemorySettings(settings, '', workspaceId)
+          }
         }
-        this.pendingWorkspaceId = workspaceId
       } finally {
         this.workspaceChanging = false
       }
@@ -480,7 +518,6 @@ export const useChatStore = defineStore('chat', {
       const workspace = await CreateWorkspace(name, path)
       this.workspaces.push(workspace)
       this.workspacesLoaded = true
-      await this.selectWorkspace(workspace.id)
       return workspace
     },
     async renameWorkspace(id: string, name: string) {
@@ -534,13 +571,13 @@ export const useChatStore = defineStore('chat', {
       )
       this.session = session
       this.rebuildMessages()
-      if (this.pendingMemoryLibraryIds.length) {
-        this.session = await SetChatMemoryLibraries(session.id, this.pendingMemoryLibraryIds)
-        this.pendingMemoryLibraryIds = []
-      }
       if (this.pendingWorkspaceId) {
         this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
       }
+      if (this.pendingMemoryLibraryIds.length) {
+        this.session = await SetChatMemoryLibraries(session.id, this.pendingMemoryLibraryIds)
+      }
+      this.pendingMemoryLibraryIds = []
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
       if (effort !== 'high') {
         this.session = await SetChatReasoningEffort(session.id, effort)

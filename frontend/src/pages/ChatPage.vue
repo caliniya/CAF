@@ -9,7 +9,8 @@ import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
 import MemorySelectionDialog from '../components/MemorySelectionDialog.vue'
-import type { MemoryLibrary } from '../api'
+import MemoryLibraryDialog from '../components/MemoryLibraryDialog.vue'
+import type { MemoryLibrary, MemoryLibraryAction } from '../api'
 import ToolKitDetailsDialog from '../components/ToolKitDetailsDialog.vue'
 import ToolCallDetails from '../components/ToolCallDetails.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
@@ -46,6 +47,8 @@ const workspaceCreating = ref(false)
 const workspaceError = ref('')
 const workspaceName = computed(() => chat.currentWorkspace?.name
   ?? (chat.currentWorkspaceId ? '工作区不可用' : '不使用工作区'))
+const workspaceChange = ref<{ chatId: string; fromId: string; fromName: string; id: string; name: string } | null>(null)
+const workspaceChangeError = ref('')
 
 async function toggleWorkspaceMenu() {
   const open = !workspaceMenuOpen.value
@@ -84,11 +87,37 @@ async function toggleWorkspaceList(event: MouseEvent) {
 }
 
 async function selectWorkspace(id: string) {
+  if (chat.sending || chat.workspaceChanging) return
+  closeMenus()
+  if (id === chat.currentWorkspaceId) return
+  if (chat.session && chat.messages.length) {
+    workspaceChangeError.value = ''
+    workspaceChange.value = {
+      chatId: chat.session.id, fromId: chat.currentWorkspaceId, fromName: workspaceName.value,
+      id, name: chat.workspaces.find((item) => item.id === id)?.name ?? '不使用工作区',
+    }
+    return
+  }
   try {
     await chat.selectWorkspace(id)
-    closeMenus()
   } catch (err) {
     chat.error = String(err)
+  }
+}
+
+async function confirmWorkspaceChange() {
+  const change = workspaceChange.value
+  if (!change || chat.sending || chat.workspaceChanging) return
+  if (chat.session?.id !== change.chatId || chat.currentWorkspaceId !== change.fromId) {
+    workspaceChange.value = null
+    return
+  }
+  workspaceChangeError.value = ''
+  try {
+    await chat.selectWorkspace(change.id)
+    workspaceChange.value = null
+  } catch (err) {
+    workspaceChangeError.value = String(err)
   }
 }
 
@@ -102,9 +131,14 @@ async function createWorkspace(name: string, path: string) {
   if (workspaceCreating.value) return
   workspaceCreating.value = true
   workspaceError.value = ''
+  const chatId = chat.session?.id ?? ''
+  const workspaceId = chat.currentWorkspaceId
   try {
-    await chat.createWorkspace(name, path)
+    const workspace = await chat.createWorkspace(name, path)
     workspaceDialogOpen.value = false
+    if ((chat.session?.id ?? '') === chatId && chat.currentWorkspaceId === workspaceId) {
+      await selectWorkspace(workspace.id)
+    }
   } catch (err) {
     workspaceError.value = String(err)
   } finally {
@@ -129,11 +163,18 @@ const memoryEnabledIDs = ref<string[]>([])
 const memoryLoading = ref(false)
 const memoryLoadFailed = ref(false)
 const memorySaving = ref(false)
+const memoryManaging = ref(false)
 const memoryError = ref('')
+const memoryAction = ref<{ kind: 'create' | 'rename' | 'delete' | 'scope'; library?: MemoryLibrary } | null>(null)
+const memoryActionError = ref('')
+const memoryActionName = computed(() => memoryAction.value?.library?.name === 'Main' ? '全局主记忆' : memoryAction.value?.library?.name ?? '')
+const memoryScopeMessage = computed(() => memoryAction.value?.library?.scope === 'workspace'
+  ? `将「${memoryActionName.value}」提升为全局记忆。所有工作区都可以看见它，并可在各自的对话中启用；模型写入需要完全访问权限。是否继续？`
+  : `将「${memoryActionName.value}」改为「${workspaceName.value}」的工作区记忆。其他工作区将无法看见它，并会移除对应的启用记录。是否继续？`)
 let memoryDialogRequest = 0
 
 async function openMemorySettings() {
-  if (chat.sending) return
+  if (chat.sending || chat.workspaceChanging || memoryManaging.value) return
   closeMenus()
   memorySettingsOpen.value = true
   memoryLoading.value = true
@@ -143,9 +184,10 @@ async function openMemorySettings() {
   memoryEnabledIDs.value = []
   const request = ++memoryDialogRequest
   const chatId = chat.session?.id ?? ''
+  const workspaceId = chat.currentWorkspaceId
   try {
     const settings = await chat.loadMemorySettings()
-    if (request !== memoryDialogRequest || (chat.session?.id ?? '') !== chatId) return
+    if (request !== memoryDialogRequest || (chat.session?.id ?? '') !== chatId || chat.currentWorkspaceId !== workspaceId) return
     memoryLibraries.value = settings.libraries
     memoryEnabledIDs.value = settings.enabledIds
   } catch (err) {
@@ -159,7 +201,7 @@ async function openMemorySettings() {
 }
 
 async function saveMemorySettings(ids: string[]) {
-  if (memoryLoading.value || memorySaving.value) return
+  if (memoryLoading.value || memorySaving.value || memoryManaging.value) return
   const request = memoryDialogRequest
   memorySaving.value = true
   memoryError.value = ''
@@ -174,15 +216,58 @@ async function saveMemorySettings(ids: string[]) {
 }
 
 function closeMemorySettings() {
-  if (memorySaving.value) return
+  if (memorySaving.value || memoryManaging.value) return
   memorySettingsOpen.value = false
+  memoryAction.value = null
   ++memoryDialogRequest
 }
-watch(() => chat.session?.id, () => {
+watch(() => [chat.session?.id, chat.currentWorkspaceId], () => {
   memorySettingsOpen.value = false
   memorySaving.value = false
+  memoryManaging.value = false
+  memoryAction.value = null
+  workspaceChange.value = null
   ++memoryDialogRequest
 })
+
+function openMemoryAction(kind: 'create' | 'rename' | 'delete' | 'scope', library?: MemoryLibrary) {
+  if (memoryLoading.value || memorySaving.value || memoryManaging.value || memoryLoadFailed.value) return
+  if (kind !== 'create' && (!library || library.name === 'Main')) return
+  if (kind === 'scope' && library?.scope === 'global' && !chat.currentWorkspaceId) return
+  memoryActionError.value = ''
+  memoryAction.value = { kind, library }
+}
+
+async function applyMemoryAction(action: MemoryLibraryAction) {
+  if (memoryManaging.value) return
+  const request = memoryDialogRequest
+  memoryManaging.value = true
+  memoryActionError.value = ''
+  try {
+    const settings = await chat.manageMemoryLibrary(action)
+    if (request !== memoryDialogRequest) return
+    memoryLibraries.value = settings.libraries
+    memoryEnabledIDs.value = settings.enabledIds
+    memoryAction.value = null
+  } catch (err) {
+    if (request === memoryDialogRequest) memoryActionError.value = String(err)
+  } finally {
+    if (request === memoryDialogRequest) memoryManaging.value = false
+  }
+}
+
+function confirmMemoryForm(name: string, scope: MemoryLibrary['scope']) {
+  const action = memoryAction.value
+  if (action?.kind === 'create') return applyMemoryAction({ kind: 'create', name, scope })
+  if (action?.kind === 'rename' && action.library) return applyMemoryAction({ kind: 'rename', id: action.library.id, name })
+}
+
+function confirmMemoryAction() {
+  const action = memoryAction.value
+  if (!action?.library) return
+  if (action.kind === 'delete') return applyMemoryAction({ kind: 'delete', id: action.library.id })
+  if (action.kind === 'scope') return applyMemoryAction({ kind: 'scope', id: action.library.id, scope: action.library.scope === 'global' ? 'workspace' : 'global' })
+}
 const settingsPersonaOpen = ref(false)
 const settingsPersonaFlyout = ref<HTMLElement | null>(null)
 const settingsPersonaFlip = ref(false)
@@ -432,7 +517,7 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || memorySettingsOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || workspaceChange.value || memorySettingsOpen.value) return
   if (toolsOpen.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -503,7 +588,7 @@ const streamReady = Promise.all([
 
 async function sendMessage() {
   await streamReady
-  if (!pageUnmounted) await chat.send()
+  if (!pageUnmounted && !workspaceChange.value && !memorySaving.value && !memoryManaging.value) await chat.send()
 }
 
 async function regenerateMessage(message: (typeof chat.messages)[number]) {
@@ -575,7 +660,7 @@ async function confirmModelChange() {
 }
 
 function closeMenusOnOutside(event: PointerEvent) {
-  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || memorySettingsOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || workspaceChange.value || memorySettingsOpen.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
     || settingsMenuAnchor.value?.contains(target) || workspaceMenuAnchor.value?.contains(target)) return
@@ -626,7 +711,9 @@ onDeactivated(() => {
   personaChange.value = null
   modelChange.value = null
   workspaceDialogOpen.value = false
+  workspaceChange.value = null
   memorySaving.value = false
+  memoryManaging.value = false
   closeMemorySettings()
 })
 
@@ -818,12 +905,13 @@ watch(
           </div>
         </template>
         <template v-else>
-          <div v-if="m.role === 'user'" class="msg-body">{{ m.content }}</div>
+          <div v-if="m.role === 'system'" class="msg-system-body">{{ m.content }}</div>
+          <div v-else-if="m.role === 'user'" class="msg-body">{{ m.content }}</div>
           <div v-else class="msg-body markdown-body" v-html="bodyHtml(m, i)"></div>
         </template>
 
         <!-- 操作栏：编辑 / 复制 / 重新生成 / 分支切换统一一行，鼠标靠近才显示 -->
-        <div v-if="editingNodeId !== m.nodeId" class="msg-actions">
+        <div v-if="m.role !== 'system' && editingNodeId !== m.nodeId" class="msg-actions">
           <button v-if="m.role === 'user' && m.nodeId && !chat.sending" type="button"
             class="msg-action hover-only" title="编辑" aria-label="编辑" @click="startEdit(m)">
             <Pencil :size="17" :stroke-width="2" />
@@ -982,7 +1070,7 @@ watch(
 
               <div v-if="settingsMenuOpen" id="chat-settings-menu" class="menu settings-menu"
                 role="menu" aria-label="对话设置">
-                <button type="button" class="menu-row" role="menuitem" :disabled="chat.sending" @click="openMemorySettings">
+                <button type="button" class="menu-row" role="menuitem" :disabled="chat.sending || chat.workspaceChanging" @click="openMemorySettings">
                   <Box class="row-icon" :size="16" :stroke-width="1.6" />
                   <span class="menu-row-label">记忆设置</span>
                   <span class="menu-spacer"></span>
@@ -1111,7 +1199,7 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || memorySaving" aria-label="发送"
+            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || memorySaving || memoryManaging || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -1127,8 +1215,26 @@ watch(
 
   <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
   <MemorySelectionDialog :open="memorySettingsOpen" :libraries="memoryLibraries" :enabled-ids="memoryEnabledIDs"
-    :loading="memoryLoading" :saving="memorySaving" :error="memoryError" :load-failed="memoryLoadFailed"
-    @confirm="saveMemorySettings" @cancel="closeMemorySettings" @retry="openMemorySettings" />
+    :loading="memoryLoading" :saving="memorySaving" :managing="memoryManaging" :workspace-id="chat.currentWorkspaceId"
+    :error="memoryError" :load-failed="memoryLoadFailed"
+    @confirm="saveMemorySettings" @cancel="closeMemorySettings" @retry="openMemorySettings"
+    @create="openMemoryAction('create')" @rename="openMemoryAction('rename', $event)"
+    @delete="openMemoryAction('delete', $event)" @scope="openMemoryAction('scope', $event)" />
+  <MemoryLibraryDialog :open="memoryAction?.kind === 'create' || memoryAction?.kind === 'rename'"
+    :mode="memoryAction?.kind === 'rename' ? 'rename' : 'create'" :initial-name="memoryAction?.library?.name"
+    :workspace-id="chat.currentWorkspaceId" :workspace-name="chat.currentWorkspace?.name"
+    :busy="memoryManaging" :error="memoryActionError" @confirm="confirmMemoryForm" @cancel="memoryAction = null" />
+  <ConfirmationDialog :open="memoryAction?.kind === 'delete'" title="删除记忆"
+    :message="`删除「${memoryActionName}」后，它会从可用记忆中移除，对话中的启用记录也会自动清理。是否继续？`"
+    confirm-label="确认删除" danger :busy="memoryManaging" :error="memoryActionError"
+    @confirm="confirmMemoryAction" @cancel="memoryAction = null" />
+  <ConfirmationDialog :open="memoryAction?.kind === 'scope'" title="更改作用范围"
+    :message="memoryScopeMessage" confirm-label="确认更改" :busy="memoryManaging" :error="memoryActionError"
+    @confirm="confirmMemoryAction" @cancel="memoryAction = null" />
+  <ConfirmationDialog :open="!!workspaceChange" title="切换工作区"
+    :message="`从「${workspaceChange?.fromName ?? ''}」切换到「${workspaceChange?.name ?? ''}」。\n在对话中途更改工作区会降低缓存命中率和模型工作能力，是否继续？`"
+    confirm-label="确认切换" :busy="chat.workspaceChanging" :error="workspaceChangeError"
+    @confirm="confirmWorkspaceChange" @cancel="workspaceChange = null" />
   <ConfirmationDialog :open="!!personaChange" title="切换人设"
     :message="`将当前对话的人设切换为「${personaChange?.persona.name ?? ''}」。\n在对话中途切换人设会降低对话质量，是否继续？`"
     confirm-label="确认切换" :busy="personaChanging" :error="personaChangeError"
@@ -1281,6 +1387,20 @@ watch(
 
 .msg.user {
   align-items: flex-end;
+}
+
+.msg.system {
+  align-items: center;
+}
+
+.msg-system-body {
+  max-width: 100%;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .msg-body {

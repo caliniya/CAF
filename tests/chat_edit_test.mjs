@@ -14,7 +14,8 @@ const dataModule = (code) => `data:text/javascript;base64,${Buffer.from(code).to
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
 const configsURL = dataModule('export const useConfigsStore = () => ({ loaded: true, configs: [], enables: null })')
 const markdownURL = dataModule('export const renderDone = (_, text) => text; export const renderStreaming = (text) => text; export const resetStreaming = () => {}')
-const dialogURL = dataModule('export default { render: () => null }')
+const vueURL = pathToFileURL(require.resolve('vue')).href
+const dialogURL = dataModule(`import { h } from ${JSON.stringify(vueURL)}; export default { inheritAttrs: false, setup(_, { attrs }) { return () => h('test-dialog', { ...attrs }) } }`)
 const imports = { '../api': apiURL, './configs': configsURL, '../stores/configs': configsURL, '../markdown': markdownURL }
 function rewrite(code) {
   return code.replace(/from\s+(['"])([^'"]+)\1/g, (whole, quote, specifier) => {
@@ -41,6 +42,8 @@ function element(type) {
     getRootNode() { return document },
     focus() { document.activeElement = this },
     setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end },
+    getBoundingClientRect() { return { left: 120, right: 380, top: 220, bottom: 250, height: 120 } },
+    querySelector(selector) { return find(this, node => selector.startsWith('.') ? String(node.props.class ?? '').split(' ').includes(selector.slice(1)) : node.props.id === selector.slice(1)) },
   }
 }
 function find(node, predicate) {
@@ -73,6 +76,7 @@ const originalSession = {
 }
 let savedSession = originalSession
 globalThis.window = {
+  innerWidth: 1200, innerHeight: 800,
   go: { Backend: { Core: {
     GetChat: async () => structuredClone(savedSession), ListChats: async () => [],
     ListPersonas: async () => [], ListWorkspaces: async () => [], GetChatModelContextWindow: async () => 10000,
@@ -191,5 +195,134 @@ await flush()
 assert.equal(chat.sending, false)
 assert.match(chat.error, /编辑请求失败/)
 assert.deepEqual(chat.messages.map((message) => message.content), originalMessages.map((message) => message.content))
+
+// Workspace selection uses the same confirmation path for existing and newly created workspaces.
+const workspaces = [{ id: 'workspace-1', name: '项目一', path: '/one' }, { id: 'workspace-2', name: '项目二', path: '/two' }]
+savedSession = { ...structuredClone(originalSession), workspaceId: 'workspace-1', memoryLibraryIds: ['global', 'local'] }
+chat.session = structuredClone(savedSession)
+chat.workspaces = [...workspaces]
+chat.rebuildMessages()
+let workspaceChanges = 0
+window.go.Backend.Core.ListWorkspaces = async () => [...workspaces]
+window.go.Backend.Core.SetChatWorkspace = async (id, workspaceId) => {
+  workspaceChanges++
+  savedSession.workspaceId = workspaceId
+  savedSession.memoryLibraryIds = ['global']
+  let last = savedSession.tree.root.next[savedSession.tree.root.choice]
+  while (last.next?.length) last = last.next[last.choice]
+  last.next = [{ id: `workspace-switch-${workspaceChanges}`, choice: 0, next: [], child: [{ role: 'system', content: '系统消息:从「项目一」切换到「项目二」' }] }]
+  last.choice = 0
+  return structuredClone(savedSession)
+}
+const nodeText = node => node.type === '#comment' ? '' : (node.text ?? '') + (node.children ?? []).map(nodeText).join('')
+const dialogByTitle = title => find(root, node => node.type === 'test-dialog' && node.props.title === title)
+const chooseWorkspace = async name => {
+  await find(root, node => node.type === 'button' && node.props['aria-controls'] === 'workspace-menu').props.onClick()
+  await flush()
+  await find(root, node => node.type === 'button' && node.props['aria-controls'] === 'workspace-list').props.onClick({ currentTarget: { getBoundingClientRect: () => ({ left: 120, right: 380, top: 220 }) } })
+  await flush()
+  await find(root, node => node.type === 'button' && node.props.role === 'menuitemradio' && nodeText(node) === name).props.onClick()
+  await flush()
+}
+await chooseWorkspace('项目二')
+assert.equal(workspaceChanges, 0, 'selecting another workspace must wait for confirmation')
+assert.equal(chat.currentWorkspaceId, 'workspace-1')
+let workspaceDialog = dialogByTitle('切换工作区')
+assert.equal(workspaceDialog.props.open, true)
+assert.match(workspaceDialog.props.message, /项目一.*项目二[\s\S]*缓存命中率和模型工作能力/)
+workspaceDialog.props.onCancel()
+await flush()
+assert.equal(workspaceDialog.props.open, false)
+assert.equal(workspaceChanges, 0, 'cancel must preserve the original workspace')
+await chooseWorkspace('项目二')
+await dialogByTitle('切换工作区').props.onConfirm()
+await flush()
+assert.equal(workspaceChanges, 1)
+assert.equal(chat.currentWorkspaceId, 'workspace-2')
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'])
+assert.equal(chat.messages.at(-1).role, 'system')
+assert.ok(find(root, node => node.props.class === 'msg-system-body' && node.text === '系统消息:从「项目一」切换到「项目二」'), 'workspace switch should be visible as plain system text')
+await chooseWorkspace('项目二')
+assert.equal(workspaceChanges, 1, 'reselecting the current workspace must do nothing')
+assert.equal(dialogByTitle('切换工作区').props.open, false)
+
+window.go.Backend.Core.CreateWorkspace = async (name, workspacePath) => ({ id: 'new-workspace', name, path: workspacePath })
+await find(root, node => node.type === 'button' && node.props['aria-controls'] === 'workspace-menu').props.onClick()
+await flush()
+find(root, node => node.type === 'button' && nodeText(node) === '新建工作区').props.onClick()
+await flush()
+const createWorkspaceDialog = find(root, node => node.type === 'test-dialog' && 'initial-directory' in node.props)
+await createWorkspaceDialog.props.onConfirm('新项目', '/new')
+await flush()
+assert.equal(workspaceChanges, 1, 'creating a workspace must not bypass the switch confirmation')
+assert.equal(dialogByTitle('切换工作区').props.open, true)
+dialogByTitle('切换工作区').props.onCancel()
+await flush()
+
+// Memory management actions only reach the host after the required second dialog confirms.
+let memoryLibraries = [
+  { id: 'global', name: 'Main', scope: 'global' },
+  { id: 'local', name: '项目笔记', scope: 'workspace', workspaceId: 'workspace-2' },
+  { id: 'shared', name: '通用笔记', scope: 'global' },
+]
+window.go.Backend.Core.GetChatMemorySettings = async () => ({ libraries: [...memoryLibraries], enabledIds: ['global'] })
+let deleteCalls = 0, scopeCalls = 0, renameArguments, createArguments
+window.go.Backend.Core.DeleteMemoryLibrary = async (chatId, workspaceId, id) => {
+  deleteCalls++
+  assert.deepEqual([chatId, workspaceId, id], ['chat', 'workspace-2', 'local'])
+  memoryLibraries = memoryLibraries.filter(library => library.id !== id)
+}
+window.go.Backend.Core.SetMemoryLibraryScope = async (chatId, workspaceId, id, scope) => {
+  scopeCalls++
+  assert.deepEqual([chatId, workspaceId, id, scope], ['chat', 'workspace-2', 'shared', 'workspace'])
+  memoryLibraries = memoryLibraries.map(library => library.id === id ? { ...library, scope, workspaceId } : library)
+}
+window.go.Backend.Core.RenameMemoryLibrary = async (...args) => { renameArguments = args }
+window.go.Backend.Core.CreateMemoryLibrary = async (...args) => {
+  createArguments = args
+  memoryLibraries.push({ id: 'created', name: args[2], scope: args[3], workspaceId: args[1] })
+}
+find(root, node => node.type === 'button' && node.props['aria-controls'] === 'chat-settings-menu').props.onClick()
+await flush()
+await find(root, node => node.type === 'button' && node.props.role === 'menuitem' && nodeText(node).startsWith('记忆设置')).props.onClick()
+await flush()
+const memoryDialog = find(root, node => node.type === 'test-dialog' && Array.isArray(node.props.libraries))
+assert.equal(memoryDialog.props.open, true)
+memoryDialog.props.onDelete(memoryLibraries[1])
+await flush()
+assert.equal(deleteCalls, 0)
+assert.equal(dialogByTitle('删除记忆').props.open, true)
+dialogByTitle('删除记忆').props.onCancel()
+await flush()
+assert.equal(deleteCalls, 0)
+memoryDialog.props.onDelete(memoryLibraries[1])
+await flush()
+await dialogByTitle('删除记忆').props.onConfirm()
+await flush()
+assert.equal(deleteCalls, 1)
+assert.ok(memoryDialog.props.libraries.every(library => library.id !== 'local'))
+
+memoryDialog.props.onScope(memoryLibraries.find(library => library.id === 'shared'))
+await flush()
+assert.equal(scopeCalls, 0)
+assert.equal(dialogByTitle('更改作用范围').props.open, true)
+assert.match(dialogByTitle('更改作用范围').props.message, /项目二[\s\S]*其他工作区将无法看见/)
+await dialogByTitle('更改作用范围').props.onConfirm()
+await flush()
+assert.equal(scopeCalls, 1)
+memoryDialog.props.onCreate()
+await flush()
+const memoryForm = find(root, node => node.type === 'test-dialog' && node.props.mode === 'create')
+assert.equal(memoryForm.props.open, true)
+await memoryForm.props.onConfirm('新记忆', 'workspace')
+await flush()
+assert.deepEqual(createArguments, ['chat', 'workspace-2', '新记忆', 'workspace'])
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'], 'creating memory should not silently enable it')
+memoryDialog.props.onRename(memoryLibraries.find(library => library.id === 'created'))
+await flush()
+await find(root, node => node.type === 'test-dialog' && node.props.mode === 'rename').props.onConfirm('新名称', 'workspace')
+await flush()
+assert.deepEqual(renameArguments, ['chat', 'workspace-2', 'created', '新名称'])
+
 app.unmount()
-console.log('Chat edit checks passed: Enter submission, immediate rendering, isolated stream/tool events, preserved branches, IME, duplicate submission, and failure restoration.')
+console.log('Chat edit and settings checks passed: editing, streaming, IME, workspace switch confirmation, system messages, memory management confirmation, and create/rename actions.')

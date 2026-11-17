@@ -316,6 +316,14 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 	if workspace != nil {
 		nextName = workspace.Name
 	}
+	server, err := c.memoryServer(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	libraries, err := server.ListRecollections(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	path, err := session.Tree.CurrentPath()
 	if err != nil {
 		return nil, err
@@ -327,19 +335,6 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 		}
 	}
 	session.WorkspaceID = workspaceID
-	server, err := c.memoryServer(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if workspace != nil {
-		if _, err := server.EnsureWorkspace(context.Background(), workspaceID, workspace.Name); err != nil {
-			return nil, err
-		}
-	}
-	libraries, err := server.ListRecollections(context.Background())
-	if err != nil {
-		return nil, err
-	}
 	session.MemoryLibraryIDs = validMemoryLibraryIDs(session.MemoryLibraryIDs, visibleMemoryLibraries(libraries, workspaceID))
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {

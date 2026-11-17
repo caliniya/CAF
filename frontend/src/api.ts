@@ -29,7 +29,12 @@ export interface Configs {
 
 interface CoreBindings {
   GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
+  GetWorkspaceMemorySettings(workspaceId: string): Promise<ChatMemorySettings>
   SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask>
+  CreateMemoryLibrary(chatId: string, workspaceId: string, name: string, scope: MemoryLibrary['scope']): Promise<MemoryLibrary>
+  RenameMemoryLibrary(chatId: string, workspaceId: string, id: string, name: string): Promise<void>
+  DeleteMemoryLibrary(chatId: string, workspaceId: string, id: string): Promise<void>
+  SetMemoryLibraryScope(chatId: string, workspaceId: string, id: string, scope: MemoryLibrary['scope']): Promise<void>
   ListClientExtensions(clientId: string): Promise<ExtensionOption[]>
   CreateClientExtension(clientId: string, type: string, parameters: Record<string, string>): Promise<ExtensionOption>
   GetClientExtensionParameters(clientId: string, id: string): Promise<Record<string, string>>
@@ -196,6 +201,12 @@ export interface ChatMemorySettings {
   libraries: MemoryLibrary[]
   enabledIds: string[]
 }
+
+export type MemoryLibraryAction =
+  | { kind: 'create'; name: string; scope: MemoryLibrary['scope'] }
+  | { kind: 'rename'; id: string; name: string }
+  | { kind: 'delete'; id: string }
+  | { kind: 'scope'; id: string; scope: MemoryLibrary['scope'] }
 
 export interface Workspace {
   id: string
@@ -370,8 +381,23 @@ export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c
 export function GetChatMemorySettings(id = ''): Promise<ChatMemorySettings> {
   return bridge().then((c) => c.GetChatMemorySettings(id))
 }
+export function GetWorkspaceMemorySettings(workspaceId = ''): Promise<ChatMemorySettings> {
+  return bridge().then((c) => c.GetWorkspaceMemorySettings(workspaceId))
+}
 export function SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatMemoryLibraries(id, ids))
+}
+export function CreateMemoryLibrary(chatId: string, workspaceId: string, name: string, scope: MemoryLibrary['scope']): Promise<MemoryLibrary> {
+  return bridge().then((c) => c.CreateMemoryLibrary(chatId, workspaceId, name, scope))
+}
+export function RenameMemoryLibrary(chatId: string, workspaceId: string, id: string, name: string): Promise<void> {
+  return bridge().then((c) => c.RenameMemoryLibrary(chatId, workspaceId, id, name))
+}
+export function DeleteMemoryLibrary(chatId: string, workspaceId: string, id: string): Promise<void> {
+  return bridge().then((c) => c.DeleteMemoryLibrary(chatId, workspaceId, id))
+}
+export function SetMemoryLibraryScope(chatId: string, workspaceId: string, id: string, scope: MemoryLibrary['scope']): Promise<void> {
+  return bridge().then((c) => c.SetMemoryLibraryScope(chatId, workspaceId, id, scope))
 }
 export function RenameChat(id: string, title: string): Promise<ChatTask> {
   return bridge().then((c) => c.RenameChat(id, title))

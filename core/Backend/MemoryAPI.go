@@ -40,7 +40,8 @@ func (c *Core) memoryServer(ctx context.Context) (*memory.MemoryServer, error) {
 		clock = c.APIClient.TimeClient
 	}
 	server := memory.NewMemoryServer(c.Paths.Data, c.FS, clock)
-	if err := server.Start(ctx); err != nil {
+	// 默认局部记忆只在 CreateWorkspace 时创建，重启不能撤销用户的删除或范围变更。
+	if err := server.Init(ctx); err != nil {
 		return nil, err
 	}
 	if c.Servers.services == nil {
@@ -58,15 +59,50 @@ type ChatMemorySettings struct {
 func visibleMemoryLibraries(libraries []memory.RecollectionMeta, workspaceID string) []memory.RecollectionMeta {
 	visible := []memory.RecollectionMeta{}
 	for _, library := range libraries {
-		if library.Scope == memory.ScopeGlobal || (workspaceID != "" && library.WorkspaceID == workspaceID) {
+		if library.Scope == memory.ScopeGlobal || (library.Scope == memory.ScopeWorkspace && workspaceID != "" && library.WorkspaceID == workspaceID) {
 			visible = append(visible, library)
 		}
 	}
+	slices.SortStableFunc(visible, func(a, b memory.RecollectionMeta) int {
+		if (a.Name == memory.MainName) != (b.Name == memory.MainName) {
+			if a.Name == memory.MainName {
+				return -1
+			}
+			return 1
+		}
+		if a.Scope != b.Scope {
+			if a.Scope == memory.ScopeGlobal {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
 	return visible
 }
 
 // id 为空时只列出全局记忆，草稿工作区使用 GetWorkspaceMemorySettings。
 func (c *Core) GetChatMemorySettings(id string) (*ChatMemorySettings, error) {
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	workspaceID := ""
+	enabledIDs := []string{}
+	if id != "" {
+		directory, err := c.chatDirectory()
+		if err != nil {
+			return nil, err
+		}
+		session, err := c.readChatLocked(directory, id)
+		if err != nil {
+			return nil, err
+		}
+		workspaceID = session.WorkspaceID
+		enabledIDs = append(enabledIDs, session.MemoryLibraryIDs...)
+	}
 	server, err := c.memoryServer(context.Background())
 	if err != nil {
 		return nil, err
@@ -75,17 +111,7 @@ func (c *Core) GetChatMemorySettings(id string) (*ChatMemorySettings, error) {
 	if err != nil {
 		return nil, err
 	}
-	settings := &ChatMemorySettings{Libraries: visibleMemoryLibraries(libraries, ""), EnabledIDs: []string{}}
-	if id == "" {
-		return settings, nil
-	}
-	session, err := c.GetChat(id)
-	if err != nil {
-		return nil, err
-	}
-	settings.EnabledIDs = append(settings.EnabledIDs, session.MemoryLibraryIDs...)
-	settings.Libraries = visibleMemoryLibraries(libraries, session.WorkspaceID)
-	return settings, nil
+	return &ChatMemorySettings{Libraries: visibleMemoryLibraries(libraries, workspaceID), EnabledIDs: enabledIDs}, nil
 }
 
 func (c *Core) GetWorkspaceMemorySettings(workspaceID string) (*ChatMemorySettings, error) {
@@ -157,7 +183,7 @@ func (c *Core) SetChatMemoryLibraries(id string, ids []string) (*chat.ChatTask, 
 	return session, nil
 }
 
-// 调用方持有 ChatServer.mu。只有不存在的 ID 被移除；存储损坏则报告错误。
+// 调用方持有 ChatServer.mu。移除已删除或当前工作区不可见的 ID；存储损坏则报告错误。
 func (c *Core) cleanChatMemoryIDsLocked(directory string, session *chat.ChatTask) error {
 	if len(session.MemoryLibraryIDs) == 0 {
 		return nil
@@ -189,6 +215,13 @@ func (c *Core) createChatMemory(ctx context.Context, workspaceID string, enabled
 	if strings.TrimSpace(data) == "" {
 		return "", errors.New("记忆内容不能为空")
 	}
+	// 与界面管理共用对话锁，防止作用域在权限校验与实际写入之间改变。
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return "", err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	server, err := c.memoryServer(ctx)
 	if err != nil {
 		return "", err
@@ -211,6 +244,12 @@ func (c *Core) chatMemoryContext(ctx context.Context, session *chat.ChatTask) (s
 	if len(session.MemoryLibraryIDs) == 0 {
 		return "", nil
 	}
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return "", err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	server, err := c.memoryServer(ctx)
 	if err != nil {
 		return "", err

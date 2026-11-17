@@ -62,6 +62,18 @@ func TestChatMemoryContextExcludesDisabledLibrariesAndLocksSettingsDuringGenerat
 		if _, err := core.SetChatMemoryLibraries(task.ID, []string{disabled.ID}); err == nil {
 			t.Error("memory settings changed during generation")
 		}
+		if _, err := core.CreateMemoryLibrary(task.ID, "", "DuringGeneration", memory.ScopeGlobal); err == nil {
+			t.Error("memory created during generation")
+		}
+		if err := core.RenameMemoryLibrary(task.ID, "", disabled.ID, "RenamedDuringGeneration"); err == nil {
+			t.Error("memory renamed during generation")
+		}
+		if err := core.DeleteMemoryLibrary(task.ID, "", disabled.ID); err == nil {
+			t.Error("memory deleted during generation")
+		}
+		if err := core.SetMemoryLibraryScope(task.ID, "", disabled.ID, memory.ScopeGlobal); err == nil {
+			t.Error("memory scope changed during generation")
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"reply\"}}]}\n\ndata: [DONE]\n\n")
 	}))
