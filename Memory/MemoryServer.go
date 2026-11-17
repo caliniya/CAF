@@ -5,7 +5,7 @@ import "context"
 var MemoryPath string = "/memory/"
 
 type MemoryServer struct {
-	Recollections *map[string]Recollection `json:"data"`
+	Recollections *map[string]Recollection
 }
 
 // Close implements [Backend.Server].
