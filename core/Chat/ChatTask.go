@@ -9,17 +9,18 @@ import (
 )
 
 type ChatTask struct {
-	ID              string                    `json:"id"`
-	Title           string                    `json:"title"`
-	ConfigID        string                    `json:"configId"`
-	Model           string                    `json:"model"`
-	WorkspaceID     string                    `json:"workspaceId,omitempty"`
-	ReasoningEffort string                    `json:"reasoningEffort,omitempty"`
-	Tree            *chatstruct.ChatTree      `json:"tree"`
-	CreatedAt       time.Time                 `json:"createdAt"`
-	UpdatedAt       time.Time                 `json:"updatedAt"`
-	Client          *netclient.APIClient      `json:"-"`
-	ToolConfig      *agenttool.ChatToolConfig `json:"toolConfig,omitempty"`
+	ID               string                    `json:"id"`
+	Title            string                    `json:"title"`
+	ConfigID         string                    `json:"configId"`
+	Model            string                    `json:"model"`
+	WorkspaceID      string                    `json:"workspaceId,omitempty"`
+	ReasoningEffort  string                    `json:"reasoningEffort,omitempty"`
+	Tree             *chatstruct.ChatTree      `json:"tree"`
+	CreatedAt        time.Time                 `json:"createdAt"`
+	UpdatedAt        time.Time                 `json:"updatedAt"`
+	Client           *netclient.APIClient      `json:"-"`
+	ToolConfig       *agenttool.ChatToolConfig `json:"toolConfig,omitempty"`
+	MemoryLibraryIDs []string                  `json:"memoryLibraryIds,omitempty"`
 }
 
 type ChatSummary struct {

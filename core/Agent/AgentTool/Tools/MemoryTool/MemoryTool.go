@@ -2,6 +2,7 @@ package MemoryTool
 
 import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	create "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/CreateMemory"
 )
 
 type MainTools struct {
@@ -27,14 +28,14 @@ func (m *MainTools) Meta() agenttool.ToolSetMeta {
 	return *m.ToolSetMeta
 }
 
-func InitMainTool() *MainTools {
+func InitMemoryTool() *MainTools {
 
 	return &MainTools{
 		ToolSetMeta: &agenttool.ToolSetMeta{
 			Name:        "长期记忆工具",
 			Description: "内置的记忆相关工具",
 			Enabled:     true,
-			ToolKits:    map[string]agenttool.ToolKit{},
+			ToolKits:    map[string]agenttool.ToolKit{"创建记忆": create.InitCreateMemory()},
 		},
 	}
 }

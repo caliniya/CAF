@@ -30,6 +30,9 @@ func Init(assets fs.FS) error {
 	if _, err := backend.Platform.LoadConfigs(); err != nil {
 		return err
 	}
+	if _, err := backend.Platform.GetChatMemorySettings(""); err != nil {
+		return err
+	}
 	chatServer, err := backend.Platform.Servers.Get[*backend.ChatServer](backend.ChatServerName)
 	if err != nil {
 		return err

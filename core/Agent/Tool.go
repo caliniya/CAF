@@ -5,6 +5,7 @@ import (
 
 	"github.com/caliniya/caf/core/Agent/AgentTool"
 	"github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool"
+	"github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool"
 )
 
 // InitTool 只在启动期调用一次。工具集是静态的，不做热重载。
@@ -14,5 +15,8 @@ func InitTool() {
 	AgentTool.Init()
 	if err := AgentTool.Add(MainTool.InitMainTool()); err != nil {
 		log.Fatalf("工具注册失败：%v", err)
+	}
+	if err := AgentTool.Add(MemoryTool.InitMemoryTool()); err != nil {
+		log.Fatalf("记忆工具注册失败：%v", err)
 	}
 }

@@ -409,6 +409,9 @@ func (c *Core) readChatLocked(directory, id string) (*chat.ChatTask, error) {
 		session.Tree = chatstruct.CreateTree(session.Title)
 	}
 	fillToolDisplayNames(session.Tree)
+	if err := c.cleanChatMemoryIDsLocked(directory, &session); err != nil {
+		return nil, err
+	}
 	return &session, nil
 }
 
@@ -1178,6 +1181,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return err
 	}
 	toolContext.Context = ctx
+	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
+	permission := toolContext.PermissionLevel
+	toolContext.CreateMemory = func(callCtx context.Context, libraryID, data string, tags []string) (string, error) {
+		return c.createChatMemory(callCtx, enabledMemoryIDs, permission, libraryID, data, tags)
+	}
+	memoryContext, err := c.chatMemoryContext(ctx, session)
+	if err != nil {
+		return err
+	}
 	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
 	reply.ReasoningEffort = session.ReasoningEffort
@@ -1225,6 +1237,9 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前工作区路径：" + toolContext.WorkSpace + "。文件工具的相对路径以此目录为起点。"})
 	} else {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前未使用工作区。自动编辑权限下只允许读取文件，不允许创建或修改文件。"})
+	}
+	if memoryContext != "" {
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: memoryContext})
 	}
 	history = append(history, request.Messages...)
 	produced := make([]apiImpl.ChatMessage, 0, 4)

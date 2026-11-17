@@ -8,6 +8,8 @@ import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pen
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
+import MemorySelectionDialog from '../components/MemorySelectionDialog.vue'
+import type { MemoryLibrary } from '../api'
 import ToolKitDetailsDialog from '../components/ToolKitDetailsDialog.vue'
 import ToolCallDetails from '../components/ToolCallDetails.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
@@ -121,6 +123,66 @@ const currentPersona = computed(() => chat.personas.find((item) => item.id === c
 const settingsMenuAnchor = ref<HTMLElement | null>(null)
 const settingsMenuButton = ref<HTMLButtonElement | null>(null)
 const settingsMenuOpen = ref(false)
+const memorySettingsOpen = ref(false)
+const memoryLibraries = ref<MemoryLibrary[]>([])
+const memoryEnabledIDs = ref<string[]>([])
+const memoryLoading = ref(false)
+const memoryLoadFailed = ref(false)
+const memorySaving = ref(false)
+const memoryError = ref('')
+let memoryDialogRequest = 0
+
+async function openMemorySettings() {
+  if (chat.sending) return
+  closeMenus()
+  memorySettingsOpen.value = true
+  memoryLoading.value = true
+  memoryLoadFailed.value = false
+  memoryError.value = ''
+  memoryLibraries.value = []
+  memoryEnabledIDs.value = []
+  const request = ++memoryDialogRequest
+  const chatId = chat.session?.id ?? ''
+  try {
+    const settings = await chat.loadMemorySettings()
+    if (request !== memoryDialogRequest || (chat.session?.id ?? '') !== chatId) return
+    memoryLibraries.value = settings.libraries
+    memoryEnabledIDs.value = settings.enabledIds
+  } catch (err) {
+    if (request === memoryDialogRequest) {
+      memoryError.value = String(err)
+      memoryLoadFailed.value = true
+    }
+  } finally {
+    if (request === memoryDialogRequest) memoryLoading.value = false
+  }
+}
+
+async function saveMemorySettings(ids: string[]) {
+  if (memoryLoading.value || memorySaving.value) return
+  const request = memoryDialogRequest
+  memorySaving.value = true
+  memoryError.value = ''
+  try {
+    await chat.setMemoryLibraries(ids)
+    if (request === memoryDialogRequest) memorySettingsOpen.value = false
+  } catch (err) {
+    if (request === memoryDialogRequest) memoryError.value = String(err)
+  } finally {
+    if (request === memoryDialogRequest) memorySaving.value = false
+  }
+}
+
+function closeMemorySettings() {
+  if (memorySaving.value) return
+  memorySettingsOpen.value = false
+  ++memoryDialogRequest
+}
+watch(() => chat.session?.id, () => {
+  memorySettingsOpen.value = false
+  memorySaving.value = false
+  ++memoryDialogRequest
+})
 const settingsPersonaOpen = ref(false)
 const settingsPersonaFlyout = ref<HTMLElement | null>(null)
 const settingsPersonaFlip = ref(false)
@@ -370,7 +432,7 @@ function pickEffort(index: number) {
 
 // Ctrl+T 循环切换思考强度
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || memorySettingsOpen.value) return
   if (toolsOpen.value) {
     if (event.key === 'Escape') {
       event.preventDefault()
@@ -513,7 +575,7 @@ async function confirmModelChange() {
 }
 
 function closeMenusOnOutside(event: PointerEvent) {
-  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value) return
+  if (detailsPersona.value || personaChange.value || modelChange.value || workspaceDialogOpen.value || memorySettingsOpen.value) return
   const target = event.target as Node
   if (modelMenuAnchor.value?.contains(target) || permMenuAnchor.value?.contains(target)
     || settingsMenuAnchor.value?.contains(target) || workspaceMenuAnchor.value?.contains(target)) return
@@ -564,6 +626,8 @@ onDeactivated(() => {
   personaChange.value = null
   modelChange.value = null
   workspaceDialogOpen.value = false
+  memorySaving.value = false
+  closeMemorySettings()
 })
 
 onMounted(() => {
@@ -918,6 +982,12 @@ watch(
 
               <div v-if="settingsMenuOpen" id="chat-settings-menu" class="menu settings-menu"
                 role="menu" aria-label="对话设置">
+                <button type="button" class="menu-row" role="menuitem" :disabled="chat.sending" @click="openMemorySettings">
+                  <Box class="row-icon" :size="16" :stroke-width="1.6" />
+                  <span class="menu-row-label">记忆设置</span>
+                  <span class="menu-spacer"></span>
+                  <span class="menu-value">{{ chat.enabledMemoryLibraryIds.length }} 个已启用</span>
+                </button>
                 <div class="menu-slot">
                   <button type="button" class="menu-row" role="menuitem" :aria-expanded="settingsPersonaOpen"
                     aria-haspopup="menu" aria-controls="chat-persona-menu" @click="toggleSettingsPersona">
@@ -1041,7 +1111,7 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging" aria-label="发送"
+            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || memorySaving" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -1056,6 +1126,9 @@ watch(
     @cancel="workspaceDialogOpen = false" />
 
   <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
+  <MemorySelectionDialog :open="memorySettingsOpen" :libraries="memoryLibraries" :enabled-ids="memoryEnabledIDs"
+    :loading="memoryLoading" :saving="memorySaving" :error="memoryError" :load-failed="memoryLoadFailed"
+    @confirm="saveMemorySettings" @cancel="closeMemorySettings" @retry="openMemorySettings" />
   <ConfirmationDialog :open="!!personaChange" title="切换人设"
     :message="`将当前对话的人设切换为「${personaChange?.persona.name ?? ''}」。\n在对话中途切换人设会降低对话质量，是否继续？`"
     confirm-label="确认切换" :busy="personaChanging" :error="personaChangeError"

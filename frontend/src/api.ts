@@ -28,6 +28,8 @@ export interface Configs {
 }
 
 interface CoreBindings {
+  GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
+  SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask>
   ListClientExtensions(clientId: string): Promise<ExtensionOption[]>
   CreateClientExtension(clientId: string, type: string, parameters: Record<string, string>): Promise<ExtensionOption>
   GetClientExtensionParameters(clientId: string, id: string): Promise<Record<string, string>>
@@ -178,6 +180,21 @@ export interface ChatTask extends ChatSummary {
   // 每个对话各自的思考强度，由后端持久化在会话文件里
   reasoningEffort?: string
   toolConfig?: ChatToolConfig
+  memoryLibraryIds?: string[]
+}
+
+export interface MemoryLibrary {
+  id: string
+  name: string
+  description: string
+  date: string
+  scope: 'global' | 'workspace'
+  workspaceId?: string
+}
+
+export interface ChatMemorySettings {
+  libraries: MemoryLibrary[]
+  enabledIds: string[]
 }
 
 export interface Workspace {
@@ -350,6 +367,12 @@ export function ListPersonas(): Promise<Persona[]> {
   return bridge().then((c) => c.ListPersonas())
 }
 export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c) => c.GetChat(id)) }
+export function GetChatMemorySettings(id = ''): Promise<ChatMemorySettings> {
+  return bridge().then((c) => c.GetChatMemorySettings(id))
+}
+export function SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatMemoryLibraries(id, ids))
+}
 export function RenameChat(id: string, title: string): Promise<ChatTask> {
   return bridge().then((c) => c.RenameChat(id, title))
 }

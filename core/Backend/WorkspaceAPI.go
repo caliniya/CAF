@@ -1,6 +1,7 @@
 package Backend
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -107,13 +108,22 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 		return nil, err
 	}
 	workspace := chat.WorkSpace{ID: workspaceID, Name: name, Path: path}
+	memories, err := c.memoryServer(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	library, err := memories.EnsureWorkspace(context.Background(), workspace.ID, workspace.Name)
+	if err != nil {
+		return nil, err
+	}
 	index.Workspaces = append(index.Workspaces, workspace)
 	file, err := c.workspaceFile()
 	if err != nil {
 		return nil, err
 	}
 	if err := c.writeJSONLocked(file, index); err != nil {
-		return nil, fmt.Errorf("保存工作区失败：%w", err)
+		cleanupErr := memories.DeleteRecollection(context.Background(), library.ID)
+		return nil, errors.Join(fmt.Errorf("保存工作区失败：%w", err), cleanupErr)
 	}
 	return &workspace, nil
 }

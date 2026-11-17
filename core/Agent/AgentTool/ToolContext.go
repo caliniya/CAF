@@ -14,6 +14,8 @@ type ToolContext struct {
 	Context context.Context
 	// AskUser 由宿主注入；工具模块通过它等待回答，不依赖桌面事件或后端包。
 	AskUser func(context.Context, UserQuestion) (string, error)
+	// CreateMemory 由宿主检查对话启用库和库作用域后持久化，返回记忆 ID。
+	CreateMemory func(context.Context, string, string, []string) (string, error)
 }
 
 type PermissionLevel int

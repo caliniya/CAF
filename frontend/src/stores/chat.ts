@@ -8,6 +8,7 @@ import {
   EditChatMessage,
   GetChatModelContextWindow,
   GetChat,
+  GetChatMemorySettings,
   ListChats,
   ListPersonas,
   ListWorkspaces,
@@ -19,6 +20,7 @@ import {
   SetChatPersona,
   SetChatReasoningEffort,
   SetChatToolConfig,
+  SetChatMemoryLibraries,
   SetChatWorkspace,
   UpdateChatModel,
   type ChatTask as StoredChatTask,
@@ -36,6 +38,7 @@ import { useConfigsStore } from './configs'
 let contextWindowRequestId = 0
 let effortUpdates: Promise<void> = Promise.resolve()
 let toolConfigUpdates: Promise<void> = Promise.resolve()
+let memorySettingsUpdates: Promise<void> = Promise.resolve()
 
 // 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约一 token。
 function estimateTextTokens(text: string): number {
@@ -87,6 +90,7 @@ export const useChatStore = defineStore('chat', {
     contextWindow: null as number | null,
     // 对话还没创建时先攒着，createChat 成功后写进新会话（一次性）
     pendingToolConfig: null as ChatToolConfig | null,
+    pendingMemoryLibraryIds: [] as string[],
     // pendingPersonaId 用于新建对话；已有对话的人设单独保存。
     personas: [] as Persona[],
     pendingPersonaId: '',
@@ -99,6 +103,9 @@ export const useChatStore = defineStore('chat', {
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
+    enabledMemoryLibraryIds(state): string[] {
+      return state.session ? state.session.memoryLibraryIds ?? [] : state.pendingMemoryLibraryIds
+    },
     currentWorkspaceId(state): string {
       return state.session ? state.session.workspaceId ?? '' : state.pendingWorkspaceId
     },
@@ -169,6 +176,33 @@ export const useChatStore = defineStore('chat', {
     },
   },
   actions: {
+    async loadMemorySettings() {
+      const id = this.session?.id ?? ''
+      const settings = await GetChatMemorySettings(id)
+      if ((this.session?.id ?? '') !== id) return settings
+      if (this.session) {
+        this.session.memoryLibraryIds = settings.enabledIds
+      } else {
+        this.pendingMemoryLibraryIds = this.pendingMemoryLibraryIds.filter(
+          (key) => settings.libraries.some((library) => library.id === key),
+        )
+      }
+      return { ...settings, enabledIds: [...this.enabledMemoryLibraryIds] }
+    },
+    async setMemoryLibraries(ids: string[]) {
+      if (this.sending) throw new Error('对话正在生成中，暂时无法修改记忆设置')
+      const id = this.session?.id
+      if (!id) {
+        this.pendingMemoryLibraryIds = [...new Set(ids)]
+        return
+      }
+      const update = memorySettingsUpdates.then(async () => {
+        const session = await SetChatMemoryLibraries(id, ids)
+        if (this.session?.id === id) this.session.memoryLibraryIds = session.memoryLibraryIds ?? []
+      })
+      memorySettingsUpdates = update.catch(() => undefined)
+      await update
+    },
     reset() {
       ++contextWindowRequestId
       this.session = null
@@ -180,6 +214,7 @@ export const useChatStore = defineStore('chat', {
       this.contextWindow = null
       // 新建对话回到默认档位，不再沿用上一个对话的设置
       this.effort = 'high'
+      this.pendingMemoryLibraryIds = []
     },
     // 从会话数据同步思考强度：切换对话、重新生成、改模型后都会走这里
     syncEffort() {
@@ -289,6 +324,7 @@ export const useChatStore = defineStore('chat', {
       try {
         await effortUpdates
         await toolConfigUpdates
+        await memorySettingsUpdates
         if (!this.session) {
           await this.createChat(effort)
         }
@@ -487,7 +523,8 @@ export const useChatStore = defineStore('chat', {
       this.personas = await ListPersonas()
       if (!this.pendingPersonaId) this.pendingPersonaId = this.personas[0]?.id ?? ''
     },
-    async createChat(effort = this.effort) {
+    async createChat(effort?: 'none' | 'low' | 'high' | 'max') {
+      effort ??= this.effort
       const configs = useConfigsStore()
       const session = await CreateChat(
         configs.enables?.ID ?? '',
@@ -497,6 +534,10 @@ export const useChatStore = defineStore('chat', {
       )
       this.session = session
       this.rebuildMessages()
+      if (this.pendingMemoryLibraryIds.length) {
+        this.session = await SetChatMemoryLibraries(session.id, this.pendingMemoryLibraryIds)
+        this.pendingMemoryLibraryIds = []
+      }
       if (this.pendingWorkspaceId) {
         this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
       }
@@ -516,6 +557,7 @@ export const useChatStore = defineStore('chat', {
     async openChat(id: string) {
       this.error = ''
       await toolConfigUpdates
+      await memorySettingsUpdates
       this.session = await GetChat(id)
       this.pendingWorkspaceId = this.session.workspaceId ?? ''
       this.syncEffort()
