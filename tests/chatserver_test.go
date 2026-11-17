@@ -22,14 +22,17 @@ func TestChatServerRegistrationAndInitPreserveInstance(t *testing.T) {
 	t.Cleanup(func() { backend.Platform = previous })
 	backend.Init()
 	service, err := backend.Platform.Servers.Get[*backend.ChatServer](backend.ChatServerName)
-	if err != nil || service != &backend.Platform.Chat {
+	if err != nil {
 		t.Fatalf("registry did not return the Core chat instance: %p / %v", service, err)
+	}
+	if err := service.Init(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 	service.ChatList["test"] = chat.ChatTask{Title: "preserved"}
 	if err := service.Init(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if backend.Platform.Chat.ChatList["test"].Title != "preserved" {
+	if testServer[*backend.ChatServer](t, backend.Platform, backend.ChatServerName).ChatList["test"].Title != "preserved" {
 		t.Fatal("repeated init discarded the existing client cache")
 	}
 	if err := service.Close(context.Background()); err != nil {
@@ -48,7 +51,7 @@ func TestChatServerCancelsStreamsPreservesReplyAndRestarts(t *testing.T) {
 		t.Run(shutdown, func(t *testing.T) {
 			useToolRegistry(t)
 			instance := useChatTaskCore(t)
-			service := backend.NewChatServer(instance)
+			service := testServer[*backend.ChatServer](t, instance, backend.ChatServerName)
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			if err := service.Start(ctx); err != nil {
@@ -157,7 +160,7 @@ func TestChatServerCloseCancelsUserQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	instance := useChatTaskCore(t)
-	service := backend.NewChatServer(instance)
+	service := testServer[*backend.ChatServer](t, instance, backend.ChatServerName)
 	if err := service.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +224,7 @@ func TestChatServerLifecycleRejectsUnboundAndCancelledContexts(t *testing.T) {
 	if err := (&backend.ChatServer{}).Start(context.Background()); err == nil {
 		t.Fatal("unbound start succeeded")
 	}
-	service := backend.NewChatServer(useChatTaskCore(t))
+	service := testServer[*backend.ChatServer](t, useChatTaskCore(t), backend.ChatServerName)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := service.Init(ctx); !errors.Is(err, context.Canceled) {

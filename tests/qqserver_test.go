@@ -23,11 +23,11 @@ func TestQQServerRegistrationReturnsSameInstance(t *testing.T) {
 	t.Cleanup(func() { backend.Platform = previous })
 	backend.Init()
 	qq, err := backend.Platform.Servers.Get[*backend.QQServer](backend.QQServerName)
-	if err != nil || qq != &backend.Platform.QQ {
+	if err != nil {
 		t.Fatalf("registry did not return the Core QQ instance: %p / %v", qq, err)
 	}
 	qq.ListenHost = "127.0.0.1"
-	if backend.Platform.QQ.ListenHost != "127.0.0.1" {
+	if testServer[*backend.QQServer](t, backend.Platform, backend.QQServerName).ListenHost != "127.0.0.1" {
 		t.Fatal("registry copied the service instead of sharing it")
 	}
 	if got, err := backend.Platform.Servers.Get[*backend.QQServer]("missing"); err == nil || got != nil {
@@ -64,8 +64,10 @@ func TestQQServerLifecycleRestoresOnlyEnabledBindings(t *testing.T) {
 	}
 	instance.CloseQQAdapters()
 
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, QQ: backend.QQServer{ListenHost: "127.0.0.1"}}
-	var service backend.Server = backend.NewQQServer(reloaded)
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	qq := testServer[*backend.QQServer](t, reloaded, backend.QQServerName)
+	qq.ListenHost = "127.0.0.1"
+	var service backend.Server = qq
 	t.Cleanup(reloaded.CloseQQAdapters)
 	if err := service.Init(context.Background()); err != nil {
 		t.Fatal(err)
@@ -99,7 +101,7 @@ func TestQQServerLifecycleRestoresOnlyEnabledBindings(t *testing.T) {
 
 func TestQQServerCloseCleansUpEvenWithCancelledContext(t *testing.T) {
 	instance := useQQAdapterCore(t)
-	service := backend.NewQQServer(instance)
+	service := testServer[*backend.QQServer](t, instance, backend.QQServerName)
 	adapter, err := instance.CreateQQAdapter("Bot", "token", "10001")
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +125,7 @@ func TestQQServerCloseCleansUpEvenWithCancelledContext(t *testing.T) {
 
 func TestQQServerInitAndStartReturnConfigurationErrors(t *testing.T) {
 	instance := useQQAdapterCore(t)
-	service := backend.NewQQServer(instance)
+	service := testServer[*backend.QQServer](t, instance, backend.QQServerName)
 	if err := os.MkdirAll(filepath.Join(instance.Paths.Data, "qq"), 0o700); err != nil {
 		t.Fatal(err)
 	}

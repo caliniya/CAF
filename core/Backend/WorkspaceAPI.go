@@ -50,8 +50,13 @@ func (c *Core) readWorkspacesLocked() (workspaceIndex, error) {
 }
 
 func (c *Core) ListWorkspaces() ([]chat.WorkSpace, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	index, err := c.readWorkspacesLocked()
 	return index.Workspaces, err
 }
@@ -73,8 +78,13 @@ func (c *Core) validateWorkspacePath(path string) (string, error) {
 }
 
 func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	name = strings.TrimSpace(name)
 	index, err := c.readWorkspacesLocked()
 	if err != nil {
@@ -104,8 +114,13 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 }
 
 func (c *Core) RenameWorkspace(id, name string) (*chat.WorkSpace, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, errors.New("工作区名称不能为空")
@@ -142,8 +157,13 @@ func (c *Core) DeleteWorkspaceAndChats(id string) error {
 }
 
 func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	index, err := c.readWorkspacesLocked()
 	if err != nil {
 		return err
@@ -171,7 +191,7 @@ func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 		if summary.WorkspaceID != id {
 			continue
 		}
-		if c.Chat.sending[summary.ID] != nil {
+		if chatServer.sending[summary.ID] != nil {
 			return errors.New("工作区内有对话正在生成中，暂时无法删除")
 		}
 		session, err := c.readChatLocked(directory, summary.ID)
@@ -188,7 +208,7 @@ func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 			if err := c.FS.DeleteFile(filepath.Join(directory, session.ID+".json")); err != nil {
 				return fmt.Errorf("删除工作区对话失败：%w", err)
 			}
-			delete(c.Chat.ChatList, session.ID)
+			delete(chatServer.ChatList, session.ID)
 		}
 		remaining := chats.Chats[:0]
 		for _, summary := range chats.Chats {
@@ -207,7 +227,7 @@ func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 			if err := c.saveChatLocked(directory, session); err != nil {
 				return err
 			}
-			delete(c.Chat.ChatList, session.ID)
+			delete(chatServer.ChatList, session.ID)
 		}
 	}
 	index.Workspaces = append(index.Workspaces[:position], index.Workspaces[position+1:]...)
@@ -239,9 +259,14 @@ func (c *Core) workspaceByIDLocked(id string) (*chat.WorkSpace, error) {
 
 // workspaceID 为空表示不使用工作区，不更改对话权限档位。
 func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法切换工作区")
 	}
 	workspace, err := c.workspaceByIDLocked(workspaceID)
@@ -270,8 +295,13 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 }
 
 func (c *Core) toolContextFor(session *chat.ChatTask) (*agenttool.ToolContext, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	workspace, err := c.workspaceByIDLocked(session.WorkspaceID)
 	if err != nil {
 		return nil, err

@@ -215,6 +215,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 		t.Fatalf("deleting affected other client: %+v / %v", options, err)
 	}
 	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	options, err = reloaded.ListClientExtensions(secondClient.ID)
 	if err != nil || len(options) != 1 || options[0].ID != second.ID {
 		t.Fatalf("ownership not persisted: %+v / %v", options, err)

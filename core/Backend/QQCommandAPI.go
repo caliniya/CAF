@@ -31,6 +31,11 @@ func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtensi
 
 // 明确指令使用固定逻辑回复；不调用模型，也不发起主动对话。
 func (c *Core) runQQCommands(ctx context.Context, adapterID string, client onebot11qq.Extension, jobs <-chan qqCommandJob) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return
+	}
+
 	seen := map[string]bool{}
 	order := []string{}
 	for {
@@ -72,11 +77,11 @@ func (c *Core) runQQCommands(ctx context.Context, adapterID string, client onebo
 			_, err := client.SendMessage(callCtx, reply)
 			cancel()
 			if err != nil && ctx.Err() == nil {
-				c.QQ.mu.Lock()
-				if running := c.QQ.clients[adapterID]; running != nil && running.client == client {
+				qqServer.mu.Lock()
+				if running := qqServer.clients[adapterID]; running != nil && running.client == client {
 					running.err = err.Error()
 				}
-				c.QQ.mu.Unlock()
+				qqServer.mu.Unlock()
 			}
 		}
 	}

@@ -370,6 +370,11 @@ func (c *Core) StartExtensionClients() {
 }
 
 func (c *Core) startExtensionClients(ctx context.Context) error {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -390,12 +395,12 @@ func (c *Core) startExtensionClients(ctx context.Context) error {
 			}
 			if _, err := c.startQQAdapter(ctx, item.AdapterID); err != nil {
 				errs = append(errs, fmt.Errorf("启动 QQ 适配器 %s：%w", item.AdapterID, err))
-				c.QQ.mu.Lock()
-				if c.QQ.clients == nil {
-					c.QQ.clients = map[string]*qqAdapterRuntime{}
+				qqServer.mu.Lock()
+				if qqServer.clients == nil {
+					qqServer.clients = map[string]*qqAdapterRuntime{}
 				}
-				c.QQ.clients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
-				c.QQ.mu.Unlock()
+				qqServer.clients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
+				qqServer.mu.Unlock()
 			}
 		}
 	}

@@ -31,15 +31,20 @@ type QQAdapter struct {
 }
 
 func (c *Core) loadQQAdaptersLocked() error {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
 	if c.Paths == nil || c.FS == nil {
 		return errors.New("QQ 适配器存储尚未初始化")
 	}
-	if c.QQ.adapters != nil {
+	if qqServer.adapters != nil {
 		return nil
 	}
 	data, err := c.FS.ReadFile(filepath.Join(c.Paths.Data, "qq", "adapters.json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		c.QQ.adapters = []qqAdapterConfig{}
+		qqServer.adapters = []qqAdapterConfig{}
 		return nil
 	}
 	if err != nil {
@@ -65,14 +70,19 @@ func (c *Core) loadQQAdaptersLocked() error {
 		}
 		ids[config.ID], ports[config.Port] = true, true
 	}
-	c.QQ.adapters = stored.Adapters
-	if c.QQ.adapters == nil {
-		c.QQ.adapters = []qqAdapterConfig{}
+	qqServer.adapters = stored.Adapters
+	if qqServer.adapters == nil {
+		qqServer.adapters = []qqAdapterConfig{}
 	}
 	return nil
 }
 
 func (c *Core) saveQQAdaptersLocked(configs []qqAdapterConfig) error {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
 	directory := filepath.Join(c.Paths.Data, "qq")
 	if err := c.FS.CreateDirectory(directory, 0o700); err != nil {
 		return fmt.Errorf("创建 QQ 适配器目录失败：%w", err)
@@ -84,16 +94,21 @@ func (c *Core) saveQQAdaptersLocked(configs []qqAdapterConfig) error {
 	if err := c.writeJSONLocked(filepath.Join(directory, "adapters.json"), stored); err != nil {
 		return fmt.Errorf("保存 QQ 适配器失败：%w", err)
 	}
-	c.QQ.adapters = configs
+	qqServer.adapters = configs
 	return nil
 }
 
 func (c *Core) qqAdapterIndexLocked(id string) (int, error) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return 0, serviceErr
+	}
+
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return -1, err
 	}
-	for i := range c.QQ.adapters {
-		if c.QQ.adapters[i].ID == id {
+	for i := range qqServer.adapters {
+		if qqServer.adapters[i].ID == id {
 			return i, nil
 		}
 	}
@@ -104,8 +119,8 @@ func qqAdapterAddress(port int) string {
 	return "ws://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) + qqAdapterPath
 }
 
-func (c *Core) qqAdapterListenAddress(port int) string {
-	host := c.QQ.ListenHost
+func (q *QQServer) qqAdapterListenAddress(port int) string {
+	host := q.ListenHost
 	if host == "" {
 		host = "0.0.0.0"
 	}
@@ -113,13 +128,18 @@ func (c *Core) qqAdapterListenAddress(port int) string {
 }
 
 func (c *Core) nextQQAdapterPortLocked() (int, error) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return 0, serviceErr
+	}
+
 	used := map[int]bool{}
-	for _, config := range c.QQ.adapters {
+	for _, config := range qqServer.adapters {
 		used[config.Port] = true
 	}
 	for port := 6701; port <= 65535; port++ {
 		if !used[port] {
-			listener, err := net.Listen("tcp", c.qqAdapterListenAddress(port))
+			listener, err := net.Listen("tcp", qqServer.qqAdapterListenAddress(port))
 			if err == nil {
 				_ = listener.Close()
 				return port, nil
@@ -129,7 +149,7 @@ func (c *Core) nextQQAdapterPortLocked() (int, error) {
 	return 0, errors.New("没有可分配的 QQ 适配器端口")
 }
 
-func (c *Core) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
+func (q *QQServer) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
 	view := QQAdapter{
 		ID: config.ID, Name: config.Name, SelfID: config.SelfID,
 		QQ: config.SelfID, Address: qqAdapterAddress(config.Port), State: "stopped", Port: config.Port,
@@ -137,7 +157,7 @@ func (c *Core) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
 	if view.QQ == "" {
 		view.QQ = config.DetectedQQ
 	}
-	if running := c.QQ.clients[config.ID]; running != nil {
+	if running := q.clients[config.ID]; running != nil {
 		view.LastError = running.err
 		if running.client != nil {
 			info := running.client.Info()
@@ -157,34 +177,49 @@ func (c *Core) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
 }
 
 func (c *Core) ListQQAdapters() ([]QQAdapter, error) {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return nil, err
 	}
-	views := make([]QQAdapter, 0, len(c.QQ.adapters))
-	for _, config := range c.QQ.adapters {
-		views = append(views, c.qqAdapterViewLocked(config))
+	views := make([]QQAdapter, 0, len(qqServer.adapters))
+	for _, config := range qqServer.adapters {
+		views = append(views, qqServer.qqAdapterViewLocked(config))
 	}
 	return views, nil
 }
 
 func (c *Core) GetQQAdapter(id string) (*QQAdapter, error) {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return nil, err
 	}
-	view := c.qqAdapterViewLocked(c.QQ.adapters[i])
-	view.Token = c.QQ.adapters[i].Token
+	view := qqServer.qqAdapterViewLocked(qqServer.adapters[i])
+	view.Token = qqServer.adapters[i].Token
 	return &view, nil
 }
 
 // GetQQAdapterAddress 给创建窗口预览地址；创建时再次分配，避免并发创建冲突。
 func (c *Core) GetQQAdapterAddress() (string, error) {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return "", serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return "", err
 	}
@@ -218,12 +253,17 @@ func (c *Core) CreateQQAdapter(name, token, selfID string) (*QQAdapter, error) {
 }
 
 func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter, error) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
 	name, token, selfID, err := validateQQAdapter(name, token, selfID)
 	if err != nil {
 		return nil, err
 	}
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	if err := c.loadQQAdaptersLocked(); err != nil {
 		return nil, err
 	}
@@ -236,11 +276,11 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter
 		return nil, err
 	}
 	config := qqAdapterConfig{ID: newID(), Name: name, Token: token, SelfID: selfID, Port: port}
-	configs := append(append([]qqAdapterConfig{}, c.QQ.adapters...), config)
+	configs := append(append([]qqAdapterConfig{}, qqServer.adapters...), config)
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return nil, err
 	}
-	view := c.qqAdapterViewLocked(config)
+	view := qqServer.qqAdapterViewLocked(config)
 	return &view, nil
 }
 
@@ -249,28 +289,33 @@ func (c *Core) UpdateQQAdapter(id, name, token, selfID string) (*QQAdapter, erro
 }
 
 func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAdapter, error) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
 	name, token, selfID, err := validateQQAdapter(name, token, selfID)
 	if err != nil {
 		return nil, err
 	}
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return nil, err
 	}
-	previous := c.QQ.adapters[i]
+	previous := qqServer.adapters[i]
 	if port == 0 {
 		port = previous.Port
 	}
 	if err := c.validateQQPortLocked(port, id); err != nil {
 		return nil, err
 	}
-	if running := c.QQ.clients[id]; running != nil && running.client != nil &&
+	if running := qqServer.clients[id]; running != nil && running.client != nil &&
 		(previous.Token != token || previous.SelfID != selfID || previous.Port != port) {
 		return nil, errors.New("请先停用扩展，再修改 Token、QQ 号或端口")
 	}
-	configs := append([]qqAdapterConfig{}, c.QQ.adapters...)
+	configs := append([]qqAdapterConfig{}, qqServer.adapters...)
 	configs[i].Name, configs[i].Token, configs[i].SelfID = name, token, selfID
 	configs[i].Port = port
 	if previous.SelfID != selfID {
@@ -279,15 +324,20 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAda
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return nil, err
 	}
-	view := c.qqAdapterViewLocked(configs[i])
+	view := qqServer.qqAdapterViewLocked(configs[i])
 	return &view, nil
 }
 
 func (c *Core) validateQQPortLocked(port int, exceptID string) error {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
 	if port < 1 || port > 65535 {
 		return errors.New("监听端口必须在 1 到 65535 之间")
 	}
-	for _, config := range c.QQ.adapters {
+	for _, config := range qqServer.adapters {
 		if config.ID != exceptID && config.Port == port {
 			return errors.New("该端口已被其他扩展使用")
 		}
@@ -300,8 +350,13 @@ func (c *Core) StartQQAdapter(id string) (*QQAdapter, error) {
 }
 
 func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, error) {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	if err := parent.Err(); err != nil {
 		return nil, err
 	}
@@ -309,13 +364,13 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 	if err != nil {
 		return nil, err
 	}
-	config := c.QQ.adapters[i]
-	if running := c.QQ.clients[id]; running != nil && running.client != nil {
-		view := c.qqAdapterViewLocked(config)
+	config := qqServer.adapters[i]
+	if running := qqServer.clients[id]; running != nil && running.client != nil {
+		view := qqServer.qqAdapterViewLocked(config)
 		return &view, nil
 	}
 	client, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{
-		Address: c.qqAdapterListenAddress(config.Port),
+		Address: qqServer.qqAdapterListenAddress(config.Port),
 		Path:    qqAdapterPath, AccessToken: config.Token, SelfID: config.SelfID,
 	})
 	if err != nil {
@@ -327,23 +382,28 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 		_ = client.Close()
 		return nil, err
 	}
-	if c.QQ.clients == nil {
-		c.QQ.clients = map[string]*qqAdapterRuntime{}
+	if qqServer.clients == nil {
+		qqServer.clients = map[string]*qqAdapterRuntime{}
 	}
-	c.QQ.clients[id] = &qqAdapterRuntime{client: client, cancel: cancel}
+	qqServer.clients[id] = &qqAdapterRuntime{client: client, cancel: cancel}
 	go c.consumeQQAdapterEvents(ctx, id, client)
-	view := c.qqAdapterViewLocked(config)
+	view := qqServer.qqAdapterViewLocked(config)
 	return &view, nil
 }
 
 // 持续消费事件，避免消息堆积阻塞连接；上层可订阅 qq:event 继续分发。
 func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client onebot11qq.Extension) {
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return
+	}
+
 	commands := make(chan qqCommandJob, 32)
 	go c.runQQCommands(ctx, id, client, commands)
 	defer func() {
-		c.QQ.mu.Lock()
-		defer c.QQ.mu.Unlock()
-		if running := c.QQ.clients[id]; running != nil && running.client == client {
+		qqServer.mu.Lock()
+		defer qqServer.mu.Unlock()
+		if running := qqServer.clients[id]; running != nil && running.client == client {
 			running.cancel()
 		}
 	}()
@@ -352,16 +412,16 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 		if err := json.Unmarshal(envelope.Data, &event); err != nil {
 			continue
 		}
-		c.QQ.mu.Lock()
-		running := c.QQ.clients[id]
+		qqServer.mu.Lock()
+		running := qqServer.clients[id]
 		if running == nil || running.client != client {
-			c.QQ.mu.Unlock()
+			qqServer.mu.Unlock()
 			continue
 		}
 		if event.Info != nil && event.Info.SelfID != "" {
-			for i, config := range c.QQ.adapters {
+			for i, config := range qqServer.adapters {
 				if config.ID == id && config.DetectedQQ != event.Info.SelfID {
-					configs := append([]qqAdapterConfig{}, c.QQ.adapters...)
+					configs := append([]qqAdapterConfig{}, qqServer.adapters...)
 					configs[i].DetectedQQ = event.Info.SelfID
 					if err := c.saveQQAdaptersLocked(configs); err != nil {
 						running.err = err.Error()
@@ -370,7 +430,7 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 				}
 			}
 		}
-		c.QQ.mu.Unlock()
+		qqServer.mu.Unlock()
 		if event.Message != nil {
 			select {
 			case commands <- qqCommandJob{Message: *event.Message}:
@@ -388,9 +448,9 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 			}{id, event})
 		}
 	}
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
-	if running := c.QQ.clients[id]; running != nil && running.client == client {
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
+	if running := qqServer.clients[id]; running != nil && running.client == client {
 		running.cancel()
 		running.err = client.Info().LastError
 		running.client = nil
@@ -398,20 +458,25 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 }
 
 func (c *Core) StopQQAdapter(id string) (*QQAdapter, error) {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return nil, err
 	}
-	if running := c.QQ.clients[id]; running != nil && running.client != nil {
+	if running := qqServer.clients[id]; running != nil && running.client != nil {
 		running.cancel()
 		if err := running.client.Close(); err != nil {
 			return nil, err
 		}
 	}
-	delete(c.QQ.clients, id)
-	view := c.qqAdapterViewLocked(c.QQ.adapters[i])
+	delete(qqServer.clients, id)
+	view := qqServer.qqAdapterViewLocked(qqServer.adapters[i])
 	return &view, nil
 }
 
@@ -434,25 +499,35 @@ func (c *Core) DeleteQQAdapter(id string) error {
 
 // 调用方持有 extMu，确保删除期间客户端归属不会发生变化。
 func (c *Core) deleteQQAdapterLocked(id string) error {
-	c.QQ.mu.Lock()
-	defer c.QQ.mu.Unlock()
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
+	qqServer.mu.Lock()
+	defer qqServer.mu.Unlock()
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return err
 	}
-	configs := append([]qqAdapterConfig{}, c.QQ.adapters[:i]...)
-	configs = append(configs, c.QQ.adapters[i+1:]...)
+	configs := append([]qqAdapterConfig{}, qqServer.adapters[:i]...)
+	configs = append(configs, qqServer.adapters[i+1:]...)
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return err
 	}
-	if running := c.QQ.clients[id]; running != nil && running.client != nil {
+	if running := qqServer.clients[id]; running != nil && running.client != nil {
 		running.cancel()
 		_ = running.client.Close()
 	}
-	delete(c.QQ.clients, id)
+	delete(qqServer.clients, id)
 	return nil
 }
 
 func (c *Core) CloseQQAdapters() {
-	_ = c.QQ.Close(context.Background())
+	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
+	if serviceErr != nil {
+		return
+	}
+
+	_ = qqServer.Close(context.Background())
 }

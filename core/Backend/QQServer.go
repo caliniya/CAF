@@ -27,16 +27,9 @@ type QQServer struct {
 
 var _ Server = (*QQServer)(nil)
 
-// NewQQServer 将 Core 内已有的 QQ 实例绑定到其宿主，不复制状态或互斥锁。
-// 生命周期使用宿主的存储和扩展绑定；原有 Core QQ API 仍访问同一个实例。
+// NewQQServer 创建绑定宿主的独立实例，调用方通过 Servers.Register 注册。
 func NewQQServer(core *Core) *QQServer {
-	if core == nil {
-		return &QQServer{}
-	}
-	core.QQ.mu.Lock()
-	core.QQ.core = core
-	core.QQ.mu.Unlock()
-	return &core.QQ
+	return &QQServer{core: core}
 }
 
 // Init 加载适配器配置，不启动监听；重复初始化保留现有运行状态。
@@ -57,6 +50,13 @@ func (q *QQServer) init(ctx context.Context) error {
 	defer q.mu.Unlock()
 	if q.core == nil {
 		return errors.New("QQ 服务尚未绑定 Core，请使用 NewQQServer 创建")
+	}
+	registered, err := q.core.Servers.Get[*QQServer](QQServerName)
+	if err != nil {
+		return err
+	}
+	if registered != q {
+		return errors.New("QQ 服务尚未注册到宿主")
 	}
 	return q.core.loadQQAdaptersLocked()
 }

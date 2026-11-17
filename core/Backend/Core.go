@@ -1,7 +1,6 @@
 package Backend
 
 import (
-	"context"
 	"sync"
 
 	"github.com/caliniya/caf/NetClient/NetAPI"
@@ -14,8 +13,6 @@ type Core struct {
 	Paths   *platform.Paths
 	Configs *Configs
 	FS      platform.FilePlatform
-	QQ      QQServer
-	Chat    ChatServer
 
 	extMu sync.Mutex
 
@@ -29,8 +26,13 @@ func Init() {
 		APIClient: NetAPI.InitNetAPI(),
 		Servers:   Servers{},
 	}
-	Platform.Servers[QQServerName] = NewQQServer(Platform)
-	Platform.Servers[QQServerName].Init(context.Background())
-	Platform.Servers[ChatServerName] = NewChatServer(Platform)
-	_ = Platform.Chat.Init(context.Background())
+	Platform.InitServers()
+}
+
+// InitServers 注册内置服务，不启动监听或生成，也不要求存储已经初始化。
+// 手动创建 Core 的宿主应在调用服务 API 前执行一次，可安全重复调用。
+func (c *Core) InitServers() {
+	if c != nil {
+		c.Servers.initDefaults(c)
+	}
 }

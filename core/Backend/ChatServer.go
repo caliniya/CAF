@@ -43,15 +43,9 @@ type pendingQuestion struct {
 
 var _ Server = (*ChatServer)(nil)
 
-// NewChatServer 绑定并返回 Core 内的对话服务，注册表与 Core 共用同一实例。
+// NewChatServer 创建绑定宿主的独立实例，调用方通过 Servers.Register 注册。
 func NewChatServer(core *Core) *ChatServer {
-	if core == nil {
-		return &ChatServer{}
-	}
-	core.Chat.mu.Lock()
-	core.Chat.core = core
-	core.Chat.mu.Unlock()
-	return &core.Chat
+	return &ChatServer{core: core}
 }
 
 // Init 准备运行状态，不覆盖已有客户端、生成任务或交互请求。
@@ -67,8 +61,8 @@ func (s *ChatServer) Init(ctx context.Context) error {
 	defer s.lifeMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.core == nil {
-		return errors.New("对话服务尚未绑定 Core，请使用 NewChatServer 创建")
+	if err := s.checkRegistered(); err != nil {
+		return err
 	}
 	s.initLocked()
 	return nil
@@ -81,6 +75,20 @@ func (s *ChatServer) initLocked() {
 	if s.sending == nil {
 		s.sending = make(map[string]*chatSend)
 	}
+}
+
+func (s *ChatServer) checkRegistered() error {
+	if s.core == nil {
+		return errors.New("对话服务尚未绑定 Core，请使用 NewChatServer 创建")
+	}
+	registered, err := s.core.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return err
+	}
+	if registered != s {
+		return errors.New("对话服务尚未注册到宿主")
+	}
+	return nil
 }
 
 // Start 建立生成与交互的生命周期上下文；重复启动保留当前任务。
@@ -99,8 +107,8 @@ func (s *ChatServer) Start(ctx context.Context) error {
 	defer s.lifeMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.core == nil {
-		return errors.New("对话服务尚未绑定 Core，请使用 NewChatServer 创建")
+	if err := s.checkRegistered(); err != nil {
+		return err
 	}
 	s.initLocked()
 	if !s.closed && s.ctx != nil && s.ctx.Err() == nil {

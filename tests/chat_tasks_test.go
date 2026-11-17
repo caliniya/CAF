@@ -32,6 +32,7 @@ func useChatTaskCore(t *testing.T) *backend.Core {
 			EnablesConfig: &configs[0],
 		},
 	}
+	instance.InitServers()
 	backend.Platform = instance
 	return instance
 }

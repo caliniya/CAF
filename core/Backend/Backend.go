@@ -485,8 +485,13 @@ func (c *Core) configByID(id string) (*Config, error) {
 }
 
 func (c *Core) ListChats() ([]chat.ChatSummary, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return nil, err
@@ -507,8 +512,13 @@ func (c *Core) ListPersonas() []persona.Persona {
 }
 
 func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	if c == nil || c.Configs == nil {
 		return nil, errors.New("模型配置尚未加载")
 	}
@@ -551,8 +561,13 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 }
 
 func (c *Core) GetChat(id string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return nil, err
@@ -561,9 +576,14 @@ func (c *Core) GetChat(id string) (*chat.ChatTask, error) {
 }
 
 func (c *Core) RenameChat(id, title string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法修改")
 	}
 	title = strings.TrimSpace(title)
@@ -587,12 +607,17 @@ func (c *Core) RenameChat(id, title string) (*chat.ChatTask, error) {
 }
 
 func (c *Core) DeleteChat(id string) error {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return errors.New("对话正在生成中，暂时无法删除")
 	}
-	delete(c.Chat.ChatList, id)
+	delete(chatServer.ChatList, id)
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return err
@@ -619,9 +644,14 @@ func (c *Core) DeleteChat(id string) error {
 
 // SetChatPersona 切换当前对话的人设，后续请求使用新的角色提示词。
 func (c *Core) SetChatPersona(id, personaID string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法切换人设")
 	}
 	selected := persona.Find(personaID)
@@ -651,9 +681,14 @@ func (c *Core) SetChatPersona(id, personaID string) (*chat.ChatTask, error) {
 }
 
 func (c *Core) UpdateChatModel(id, configID, model string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法切换模型")
 	}
 	directory, err := c.chatDirectory()
@@ -673,7 +708,7 @@ func (c *Core) UpdateChatModel(id, configID, model string) (*chat.ChatTask, erro
 	}
 	session.ConfigID = configID
 	session.Model = model
-	delete(c.Chat.ChatList, id)
+	delete(chatServer.ChatList, id)
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
 		return nil, err
@@ -682,9 +717,14 @@ func (c *Core) UpdateChatModel(id, configID, model string) (*chat.ChatTask, erro
 }
 
 func (c *Core) SetChatBranch(id, parentID string, choice int) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法切换分支")
 	}
 	directory, err := c.chatDirectory()
@@ -737,9 +777,14 @@ func normalizeReasoningEffort(effort string) string {
 
 // SetChatReasoningEffort 把思考强度保存到对话里，切换或重开对话时会读回。
 func (c *Core) SetChatReasoningEffort(id, effort string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法修改思考强度")
 	}
 	directory, err := c.chatDirectory()
@@ -827,9 +872,14 @@ func (c *Core) ListToolSets() []ToolSetDescriptor {
 // SetChatToolConfig 把对话级覆盖写入会话文件。raw 是 ChatToolConfig 的 JSON；
 // 传 "{}" 表示清空覆盖，全部回退到全局默认。
 func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	if c.Chat.sending[id] != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法修改工具配置")
 	}
 	var cfg agenttool.ChatToolConfig
@@ -1038,14 +1088,19 @@ func titleFromMessage(text string) string {
 }
 
 func (c *Core) beginChatSend(id string) (*chat.ChatTask, *Config, string, error) {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
-	parent, err := c.Chat.contextLocked()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return nil, nil, "", serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	parent, err := chatServer.contextLocked()
 	if err != nil {
 		return nil, nil, "", err
 	}
-	c.Chat.initLocked()
-	if c.Chat.sending[id] != nil {
+	chatServer.initLocked()
+	if chatServer.sending[id] != nil {
 		return nil, nil, "", errors.New("此对话正在生成中")
 	}
 	directory, err := c.chatDirectory()
@@ -1065,18 +1120,23 @@ func (c *Core) beginChatSend(id string) (*chat.ChatTask, *Config, string, error)
 	}
 	configSnapshot := *config
 	ctx, cancel := context.WithCancel(parent)
-	c.Chat.sending[id] = &chatSend{ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	chatServer.sending[id] = &chatSend{ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	return session, &configSnapshot, directory, nil
 }
 
 func (c *Core) endChatSend(id string) {
-	c.Chat.mu.Lock()
-	if run := c.Chat.sending[id]; run != nil {
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return
+	}
+
+	chatServer.mu.Lock()
+	if run := chatServer.sending[id]; run != nil {
 		run.cancel()
 		close(run.done)
 	}
-	delete(c.Chat.sending, id)
-	c.Chat.mu.Unlock()
+	delete(chatServer.sending, id)
+	chatServer.mu.Unlock()
 }
 
 // 一轮工具调用后模型会带着结果重新请求，限制轮数防止模型无限调用。
@@ -1085,9 +1145,14 @@ const maxToolRounds = 10
 var errToolDisabled = errors.New("此工具被禁用")
 
 func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string) error {
-	c.Chat.mu.Lock()
-	run := c.Chat.sending[id]
-	c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
+	chatServer.mu.Lock()
+	run := chatServer.sending[id]
+	chatServer.mu.Unlock()
 	if run == nil {
 		return errors.New("对话生成任务不存在")
 	}
@@ -1113,18 +1178,18 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
 	reply.ReasoningEffort = session.ReasoningEffort
 	session.UpdatedAt = time.Now().UTC()
-	c.Chat.mu.Lock()
+	chatServer.mu.Lock()
 	err = c.saveChatLocked(directory, session)
-	c.Chat.mu.Unlock()
+	chatServer.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
-	c.Chat.mu.Lock()
-	if c.Chat.ChatList == nil {
-		c.Chat.ChatList = make(map[string]chat.ChatTask)
+	chatServer.mu.Lock()
+	if chatServer.ChatList == nil {
+		chatServer.ChatList = make(map[string]chat.ChatTask)
 	}
-	entry := c.Chat.ChatList[id]
+	entry := chatServer.ChatList[id]
 	if entry.Client == nil || entry.ConfigID != session.ConfigID || entry.Model != session.Model {
 		entry = chat.ChatTask{
 			ConfigID: session.ConfigID,
@@ -1135,10 +1200,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				Model:         session.Model,
 			}),
 		}
-		c.Chat.ChatList[id] = entry
+		chatServer.ChatList[id] = entry
 	}
 	session.Client = entry.Client
-	c.Chat.mu.Unlock()
+	chatServer.mu.Unlock()
 
 	tools := c.enabledTools(session)
 	request.Thinking = session.ReasoningEffort
@@ -1331,7 +1396,12 @@ func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext, enabledT
 }
 
 func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask) error {
-	c.Chat.mu.Lock()
-	defer c.Chat.mu.Unlock()
+	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
+	if serviceErr != nil {
+		return serviceErr
+	}
+
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
 	return c.saveChatLocked(directory, session)
 }

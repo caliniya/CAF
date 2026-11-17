@@ -22,8 +22,8 @@ func useQQAdapterCore(t *testing.T) *backend.Core {
 	instance := &backend.Core{
 		Paths: &platform.Paths{Data: t.TempDir()},
 		FS:    &desktopBackend.DesktopFileSystem{},
-		QQ:    backend.QQServer{ListenHost: "127.0.0.1"},
 	}
+	testServer[*backend.QQServer](t, instance, backend.QQServerName).ListenHost = "127.0.0.1"
 	t.Cleanup(instance.CloseQQAdapters)
 	return instance
 }
@@ -74,6 +74,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 		t.Fatalf("adapters must have separate endpoints: %+v / %+v", first, second)
 	}
 	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	adapters, err := reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 2 {
 		t.Fatalf("failed to restore adapter list: %+v / %v", adapters, err)
@@ -95,6 +96,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloaded = &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	adapters, err = reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 1 || adapters[0].Name != "Renamed" {
 		t.Fatalf("edits/deletion did not persist: %+v / %v", adapters, err)
@@ -140,6 +142,7 @@ func TestQQAdaptersRealLifecycleAndDetectedAccount(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+		reloaded.InitServers()
 		details, err := reloaded.GetQQAdapter(adapter.ID)
 		if err == nil && details.QQ == "10001" {
 			break
@@ -232,6 +235,7 @@ func TestQQAdaptersFailuresPreserveConfigurationAndRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	if _, err := reloaded.ListQQAdapters(); err == nil {
 		t.Fatal("silently accepted corrupted adapter configuration")
 	}

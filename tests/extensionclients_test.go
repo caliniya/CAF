@@ -36,6 +36,7 @@ func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
 		t.Fatal("accepted case-insensitive duplicate ID")
 	}
 	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	list, err := reloaded.ListExtensionClients()
 	if err != nil || len(list) != 1 || list[0].ID != client.ID {
 		t.Fatalf("client did not persist: %+v / %v", list, err)
@@ -218,12 +219,13 @@ func TestExtensionClientsMultipleNamedQQBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded.InitServers()
 	client, err = reloaded.GetExtensionClient(client.ID)
 	if err != nil || len(client.Extensions) != 1 || !client.Extensions[0].Enabled {
 		t.Fatalf("binding did not persist: %+v / %v", client, err)
 	}
 	instance.CloseQQAdapters()
-	reloaded.QQ.ListenHost = instance.QQ.ListenHost
+	testServer[*backend.QQServer](t, reloaded, backend.QQServerName).ListenHost = testServer[*backend.QQServer](t, instance, backend.QQServerName).ListenHost
 	reloaded.StartExtensionClients()
 	t.Cleanup(reloaded.CloseQQAdapters)
 	waitQQAdapter(t, reloaded, second.ID, "disconnected", "20002")

@@ -30,6 +30,14 @@ func Init(assets fs.FS) error {
 	if _, err := backend.Platform.LoadConfigs(); err != nil {
 		return err
 	}
+	chatServer, err := backend.Platform.Servers.Get[*backend.ChatServer](backend.ChatServerName)
+	if err != nil {
+		return err
+	}
+	qqServer, err := backend.Platform.Servers.Get[*backend.QQServer](backend.QQServerName)
+	if err != nil {
+		return err
+	}
 
 	timeContext, stopTime := context.WithCancel(context.Background())
 	defer stopTime()
@@ -46,10 +54,12 @@ func Init(assets fs.FS) error {
 			backend.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)
 			}
-			if err := backend.NewChatServer(backend.Platform).Start(ctx); err != nil {
+			if err := chatServer.Start(ctx); err != nil {
 				runtime.LogError(ctx, "启动对话服务失败："+err.Error())
 			}
-			backend.Platform.StartExtensionClients()
+			if err := qqServer.Start(ctx); err != nil {
+				runtime.LogError(ctx, "启动 QQ 服务失败："+err.Error())
+			}
 		},
 		OnDomReady: func(ctx context.Context) {
 			// 前端重载时仍只保留一个取时循环；网络请求不阻塞窗口启动。
@@ -82,10 +92,12 @@ func Init(assets fs.FS) error {
 			stopTime()
 			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := backend.Platform.Chat.Close(closeCtx); err != nil {
+			if err := chatServer.Close(closeCtx); err != nil {
 				runtime.LogError(ctx, "关闭对话服务失败："+err.Error())
 			}
-			backend.Platform.CloseQQAdapters()
+			if err := qqServer.Close(closeCtx); err != nil {
+				runtime.LogError(ctx, "关闭 QQ 服务失败："+err.Error())
+			}
 		},
 		Bind: []interface{}{
 			backend.Platform,
