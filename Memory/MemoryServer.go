@@ -10,15 +10,15 @@ type MemoryServer struct {
 
 // Close implements [Backend.Server].
 func (m *MemoryServer) Close(ctx context.Context) error {
-	panic("unimplemented")
+	return nil
 }
 
 // Init implements [Backend.Server].
 func (m *MemoryServer) Init(ctx context.Context) error {
-	panic("unimplemented")
+	return nil
 }
 
 // Start implements [Backend.Server].
 func (m *MemoryServer) Start(ctx context.Context) error {
-	panic("unimplemented")
+	return nil
 }
