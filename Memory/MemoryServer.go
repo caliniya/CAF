@@ -15,6 +15,7 @@ func (m *MemoryServer) Close(ctx context.Context) error {
 
 // Init implements [Backend.Server].
 func (m *MemoryServer) Init(ctx context.Context) error {
+	m.Recollections = &map[string]Recollection{}
 	return nil
 }
 
