@@ -1,12 +1,10 @@
 package ChatStruct
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"time"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	"github.com/caliniya/caf/utils/id"
 )
 
 // ChatNode 保存一段消息以及可选的后续对话分支。
@@ -22,15 +20,7 @@ type ChatNode struct {
 }
 
 func CreateChatNode(messages ...apiImpl.ChatMessage) *ChatNode {
-	return &ChatNode{ID: newNodeID(), Child: append([]apiImpl.ChatMessage(nil), messages...), Next: []*ChatNode{}}
-}
-
-func newNodeID() string {
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err == nil {
-		return hex.EncodeToString(id[:])
-	}
-	return hex.EncodeToString([]byte(time.Now().UTC().Format("20060102150405.000000000")))
+	return &ChatNode{ID: id.MustNew(id.Node), Child: append([]apiImpl.ChatMessage(nil), messages...), Next: []*ChatNode{}}
 }
 
 // AddMessage 将一条消息追加到当前节点。

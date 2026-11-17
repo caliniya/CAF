@@ -10,6 +10,7 @@ import (
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	"github.com/caliniya/caf/utils/id"
 )
 
 type Configs struct {
@@ -101,7 +102,10 @@ func (c *Core) loadConfig() error {
 			entry := &(*configs.ALLConfig)[i]
 			needsSave = needsSave || entry.legacyModelFormat
 			if entry.ID == "" {
-				entry.ID = newID()
+				entry.ID, err = id.New(id.Config)
+				if err != nil {
+					return err
+				}
 				needsSave = true
 			}
 		}

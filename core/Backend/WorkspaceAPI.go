@@ -11,6 +11,7 @@ import (
 
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chat "github.com/caliniya/caf/core/Chat"
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 type workspaceIndex struct {
@@ -101,7 +102,11 @@ func (c *Core) CreateWorkspace(name, path string) (*chat.WorkSpace, error) {
 			name = path
 		}
 	}
-	workspace := chat.WorkSpace{ID: newID(), Name: name, Path: path}
+	workspaceID, err := identity.New(identity.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	workspace := chat.WorkSpace{ID: workspaceID, Name: name, Path: path}
 	index.Workspaces = append(index.Workspaces, workspace)
 	file, err := c.workspaceFile()
 	if err != nil {

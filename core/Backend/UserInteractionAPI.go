@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 // askUser 注册后再发事件，保证前端收到问题时已经可以提交答案。
@@ -19,7 +20,10 @@ func (c *Core) askUser(ctx context.Context, chatID, nodeID, callID string, quest
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	requestID := newID()
+	requestID, err := identity.New(identity.Request)
+	if err != nil {
+		return "", err
+	}
 	chatServer.mu.Lock()
 	serviceContext, err := chatServer.contextLocked()
 	if err != nil {

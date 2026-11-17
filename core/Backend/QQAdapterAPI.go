@@ -13,6 +13,7 @@ import (
 
 	extension "github.com/caliniya/caf/core/Extension"
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 const qqAdapterPath = "/onebot/v11/ws"
@@ -275,7 +276,11 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter
 	} else if err := c.validateQQPortLocked(port, ""); err != nil {
 		return nil, err
 	}
-	config := qqAdapterConfig{ID: newID(), Name: name, Token: token, SelfID: selfID, Port: port}
+	adapterID, err := identity.New(identity.QQAdapter)
+	if err != nil {
+		return nil, err
+	}
+	config := qqAdapterConfig{ID: adapterID, Name: name, Token: token, SelfID: selfID, Port: port}
 	configs := append(append([]qqAdapterConfig{}, qqServer.adapters...), config)
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return nil, err

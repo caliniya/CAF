@@ -2,7 +2,6 @@ package Backend
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	persona "github.com/caliniya/caf/core/Persona"
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 // SelectDirectory 供前端调用平台文件夹选择器；取消时返回空字符串。
@@ -174,8 +174,12 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 		return nil, errors.New("至少需要一个模型")
 	}
 
+	configID, err := identity.New(identity.Config)
+	if err != nil {
+		return nil, err
+	}
 	entry := Config{
-		ID:            newID(),
+		ID:            configID,
 		Name:          strings.TrimSpace(name),
 		ServerAddress: serverAddress,
 		Protocol:      protocol,
@@ -318,11 +322,7 @@ func (c *Core) chatDirectory() (string, error) {
 }
 
 func validChatID(id string) bool {
-	if len(id) != 32 {
-		return false
-	}
-	_, err := hex.DecodeString(id)
-	return err == nil
+	return identity.Valid(id, identity.Chat)
 }
 
 func (c *Core) readChatIndexLocked(directory string) (chatIndex, error) {
@@ -546,7 +546,11 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 	tree := chatstruct.CreateTree(title)
 	// 选择初始人设，所有分支共享；找不到就回落到默认。
 	tree.Root.PersonaID = persona.Resolve(personaID).ID
-	session := chat.NewChatTask(newID(), title, configID, model, tree)
+	chatID, err := identity.New(identity.Chat)
+	if err != nil {
+		return nil, err
+	}
+	session := chat.NewChatTask(chatID, title, configID, model, tree)
 	session.CreatedAt = now
 	session.UpdatedAt = now
 	directory, err := c.chatDirectory()

@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 type ClientExtension struct {
@@ -335,7 +337,11 @@ func (c *Core) archiveExtensionClientDirectoryLocked(directory, id string) error
 	if err := c.FS.CreateDirectory(archive, 0o700); err != nil {
 		return fmt.Errorf("创建客户端归档目录失败：%w", err)
 	}
-	if err := c.FS.MoveFile(filepath.Join(directory, id), filepath.Join(archive, id+"-"+newID())); err != nil {
+	archiveID, err := identity.New(identity.Archive)
+	if err != nil {
+		return err
+	}
+	if err := c.FS.MoveFile(filepath.Join(directory, id), filepath.Join(archive, id+"-"+archiveID)); err != nil {
 		return fmt.Errorf("归档客户端失败：%w", err)
 	}
 	return nil
