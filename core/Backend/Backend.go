@@ -1184,7 +1184,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
 	permission := toolContext.PermissionLevel
 	toolContext.CreateMemory = func(callCtx context.Context, libraryID, data string, tags []string) (string, error) {
-		return c.createChatMemory(callCtx, enabledMemoryIDs, permission, libraryID, data, tags)
+		return c.createChatMemory(callCtx, session.WorkspaceID, enabledMemoryIDs, permission, libraryID, data, tags)
 	}
 	memoryContext, err := c.chatMemoryContext(ctx, session)
 	if err != nil {

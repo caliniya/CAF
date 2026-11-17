@@ -74,7 +74,7 @@ func (m *MemoryServer) loadIndexLocked(rebuild bool) error {
 		return err
 	}
 	loaded, index := map[string]Recollection{}, map[string]string{}
-	names, workspaces := map[string]bool{}, map[string]bool{}
+	names := map[string]bool{}
 	for _, entry := range entries {
 		if entry.Name() == ".archive" || !entry.IsDir() {
 			continue
@@ -92,12 +92,6 @@ func (m *MemoryServer) loadIndexLocked(rebuild bool) error {
 		}
 		if meta.Name != name || names[strings.ToLower(name)] || loaded[meta.ID].Data != nil {
 			return errors.New("记忆库目录、名称或 ID 冲突")
-		}
-		if meta.WorkspaceID != "" {
-			if workspaces[meta.WorkspaceID] {
-				return errors.New("一个工作区关联了多个局部记忆库")
-			}
-			workspaces[meta.WorkspaceID] = true
 		}
 		var r Recollection
 		if err := m.readJSON(filepath.Join(m.root, name, "data.json"), &r); err != nil {

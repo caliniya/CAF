@@ -23,6 +23,7 @@ const (
 	MainName         = "Main"
 	ScopeGlobal      = "global"
 	ScopeWorkspace   = "workspace"
+	MainDisplayName  = "全局主记忆"
 )
 
 // RecollectionMeta 只保存库身份、介绍、作用域和一个最后修改时间。
@@ -167,7 +168,12 @@ func (m *MemoryServer) ListRecollections(ctx context.Context) ([]RecollectionMet
 		return nil, err
 	}
 	result := make([]RecollectionMeta, 0, len(m.Recollections))
+	keys := make([]string, 0, len(m.Recollections))
 	for key := range m.Recollections {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
 		meta, err := m.metaLocked(key)
 		if err != nil {
 			return nil, err
@@ -273,18 +279,9 @@ func (m *MemoryServer) createLocked(ctx context.Context, name, description, scop
 	if err := validateScope(scope, workspaceID); err != nil {
 		return nil, err
 	}
-	for key, r := range m.Recollections {
+	for _, r := range m.Recollections {
 		if strings.EqualFold(r.Name, name) {
 			return nil, errors.New("已存在同名记忆库")
-		}
-		if workspaceID != "" {
-			meta, err := m.metaLocked(key)
-			if err != nil {
-				return nil, err
-			}
-			if meta.WorkspaceID == workspaceID {
-				return nil, errors.New("工作区已关联局部记忆库")
-			}
 		}
 	}
 	if _, err := m.fs.Stat(filepath.Join(m.root, name)); err == nil {
@@ -310,6 +307,33 @@ func (m *MemoryServer) createLocked(ctx context.Context, name, description, scop
 	}
 	m.Recollections[key] = r
 	return &meta, nil
+}
+
+// ChangeScope 保留 ID、当前数据和历史，只改变可见范围与工作区绑定。
+func (m *MemoryServer) ChangeScope(ctx context.Context, libraryID, scope, workspaceID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.readyLocked(ctx); err != nil {
+		return err
+	}
+	meta, err := m.metaLocked(libraryID)
+	if err != nil {
+		return err
+	}
+	if err := validateScope(scope, workspaceID); err != nil {
+		return err
+	}
+	if meta.Name == MainName && scope != ScopeGlobal {
+		return errors.New("全局主记忆不能改为工作区记忆")
+	}
+	if meta.Scope == scope && meta.WorkspaceID == workspaceID {
+		return nil
+	}
+	meta.Scope, meta.WorkspaceID, meta.Date = scope, workspaceID, m.now(ctx)
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	return m.commitLocked("", "", map[string]any{meta.Name + "/meta.json": meta})
 }
 
 func (m *MemoryServer) UpdateRecollection(ctx context.Context, libraryID, name, description string) error {

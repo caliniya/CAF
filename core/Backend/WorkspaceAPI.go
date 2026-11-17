@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chat "github.com/caliniya/caf/core/Chat"
+	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	identity "github.com/caliniya/caf/utils/id"
 )
 
@@ -301,7 +303,44 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 	if err != nil {
 		return nil, err
 	}
+	if session.WorkspaceID == workspaceID {
+		return session, nil
+	}
+	previousName := "不使用工作区"
+	if previous, err := c.workspaceByIDLocked(session.WorkspaceID); err == nil && previous != nil {
+		previousName = previous.Name
+	} else if session.WorkspaceID != "" {
+		previousName = "已删除的工作区"
+	}
+	nextName := "不使用工作区"
+	if workspace != nil {
+		nextName = workspace.Name
+	}
+	path, err := session.Tree.CurrentPath()
+	if err != nil {
+		return nil, err
+	}
+	if len(path) > 0 {
+		node := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "system", Content: "系统消息:从「" + previousName + "」切换到「" + nextName + "」"})
+		if err := session.Tree.AddNext(path[len(path)-1].ID, node); err != nil {
+			return nil, err
+		}
+	}
 	session.WorkspaceID = workspaceID
+	server, err := c.memoryServer(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if workspace != nil {
+		if _, err := server.EnsureWorkspace(context.Background(), workspaceID, workspace.Name); err != nil {
+			return nil, err
+		}
+	}
+	libraries, err := server.ListRecollections(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	session.MemoryLibraryIDs = validMemoryLibraryIDs(session.MemoryLibraryIDs, visibleMemoryLibraries(libraries, workspaceID))
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
 		return nil, err
