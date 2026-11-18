@@ -208,7 +208,6 @@ window.go.Backend.Core.ListWorkspaces = async () => [...workspaces]
 window.go.Backend.Core.SetChatWorkspace = async (id, workspaceId) => {
   workspaceChanges++
   savedSession.workspaceId = workspaceId
-  savedSession.memoryLibraryIds = ['global']
   let last = savedSession.tree.root.next[savedSession.tree.root.choice]
   while (last.next?.length) last = last.next[last.choice]
   last.next = [{ id: `workspace-switch-${workspaceChanges}`, choice: 0, next: [], child: [{ role: 'system', content: '系统消息:从「项目一」切换到「项目二」' }] }]
@@ -240,7 +239,7 @@ await dialogByTitle('切换工作区').props.onConfirm()
 await flush()
 assert.equal(workspaceChanges, 1)
 assert.equal(chat.currentWorkspaceId, 'workspace-2')
-assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'])
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global', 'local'], 'workspace switches must preserve selected libraries')
 assert.equal(chat.messages.at(-1).role, 'system')
 assert.ok(find(root, node => node.props.class === 'msg-system-body' && node.text === '系统消息:从「项目一」切换到「项目二」'), 'workspace switch should be visible as plain system text')
 await chooseWorkspace('项目二')
@@ -263,7 +262,7 @@ await flush()
 // Memory management actions only reach the host after the required second dialog confirms.
 let memoryLibraries = [
   { id: 'global', name: 'Main', scope: 'global' },
-  { id: 'local', name: '项目笔记', scope: 'workspace', workspaceId: 'workspace-2' },
+  { id: 'local', name: '项目笔记', scope: 'workspace', workspaceId: 'workspace-1' },
   { id: 'shared', name: '通用笔记', scope: 'global' },
 ]
 window.go.Backend.Core.GetChatMemorySettings = async () => ({ libraries: [...memoryLibraries], enabledIds: ['global'] })
@@ -292,6 +291,7 @@ const showMemorySettings = async () => {
 await showMemorySettings()
 const memoryDialog = find(root, node => node.type === 'test-dialog' && Array.isArray(node.props.libraries))
 assert.equal(memoryDialog.props.open, true)
+assert.deepEqual(memoryDialog.props.workspaces, workspaces, 'settings must receive the current workspace names')
 
 // Information is lazy-loaded even for disabled libraries; late responses stay with their dialog.
 const detailsRequests = []
@@ -308,6 +308,7 @@ assert.deepEqual(detailsRequests[0].args, ['chat', 'workspace-2', 'local'])
 assert.equal(memoryDetailsDialog.props.library.id, 'local')
 assert.equal(memoryDetailsDialog.props.loading, true)
 assert.equal(memoryDetailsDialog.props.details, null)
+assert.deepEqual(memoryDetailsDialog.props.workspaces, workspaces, 'details must receive the same workspace names')
 assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'], 'viewing disabled memory must not enable it')
 memoryDetailsDialog.props.onClose()
 await flush()
@@ -363,7 +364,7 @@ memoryDialog.props.onScope(memoryLibraries.find(library => library.id === 'share
 await flush()
 assert.equal(scopeCalls, 0)
 assert.equal(dialogByTitle('更改作用范围').props.open, true)
-assert.match(dialogByTitle('更改作用范围').props.message, /项目二[\s\S]*其他工作区将无法看见/)
+assert.match(dialogByTitle('更改作用范围').props.message, /项目二[\s\S]*模型只能在使用该工作区的对话中写入/)
 await dialogByTitle('更改作用范围').props.onConfirm()
 await flush()
 assert.equal(scopeCalls, 1)

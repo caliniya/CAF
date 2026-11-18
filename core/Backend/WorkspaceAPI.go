@@ -335,7 +335,7 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 		}
 	}
 	session.WorkspaceID = workspaceID
-	session.MemoryLibraryIDs = validMemoryLibraryIDs(session.MemoryLibraryIDs, visibleMemoryLibraries(libraries, workspaceID))
+	session.MemoryLibraryIDs = validMemoryLibraryIDs(session.MemoryLibraryIDs, libraries)
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
 		return nil, err

@@ -47,6 +47,12 @@ func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, workspaceID := range []string{"", workspace1.ID, workspace2.ID} {
+		all, err := core.GetWorkspaceMemorySettings(workspaceID)
+		if err != nil || len(all.Libraries) != 3 || len(all.EnabledIDs) != 0 {
+			t.Fatalf("draft settings must list every library without enabling them: %+v / %v", all, err)
+		}
+	}
 	task, err := core.CreateChat("", "", "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -55,10 +61,10 @@ func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	global := settings.Libraries[0].ID
-	selected := []string{global, local1.ID}
-	updated, err := core.SetChatMemoryLibraries(task.ID, append(selected, local2.ID, global, "missing"))
+	selected := []string{global, local1.ID, local2.ID}
+	updated, err := core.SetChatMemoryLibraries(task.ID, append(selected, global, "missing"))
 	if err != nil || !reflect.DeepEqual(updated.MemoryLibraryIDs, selected) {
-		t.Fatalf("only global/current workspace IDs should persist, duplicates/missing removed: %+v / %v", updated, err)
+		t.Fatalf("all selected library IDs should persist, duplicates/missing removed: %+v / %v", updated, err)
 	}
 	var persisted map[string]json.RawMessage
 	path := filepath.Join(core.Paths.Data, "chats", task.ID+".json")
@@ -71,12 +77,12 @@ func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, err := core.GetChat(task.ID)
-	if err != nil || !reflect.DeepEqual(loaded.MemoryLibraryIDs, []string{global}) {
+	if err != nil || !reflect.DeepEqual(loaded.MemoryLibraryIDs, []string{global, local2.ID}) {
 		t.Fatalf("deleted library was not pruned from session: %+v / %v", loaded, err)
 	}
 	memoryReadJSON(t, path, &persisted)
 	_ = json.Unmarshal(persisted["memoryLibraryIds"], &ids)
-	if len(ids) != 1 {
+	if !reflect.DeepEqual(ids, []string{global, local2.ID}) {
 		t.Fatal("pruning was not saved to disk")
 	}
 	other, err := core.CreateChat("", "", "", "")
@@ -192,8 +198,8 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 							found = true
 						}
 					}
-					if found != (test.name != "full_other_workspace") {
-						t.Error("model context did not respect memory visibility")
+					if !found {
+						t.Error("model context omitted an enabled memory library")
 					}
 				}
 				if calls == 2 {

@@ -6,6 +6,7 @@ import (
 
 // 表示一个记忆单元
 type Memory struct {
+	Name       string       `json:"name,omitempty"`
 	Data       string       `json:"data"`
 	MemoryDate string       `json:"date"`
 	Tag        *description `json:"description"`

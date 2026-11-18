@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Info } from '@lucide/vue'
-import type { MemoryLibrary } from '../api'
+import type { MemoryLibrary, Workspace } from '../api'
+import { memoryScopeLabel } from '../memory'
 
 const props = defineProps<{
   open: boolean
@@ -11,6 +12,7 @@ const props = defineProps<{
   saving?: boolean
   managing?: boolean
   workspaceId?: string
+  workspaces?: Workspace[]
   error?: string
   loadFailed?: boolean
 }>()
@@ -99,7 +101,7 @@ function onEscape(event: KeyboardEvent) {
               <input v-model="selectedIDs" type="checkbox" :value="library.id" :disabled="busy || loadFailed" />
               <span class="item-content">
                 <span class="item-name">{{ displayName(library) }}</span>
-                <span class="scope">{{ library.scope === 'global' ? '全局记忆' : '工作区记忆' }}</span>
+                <span class="scope">{{ memoryScopeLabel(library, workspaces) }}</span>
                 <span v-if="library.description && library.name !== 'Main'" class="item-description">{{ library.description }}</span>
               </span>
             </label>
@@ -155,7 +157,7 @@ function onEscape(event: KeyboardEvent) {
 .item-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .item-name { font-size: 13px; overflow-wrap: anywhere; }
 .item-description { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-.scope { flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.scope { flex-shrink: 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .item-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 .memory-row-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 120ms ease, background-color 120ms ease; }
 .item:hover .memory-row-button, .item:focus-within .memory-row-button, .item-actions--open .memory-row-button { opacity: 1; pointer-events: auto; }

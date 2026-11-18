@@ -52,7 +52,7 @@ watch(() => props.open, async (open) => {
             <option value="workspace" :disabled="!workspaceId">当前对话工作区{{ workspaceName ? ` · ${workspaceName}` : '' }}</option>
           </select>
         </label>
-        <p v-if="mode === 'create'" class="note">{{ scope === 'global' ? '所有工作区都可以看见此记忆。' : '只有当前工作区可以看见此记忆。' }}创建后可在每个对话中单独启用。</p>
+        <p v-if="mode === 'create'" class="note">{{ scope === 'global' ? '模型写入全局记忆需要完全访问权限。' : '此记忆归属当前工作区。' }}创建后可在每个对话中单独启用。</p>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <footer>
           <button type="button" class="btn btn-ghost" :disabled="busy" @click="cancel">取消</button>

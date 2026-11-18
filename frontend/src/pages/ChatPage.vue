@@ -174,8 +174,8 @@ const memoryAction = ref<{ kind: 'create' | 'rename' | 'delete' | 'scope'; libra
 const memoryActionError = ref('')
 const memoryActionName = computed(() => memoryAction.value?.library?.name === 'Main' ? '全局主记忆' : memoryAction.value?.library?.name ?? '')
 const memoryScopeMessage = computed(() => memoryAction.value?.library?.scope === 'workspace'
-  ? `将「${memoryActionName.value}」提升为全局记忆。所有工作区都可以看见它，并可在各自的对话中启用；模型写入需要完全访问权限。是否继续？`
-  : `将「${memoryActionName.value}」改为「${workspaceName.value}」的工作区记忆。其他工作区将无法看见它，并会移除对应的启用记录。是否继续？`)
+  ? `将「${memoryActionName.value}」改为全局记忆，模型写入将需要完全访问权限。是否继续？`
+  : `将「${memoryActionName.value}」改为「${workspaceName.value}」的工作区记忆，模型只能在使用该工作区的对话中写入。是否继续？`)
 let memoryDialogRequest = 0
 let memoryDetailsRequest = 0
 
@@ -193,7 +193,7 @@ async function openMemorySettings() {
   const chatId = chat.session?.id ?? ''
   const workspaceId = chat.currentWorkspaceId
   try {
-    const settings = await chat.loadMemorySettings()
+    const [, settings] = await Promise.all([chat.loadWorkspaces(), chat.loadMemorySettings()])
     if (request !== memoryDialogRequest || (chat.session?.id ?? '') !== chatId || chat.currentWorkspaceId !== workspaceId) return
     memoryLibraries.value = settings.libraries
     memoryEnabledIDs.value = settings.enabledIds
@@ -1266,13 +1266,15 @@ watch(
   <PersonaDetailsDialog :persona="detailsPersona" @close="detailsPersona = null" />
   <MemorySelectionDialog :open="memorySettingsOpen" :libraries="memoryLibraries" :enabled-ids="memoryEnabledIDs"
     :loading="memoryLoading" :saving="memorySaving" :managing="memoryManaging" :workspace-id="chat.currentWorkspaceId"
+    :workspaces="chat.workspaces"
     :error="memoryError" :load-failed="memoryLoadFailed"
     @confirm="saveMemorySettings" @cancel="closeMemorySettings" @retry="openMemorySettings"
     @create="openMemoryAction('create')" @rename="openMemoryAction('rename', $event)"
     @delete="openMemoryAction('delete', $event)" @scope="openMemoryAction('scope', $event)"
     @info="openMemoryDetails" />
   <MemoryDetailsDialog :library="memoryDetailsLibrary" :details="memoryDetails"
-    :loading="memoryDetailsLoading" :error="memoryDetailsError" @close="closeMemoryDetails" @retry="retryMemoryDetails" />
+    :workspaces="chat.workspaces" :loading="memoryDetailsLoading" :error="memoryDetailsError"
+    @close="closeMemoryDetails" @retry="retryMemoryDetails" />
   <MemoryLibraryDialog :open="memoryAction?.kind === 'create' || memoryAction?.kind === 'rename'"
     :mode="memoryAction?.kind === 'rename' ? 'rename' : 'create'" :initial-name="memoryAction?.library?.name"
     :workspace-id="chat.currentWorkspaceId" :workspace-name="chat.currentWorkspace?.name"

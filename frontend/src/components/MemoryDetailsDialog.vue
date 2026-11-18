@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { ChevronRight, Search } from '@lucide/vue'
-import type { MemoryLibrary, MemoryLibraryDetails } from '../api'
+import type { MemoryLibrary, MemoryLibraryDetails, Workspace } from '../api'
+import { memoryScopeLabel } from '../memory'
 
 const props = defineProps<{
   library: MemoryLibrary | null
   details: MemoryLibraryDetails | null
   loading: boolean
   error: string
+  workspaces?: Workspace[]
 }>()
 const emit = defineEmits<{ close: []; retry: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -52,7 +54,7 @@ watch(query, () => { if (dataSection.value) dataSection.value.open = true })
         <div class="memory-details-content">
           <dl class="memory-metadata">
             <div><dt>名称</dt><dd>{{ displayName }}</dd></div>
-            <div><dt>作用域</dt><dd>{{ metadata?.scope === 'global' ? '全局记忆' : '工作区记忆' }}</dd></div>
+            <div><dt>作用域</dt><dd>{{ metadata ? memoryScopeLabel(metadata, workspaces) : '' }}</dd></div>
             <div><dt>ID</dt><dd class="memory-id">{{ metadata?.id }}</dd></div>
             <div class="memory-description"><dt>介绍</dt><dd>{{ metadata?.description || '暂无介绍' }}</dd></div>
           </dl>

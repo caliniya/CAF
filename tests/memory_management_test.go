@@ -72,10 +72,10 @@ func TestMemoryLibraryDetailsVisibilityAndCurrentSnapshot(t *testing.T) {
 	}{
 		{"disabled local", task.ID, first.ID, local.ID, true},
 		{"persisted workspace overrides supplied workspace", task.ID, second.ID, local.ID, true},
-		{"forged workspace cannot expose another project", task.ID, second.ID, hidden.ID, false},
+		{"another project's library", task.ID, second.ID, hidden.ID, true},
 		{"draft in current workspace", "", first.ID, local.ID, true},
-		{"draft in another workspace", "", second.ID, local.ID, false},
-		{"draft without workspace", "", "", local.ID, false},
+		{"draft in another workspace", "", second.ID, local.ID, true},
+		{"draft without workspace", "", "", local.ID, true},
 		{"global without workspace", "", "", global.ID, true},
 		{"global in another workspace", "", second.ID, global.ID, true},
 		{"disabled main", task.ID, first.ID, mainMemoryID(t, server), true},
@@ -85,7 +85,7 @@ func TestMemoryLibraryDetailsVisibilityAndCurrentSnapshot(t *testing.T) {
 			details, err := core.GetMemoryLibraryDetails(test.chatID, test.workspaceID, test.libraryID)
 			if !test.allowed {
 				if err == nil || details != nil {
-					t.Fatal("hidden or missing memory returned details")
+					t.Fatal("missing memory returned details")
 				}
 				return
 			}
@@ -180,7 +180,7 @@ func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 	}
 	main := mainMemoryID(t, server)
 
-	// 已有对话只使用磁盘中的工作区，不能用另一个工作区 ID 越过可见范围。
+	// 创建工作区记忆时使用已有对话保存的工作区。
 	local, err := core.CreateMemoryLibrary(task.ID, second.ID, "  项目笔记  ", memory.ScopeWorkspace)
 	if err != nil || local.Name != "项目笔记" || local.WorkspaceID != first.ID {
 		t.Fatalf("new memory did not bind to the actual conversation workspace: %+v / %v", local, err)
@@ -214,11 +214,12 @@ func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 		if len(settings.Libraries) == 0 || settings.Libraries[0].ID != main {
 			t.Fatal("global main memory should be first")
 		}
+		all, err := server.ListRecollections(ctx)
+		if err != nil || len(settings.Libraries) != len(all) {
+			t.Fatalf("settings should list every memory library: %+v / %v", settings, err)
+		}
 		foundLocal := false
 		for _, library := range settings.Libraries {
-			if library.Scope == memory.ScopeWorkspace && library.WorkspaceID != workspaceID {
-				t.Fatalf("other workspace leaked into settings: %+v", library)
-			}
 			foundLocal = foundLocal || library.ID == local.ID
 		}
 		if foundLocal != expectedLocal {
@@ -226,18 +227,25 @@ func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 		}
 	}
 	checkVisible(task.ID, first.ID, true)
-	checkVisible(other.ID, second.ID, false)
-	checkVisible("", "", false)
+	checkVisible(other.ID, second.ID, true)
+	checkVisible("", "", true)
 	checkVisible("draft", first.ID, true)
-	checkVisible("draft", second.ID, false)
-	if err := core.RenameMemoryLibrary(other.ID, first.ID, local.ID, "越权重命名"); err == nil {
-		t.Fatal("another workspace could rename hidden memory")
+	checkVisible("draft", second.ID, true)
+	if err := core.RenameMemoryLibrary(other.ID, first.ID, local.ID, "跨工作区重命名"); err != nil {
+		t.Fatal(err)
 	}
-	if err := core.DeleteMemoryLibrary(other.ID, first.ID, local.ID); err == nil {
-		t.Fatal("another workspace could delete hidden memory")
+	if err := core.SetMemoryLibraryScope(other.ID, first.ID, local.ID, memory.ScopeGlobal); err != nil {
+		t.Fatal(err)
 	}
-	if err := core.SetMemoryLibraryScope(other.ID, first.ID, local.ID, memory.ScopeGlobal); err == nil {
-		t.Fatal("another workspace could promote hidden memory")
+	if err := core.SetMemoryLibraryScope(task.ID, second.ID, local.ID, memory.ScopeWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	removable, err := core.CreateMemoryLibrary(task.ID, first.ID, "可删除笔记", memory.ScopeWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := core.DeleteMemoryLibrary(other.ID, second.ID, removable.ID); err != nil {
+		t.Fatal(err)
 	}
 	if err := core.RenameMemoryLibrary(task.ID, first.ID, main, "主记忆改名"); err == nil {
 		t.Fatal("main memory was renamed")
@@ -289,15 +297,15 @@ func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 		t.Fatal("rename/scope change modified current memories or history")
 	}
 	otherSettings, err := core.GetChatMemorySettings(other.ID)
-	if err != nil || len(otherSettings.EnabledIDs) != 0 {
-		t.Fatalf("demoted memory stayed enabled in another workspace: %+v / %v", otherSettings, err)
+	if err != nil || !slices.Equal(otherSettings.EnabledIDs, []string{local.ID}) {
+		t.Fatalf("scope changes must preserve enabled memory: %+v / %v", otherSettings, err)
 	}
 	var stored struct {
 		IDs []string `json:"memoryLibraryIds"`
 	}
 	memoryReadJSON(t, filepath.Join(core.Paths.Data, "chats", other.ID+".json"), &stored)
-	if len(stored.IDs) != 0 {
-		t.Fatal("pruned scope selection was not saved")
+	if !slices.Equal(stored.IDs, []string{local.ID}) {
+		t.Fatal("scope change discarded a saved selection")
 	}
 	if err := core.DeleteMemoryLibrary(task.ID, first.ID, local.ID); err != nil {
 		t.Fatal(err)
@@ -305,6 +313,10 @@ func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 	settings, err := core.GetChatMemorySettings(task.ID)
 	if err != nil || slices.Contains(settings.EnabledIDs, local.ID) {
 		t.Fatalf("deleted memory stayed enabled: %+v / %v", settings, err)
+	}
+	otherSettings, err = core.GetChatMemorySettings(other.ID)
+	if err != nil || len(otherSettings.EnabledIDs) != 0 {
+		t.Fatalf("deleted memory stayed enabled in another workspace: %+v / %v", otherSettings, err)
 	}
 	var archived memory.Recollection
 	memoryReadJSON(t, filepath.Join(core.Paths.Data, "memory", ".archive", local.ID, "data.json"), &archived)
@@ -412,7 +424,7 @@ func TestDefaultWorkspaceMemoryIsNotRecreatedAfterDeletionOrPromotion(t *testing
 	}
 }
 
-func TestChatWorkspaceSwitchAddsSystemMessageAndCleansMemorySelection(t *testing.T) {
+func TestChatWorkspaceSwitchAddsSystemMessageAndPreservesMemorySelection(t *testing.T) {
 	core := useChatTaskCore(t)
 	first, err := core.CreateWorkspace("项目一", t.TempDir())
 	if err != nil {
@@ -464,8 +476,8 @@ func TestChatWorkspaceSwitchAddsSystemMessageAndCleansMemorySelection(t *testing
 	if err != nil || len(path) != 3 || path[2].Child[0].Role != "system" || path[2].Child[0].Content != "系统消息:从「项目一」切换到「项目二」" {
 		t.Fatalf("workspace switch was not recorded on the current branch: %+v / %v", path, err)
 	}
-	if len(task.MemoryLibraryIDs) != 1 || task.MemoryLibraryIDs[0] != settings.Libraries[0].ID {
-		t.Fatal("switch must retain only enabled global memory")
+	if !slices.Equal(task.MemoryLibraryIDs, ids) {
+		t.Fatal("workspace switch must preserve every enabled library")
 	}
 	task, err = core.SetChatWorkspace(task.ID, second.ID)
 	if err != nil {
@@ -482,6 +494,9 @@ func TestChatWorkspaceSwitchAddsSystemMessageAndCleansMemorySelection(t *testing
 	loaded, err := core.GetChat(task.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(loaded.MemoryLibraryIDs, ids) {
+		t.Fatal("removing the workspace must preserve enabled libraries")
 	}
 	request, err := loaded.Tree.ToChatRequest(core.Configs.EnablesConfig.Model[0])
 	if err != nil || request.Messages[len(request.Messages)-1].Role != "system" || !strings.Contains(request.Messages[len(request.Messages)-1].Content, "不使用工作区") {

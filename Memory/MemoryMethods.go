@@ -11,6 +11,10 @@ import (
 )
 
 func (m *MemoryServer) AddMemory(ctx context.Context, libraryID, data string, tags ...string) (string, error) {
+	return m.AddNamedMemory(ctx, libraryID, "", data, tags...)
+}
+
+func (m *MemoryServer) AddNamedMemory(ctx context.Context, libraryID, name, data string, tags ...string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.readyLocked(ctx); err != nil {
@@ -25,7 +29,7 @@ func (m *MemoryServer) AddMemory(ctx context.Context, libraryID, data string, ta
 		return "", err
 	}
 	tag := description(append([]string{}, tags...))
-	r.Data[key] = Memory{Data: data, Tag: &tag}
+	r.Data[key] = Memory{Name: name, Data: data, Tag: &tag}
 	if err := m.saveDataLocked(ctx, libraryID, r); err != nil {
 		return "", err
 	}
@@ -46,8 +50,31 @@ func (m *MemoryServer) UpdateMemory(ctx context.Context, libraryID, memoryID, da
 		return errors.New("记忆单元不存在")
 	}
 	tag := description(append([]string{}, tags...))
-	r.Data[memoryID] = Memory{Data: data, Tag: &tag}
+	next := r.Data[memoryID]
+	next.Data, next.Tag = data, &tag
+	r.Data[memoryID] = next
 	return m.saveDataLocked(ctx, libraryID, r)
+}
+
+// EditMemory 保存人工编辑的完整单元，保留指定时间，并归档修改前的副本。
+func (m *MemoryServer) EditMemory(ctx context.Context, libraryID, memoryID string, next Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.readyLocked(ctx); err != nil {
+		return err
+	}
+	if err := validateMemory(memoryID, next); err != nil {
+		return err
+	}
+	r, err := m.dataLocked(libraryID)
+	if err != nil {
+		return err
+	}
+	if _, exists := r.Data[memoryID]; !exists {
+		return errors.New("记忆单元不存在")
+	}
+	r.Data[memoryID] = cloneMemory(next)
+	return m.saveDataChangesLocked(ctx, libraryID, r, memoryID)
 }
 
 func (m *MemoryServer) DeleteMemory(ctx context.Context, libraryID, memoryID string) error {
@@ -79,6 +106,10 @@ func (m *MemoryServer) SaveRecollection(ctx context.Context, libraryID string, r
 }
 
 func (m *MemoryServer) saveDataLocked(ctx context.Context, libraryID string, r Recollection) error {
+	return m.saveDataChangesLocked(ctx, libraryID, r, "")
+}
+
+func (m *MemoryServer) saveDataChangesLocked(ctx context.Context, libraryID string, r Recollection, editedMemoryID string) error {
 	meta, err := m.metaLocked(libraryID)
 	if err != nil {
 		return err
@@ -97,8 +128,9 @@ func (m *MemoryServer) saveDataLocked(ctx context.Context, libraryID string, r R
 			return errors.New("无效记忆单元 ID")
 		}
 		previous, exists := old.Data[key]
-		// Date 只由服务维护；单纯更改它不会产生伪造的历史。
-		if exists && previous.Data == next.Data && reflect.DeepEqual(previous.Tag, next.Tag) {
+		// 普通保存统一取时；人工编辑只保留指定单元的时间。
+		if exists && previous.Name == next.Name && previous.Data == next.Data && reflect.DeepEqual(previous.Tag, next.Tag) &&
+			(key != editedMemoryID || previous.MemoryDate == next.MemoryDate) {
 			r.Data[key] = cloneMemory(previous)
 			continue
 		}
@@ -108,7 +140,9 @@ func (m *MemoryServer) saveDataLocked(ctx context.Context, libraryID string, r R
 		if stamp == "" {
 			stamp = m.now(ctx)
 		}
-		next.MemoryDate = stamp
+		if key != editedMemoryID {
+			next.MemoryDate = stamp
+		}
 		r.Data[key] = cloneMemory(next)
 		changed = true
 	}

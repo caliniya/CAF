@@ -12,10 +12,11 @@ const { createRenderer, h, nextTick, reactive } = await import(pathToFileURL(req
 const { createPinia, setActivePinia } = await import(pathToFileURL(require.resolve('pinia')).href)
 const dataModule = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
+const memoryURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/memory.ts'), 'utf8'), 'memory.ts')).code)
 const configsURL = dataModule('export const useConfigsStore = () => ({ enables: { ID: "provider" }, enabledModel: "model" })')
 function rewrite(code) {
   return code.replace(/from\s+(['"])([^'"]+)\1/g, (_whole, _quote, specifier) => {
-    const url = specifier === '../api' ? apiURL : specifier === './configs' ? configsURL : pathToFileURL(require.resolve(specifier)).href
+    const url = specifier === '../api' ? apiURL : specifier === '../memory' ? memoryURL : specifier === './configs' ? configsURL : pathToFileURL(require.resolve(specifier)).href
     return `from ${JSON.stringify(url)}`
   })
 }
@@ -25,10 +26,15 @@ setActivePinia(createPinia())
 const chat = useChatStore()
 let resolveSave, resolveLoad
 let savedIDs = []
-const libraries = [{ id: 'global', name: 'Main', description: '全局记忆库', scope: 'global' }, { id: 'local', name: '项目', scope: 'workspace', workspaceId: 'workspace-1' }]
+const libraries = [
+  { id: 'global', name: 'Main', description: '全局记忆库', scope: 'global' },
+  { id: 'local', name: '项目', scope: 'workspace', workspaceId: 'workspace-1' },
+  { id: 'other-local', name: '研究笔记', scope: 'workspace', workspaceId: 'workspace-2' },
+]
+const workspaces = [{ id: 'workspace-1', name: '开发项目' }, { id: 'workspace-2', name: '研究项目' }]
 globalThis.window = { innerWidth: 1100, innerHeight: 800, go: { Backend: { Core: {
   GetChatMemorySettings: async () => ({ libraries, enabledIds: ['global'] }),
-  GetWorkspaceMemorySettings: async workspaceId => ({ libraries: libraries.filter(library => library.scope === 'global' || library.workspaceId === workspaceId), enabledIds: [] }),
+  GetWorkspaceMemorySettings: async () => ({ libraries, enabledIds: [] }),
   SetChatMemoryLibraries: (id, ids) => {
     savedIDs = [...ids]
     return new Promise(resolve => { resolveSave = () => resolve({ id, memoryLibraryIds: ids }) })
@@ -89,13 +95,16 @@ await chat.createChat()
 assert.deepEqual(creationOrder, ['workspace', 'memory'])
 assert.deepEqual(chat.enabledMemoryLibraryIds, ['global', 'local'])
 
-// A draft changing workspaces retains global selection and removes the previous local IDs.
+// A draft changing workspaces preserves every existing selection and removes only missing IDs.
 chat.reset()
 chat.pendingWorkspaceId = 'workspace-1'
-chat.pendingMemoryLibraryIds = ['global', 'local']
+chat.pendingMemoryLibraryIds = ['global', 'local', 'other-local', 'missing']
 await chat.selectWorkspace('workspace-2')
-assert.deepEqual(chat.pendingMemoryLibraryIds, ['global'])
+assert.deepEqual(chat.pendingMemoryLibraryIds, ['global', 'local', 'other-local'])
 assert.equal(chat.currentWorkspaceId, 'workspace-2')
+await chat.selectWorkspace('')
+assert.deepEqual(chat.pendingMemoryLibraryIds, ['global', 'local', 'other-local'])
+assert.equal(chat.currentWorkspaceId, '')
 
 // Management calls carry the actual conversation/workspace context and refresh deleted selections.
 chat.session = { id: 'managed-chat', workspaceId: 'workspace-1', memoryLibraryIds: ['global', 'local'] }
@@ -151,7 +160,7 @@ const renderer = createRenderer({
 const { descriptor } = parse(fs.readFileSync(path.join(frontend, 'src/components/MemorySelectionDialog.vue'), 'utf8'))
 const script = compileScript(descriptor, { id: 'memory-dialog-test', inlineTemplate: true })
 const { default: Dialog } = await import(dataModule(rewrite((await transformWithOxc(script.content, 'MemorySelectionDialog.ts')).code)))
-const props = reactive({ open: true, libraries, enabledIds: ['global', 'missing'], loading: false, saving: false, managing: false, workspaceId: 'workspace-1', loadFailed: false, error: '' })
+const props = reactive({ open: true, libraries, enabledIds: ['global', 'missing'], loading: false, saving: false, managing: false, workspaceId: 'workspace-1', workspaces, loadFailed: false, error: '' })
 const root = element('root')
 const body = element('body')
 globalThis.Document = class {}
@@ -174,6 +183,7 @@ const dialog = find(root, node => node.type === 'dialog')
 assert.equal(dialog.open, true)
 assert.ok(text(root).includes('记忆设置') && text(root).includes('全局') && text(root).includes('工作区'))
 assert.ok(text(root).includes('全局主记忆') && text(root).includes('全局记忆') && text(root).includes('工作区记忆'))
+assert.ok(text(root).includes('开发项目工作区记忆') && text(root).includes('研究项目工作区记忆'), 'workspace labels must use their owning workspace names')
 assert.ok(!text(root).includes('Main') && !text(root).includes('记忆库'), 'internal name and scope labels should not appear in the interface')
 find(root, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
 assert.deepEqual(confirmed, ['global'], 'missing saved ID must not remain selected')
@@ -181,7 +191,7 @@ assert.deepEqual(confirmed, ['global'], 'missing saved ID must not remain select
 button('全选').props.onClick()
 await nextTick()
 find(root, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
-assert.deepEqual(confirmed, ['global', 'local'])
+assert.deepEqual(confirmed, ['global', 'local', 'other-local'], 'all workspace libraries should be selectable')
 button('全部禁用').props.onClick()
 await nextTick()
 find(root, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
@@ -228,6 +238,11 @@ assert.equal(infoLibrary.id, 'local')
 assert.equal(find(root, node => node.props.role === 'menu'), undefined, 'viewing information must close the operation menu')
 find(root, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
 assert.deepEqual(confirmed, ['local'], 'viewing information must not alter the enabled selection')
+menuButton('研究笔记的信息').props.onClick()
+assert.equal(infoLibrary.id, 'other-local', 'other workspaces must expose their information button too')
+props.workspaces = workspaces.map(workspace => workspace.id === 'workspace-1' ? { ...workspace, name: '已改名项目' } : workspace)
+await nextTick()
+assert.ok(text(root).includes('已改名项目工作区记忆') && !text(root).includes('开发项目工作区记忆'), 'workspace renames must update labels without renaming the library')
 
 // Refresh after a management action must preserve unsaved checkbox changes.
 props.libraries = [...libraries, { id: 'extra', name: '新记忆', scope: 'global' }]
@@ -299,7 +314,7 @@ formApp.unmount()
 const detailsDescriptor = parse(fs.readFileSync(path.join(frontend, 'src/components/MemoryDetailsDialog.vue'), 'utf8')).descriptor
 const detailsScript = compileScript(detailsDescriptor, { id: 'memory-details-test', inlineTemplate: true })
 const { default: DetailsDialog } = await import(dataModule(rewrite((await transformWithOxc(detailsScript.content, 'MemoryDetailsDialog.ts')).code)))
-const detailsProps = reactive({ library: libraries[1], details: null, loading: true, error: '' })
+const detailsProps = reactive({ library: libraries[1], details: null, loading: true, error: '', workspaces })
 let detailsClosed = 0, detailsRetries = 0
 const detailsApp = renderer.createApp({ render: () => h(DetailsDialog, { ...detailsProps,
   onClose: () => { detailsClosed++ }, onRetry: () => { detailsRetries++ },
@@ -310,6 +325,7 @@ await nextTick()
 const detailsDialog = find(body, node => node.type === 'dialog')
 assert.equal(detailsDialog.open, true)
 assert.ok(text(body).includes('正在加载记忆') && text(body).includes('项目') && text(body).includes('工作区记忆'))
+assert.ok(text(body).includes('开发项目工作区记忆'), 'details should show the owning workspace while loading')
 const snapshot = {
   ...libraries[1], description: '记录工作区的偏好',
   data: {
@@ -331,6 +347,7 @@ const entryNodes = () => {
   return rows
 }
 assert.equal(entryNodes().length, 3)
+assert.ok(text(body).includes('开发项目工作区记忆'))
 assert.ok(entryNodes().every(node => !node.open), 'individual memories should start folded')
 assert.ok(text(body).includes('记录工作区的偏好') && text(body).includes('memory-a') && text(body).includes('2026-11-18T06:00:00Z'))
 const dataSection = find(body, node => node.type === 'details' && node.props.class === 'memory-data')
@@ -389,6 +406,14 @@ await nextTick()
 assert.equal(detailsDialog.open, true)
 assert.equal(find(body, node => node.type === 'input').value, '', 'reopening should clear the previous search')
 assert.equal(entryNodes().length, 3)
+detailsProps.library = libraries[2]
+detailsProps.details = { ...libraries[2], data: {} }
+await nextTick()
+await nextTick()
+assert.ok(text(body).includes('研究项目工作区记忆'), 'other-workspace details must use their own workspace name')
+detailsProps.workspaces = [workspaces[0]]
+await nextTick()
+assert.ok(text(body).includes('已删除的工作区记忆'), 'a removed workspace must have a readable label')
 detailsApp.unmount()
 
 const page = fs.readFileSync(path.join(frontend, 'src/pages/ChatPage.vue'), 'utf8')

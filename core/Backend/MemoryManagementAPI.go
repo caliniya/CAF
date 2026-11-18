@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	memory "github.com/caliniya/caf/Memory"
 )
@@ -14,14 +15,31 @@ type MemoryLibraryDetails struct {
 	Data map[string]memory.Memory `json:"data"`
 }
 
-func (c *Core) GetMemoryLibraryDetails(chatID, workspaceID, libraryID string) (*MemoryLibraryDetails, error) {
-	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
-	if err != nil {
-		return nil, err
+type MemoryEntryInput struct {
+	Name string   `json:"name"`
+	Data string   `json:"data"`
+	Date string   `json:"date,omitempty"`
+	Tags []string `json:"tags"`
+}
+
+func validateMemoryEntryInput(input *MemoryEntryInput, editing bool) error {
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		return errors.New("记忆名称不能为空")
 	}
-	chatServer.mu.Lock()
-	defer chatServer.mu.Unlock()
-	server, meta, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if strings.TrimSpace(input.Data) == "" {
+		return errors.New("记忆内容不能为空")
+	}
+	if editing {
+		if _, err := time.Parse(time.RFC3339Nano, input.Date); err != nil {
+			return errors.New("记忆时间格式无效")
+		}
+	}
+	return nil
+}
+
+func memoryLibraryDetails(server *memory.MemoryServer, libraryID string) (*MemoryLibraryDetails, error) {
+	meta, err := server.GetMeta(context.Background(), libraryID)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +48,80 @@ func (c *Core) GetMemoryLibraryDetails(chatID, workspaceID, libraryID string) (*
 		return nil, err
 	}
 	return &MemoryLibraryDetails{RecollectionMeta: *meta, Data: recollection.Data}, nil
+}
+
+func (c *Core) GetMemoryLibraryDetails(chatID, workspaceID, libraryID string) (*MemoryLibraryDetails, error) {
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	server, _, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	return memoryLibraryDetails(server, libraryID)
+}
+
+func (c *Core) CreateMemoryEntry(chatID, workspaceID, libraryID string, input MemoryEntryInput) (*MemoryLibraryDetails, error) {
+	if err := validateMemoryEntryInput(&input, false); err != nil {
+		return nil, err
+	}
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	server, _, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := server.AddNamedMemory(context.Background(), libraryID, input.Name, input.Data, input.Tags...); err != nil {
+		return nil, err
+	}
+	return memoryLibraryDetails(server, libraryID)
+}
+
+func (c *Core) UpdateMemoryEntry(chatID, workspaceID, libraryID, memoryID string, input MemoryEntryInput) (*MemoryLibraryDetails, error) {
+	if err := validateMemoryEntryInput(&input, true); err != nil {
+		return nil, err
+	}
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	server, _, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	next := memory.CreateMemory(input.Data)
+	next.Name, next.MemoryDate = input.Name, input.Date
+	*next.Tag = append(*next.Tag, input.Tags...)
+	if err := server.EditMemory(context.Background(), libraryID, memoryID, *next); err != nil {
+		return nil, err
+	}
+	return memoryLibraryDetails(server, libraryID)
+}
+
+func (c *Core) DeleteMemoryEntry(chatID, workspaceID, libraryID, memoryID string) (*MemoryLibraryDetails, error) {
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	server, _, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	if err := server.DeleteMemory(context.Background(), libraryID, memoryID); err != nil {
+		return nil, err
+	}
+	return memoryLibraryDetails(server, libraryID)
 }
 
 // 调用方持有对话锁。已有对话的工作区由磁盘记录确定，不信任前端传入的工作区。
@@ -70,9 +162,6 @@ func (c *Core) memoryTargetLocked(chatID, workspaceID, libraryID string) (*memor
 	meta, err := server.GetMeta(context.Background(), libraryID)
 	if err != nil {
 		return nil, nil, "", err
-	}
-	if meta.Scope == memory.ScopeWorkspace && (workspaceID == "" || meta.WorkspaceID != workspaceID) {
-		return nil, nil, "", errors.New("记忆不属于当前工作区")
 	}
 	return server, meta, workspaceID, nil
 }

@@ -31,6 +31,9 @@ interface CoreBindings {
   GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
   GetWorkspaceMemorySettings(workspaceId: string): Promise<ChatMemorySettings>
   GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails>
+  CreateMemoryEntry(chatId: string, workspaceId: string, libraryId: string, input: MemoryEntryInput): Promise<MemoryLibraryDetails>
+  UpdateMemoryEntry(chatId: string, workspaceId: string, libraryId: string, memoryId: string, input: MemoryEntryInput): Promise<MemoryLibraryDetails>
+  DeleteMemoryEntry(chatId: string, workspaceId: string, libraryId: string, memoryId: string): Promise<MemoryLibraryDetails>
   SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask>
   CreateMemoryLibrary(chatId: string, workspaceId: string, name: string, scope: MemoryLibrary['scope']): Promise<MemoryLibrary>
   RenameMemoryLibrary(chatId: string, workspaceId: string, id: string, name: string): Promise<void>
@@ -199,9 +202,17 @@ export interface MemoryLibrary {
 }
 
 export interface MemoryEntry {
+  name?: string
   data: string
   date: string
   description: string[] | null
+}
+
+export interface MemoryEntryInput {
+  name: string
+  data: string
+  date?: string
+  tags: string[]
 }
 
 export interface MemoryLibraryDetails extends MemoryLibrary {
@@ -397,6 +408,15 @@ export function GetWorkspaceMemorySettings(workspaceId = ''): Promise<ChatMemory
 }
 export function GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails> {
   return bridge().then((c) => c.GetMemoryLibraryDetails(chatId, workspaceId, id))
+}
+export function CreateMemoryEntry(chatId: string, workspaceId: string, libraryId: string, input: MemoryEntryInput): Promise<MemoryLibraryDetails> {
+  return bridge().then((c) => c.CreateMemoryEntry(chatId, workspaceId, libraryId, input))
+}
+export function UpdateMemoryEntry(chatId: string, workspaceId: string, libraryId: string, memoryId: string, input: MemoryEntryInput): Promise<MemoryLibraryDetails> {
+  return bridge().then((c) => c.UpdateMemoryEntry(chatId, workspaceId, libraryId, memoryId, input))
+}
+export function DeleteMemoryEntry(chatId: string, workspaceId: string, libraryId: string, memoryId: string): Promise<MemoryLibraryDetails> {
+  return bridge().then((c) => c.DeleteMemoryEntry(chatId, workspaceId, libraryId, memoryId))
 }
 export function SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatMemoryLibraries(id, ids))
