@@ -8,6 +8,30 @@ import (
 	memory "github.com/caliniya/caf/Memory"
 )
 
+// 详情仅组合现有元数据和当前正文，不改变记忆文件格式或读取历史。
+type MemoryLibraryDetails struct {
+	memory.RecollectionMeta
+	Data map[string]memory.Memory `json:"data"`
+}
+
+func (c *Core) GetMemoryLibraryDetails(chatID, workspaceID, libraryID string) (*MemoryLibraryDetails, error) {
+	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return nil, err
+	}
+	chatServer.mu.Lock()
+	defer chatServer.mu.Unlock()
+	server, meta, _, err := c.memoryTargetLocked(chatID, workspaceID, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	recollection, err := server.GetRecollection(context.Background(), libraryID)
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryLibraryDetails{RecollectionMeta: *meta, Data: recollection.Data}, nil
+}
+
 // 调用方持有对话锁。已有对话的工作区由磁盘记录确定，不信任前端传入的工作区。
 func (c *Core) memoryWorkspaceLocked(chatID, workspaceID string) (string, error) {
 	if chatID != "" {

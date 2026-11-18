@@ -30,6 +30,7 @@ export interface Configs {
 interface CoreBindings {
   GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
   GetWorkspaceMemorySettings(workspaceId: string): Promise<ChatMemorySettings>
+  GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails>
   SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask>
   CreateMemoryLibrary(chatId: string, workspaceId: string, name: string, scope: MemoryLibrary['scope']): Promise<MemoryLibrary>
   RenameMemoryLibrary(chatId: string, workspaceId: string, id: string, name: string): Promise<void>
@@ -195,6 +196,16 @@ export interface MemoryLibrary {
   date: string
   scope: 'global' | 'workspace'
   workspaceId?: string
+}
+
+export interface MemoryEntry {
+  data: string
+  date: string
+  description: string[] | null
+}
+
+export interface MemoryLibraryDetails extends MemoryLibrary {
+  data: Record<string, MemoryEntry>
 }
 
 export interface ChatMemorySettings {
@@ -383,6 +394,9 @@ export function GetChatMemorySettings(id = ''): Promise<ChatMemorySettings> {
 }
 export function GetWorkspaceMemorySettings(workspaceId = ''): Promise<ChatMemorySettings> {
   return bridge().then((c) => c.GetWorkspaceMemorySettings(workspaceId))
+}
+export function GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails> {
+  return bridge().then((c) => c.GetMemoryLibraryDetails(chatId, workspaceId, id))
 }
 export function SetChatMemoryLibraries(id: string, ids: string[]): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatMemoryLibraries(id, ids))

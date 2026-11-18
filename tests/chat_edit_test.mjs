@@ -8,7 +8,7 @@ const frontend = path.resolve('frontend')
 const require = createRequire(path.join(frontend, 'package.json'))
 const { transformWithOxc } = await import(pathToFileURL(require.resolve('vite')).href)
 const { parse, compileScript } = await import(pathToFileURL(require.resolve('@vue/compiler-sfc')).href)
-const { createRenderer, h, nextTick } = await import(pathToFileURL(require.resolve('vue')).href)
+const { createRenderer, h, KeepAlive, nextTick, ref } = await import(pathToFileURL(require.resolve('vue')).href)
 const { createPinia, setActivePinia } = await import(pathToFileURL(require.resolve('pinia')).href)
 const dataModule = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
@@ -112,7 +112,8 @@ chat.$onAction(({ name, after, onError }) => {
 chat.session = structuredClone(originalSession)
 chat.rebuildMessages()
 const originalMessages = chat.messages.slice()
-const app = renderer.createApp({ render: () => h(ChatPage) })
+const pageActive = ref(true)
+const app = renderer.createApp({ render: () => h(KeepAlive, null, { default: () => pageActive.value ? h(ChatPage) : null }) })
 app.use(pinia)
 app.mount(root)
 const flush = async () => { await new Promise((resolve) => setImmediate(resolve)); await nextTick() }
@@ -282,12 +283,68 @@ window.go.Backend.Core.CreateMemoryLibrary = async (...args) => {
   createArguments = args
   memoryLibraries.push({ id: 'created', name: args[2], scope: args[3], workspaceId: args[1] })
 }
-find(root, node => node.type === 'button' && node.props['aria-controls'] === 'chat-settings-menu').props.onClick()
-await flush()
-await find(root, node => node.type === 'button' && node.props.role === 'menuitem' && nodeText(node).startsWith('记忆设置')).props.onClick()
-await flush()
+const showMemorySettings = async () => {
+  find(root, node => node.type === 'button' && node.props['aria-controls'] === 'chat-settings-menu').props.onClick()
+  await flush()
+  await find(root, node => node.type === 'button' && node.props.role === 'menuitem' && nodeText(node).startsWith('记忆设置')).props.onClick()
+  await flush()
+}
+await showMemorySettings()
 const memoryDialog = find(root, node => node.type === 'test-dialog' && Array.isArray(node.props.libraries))
 assert.equal(memoryDialog.props.open, true)
+
+// Information is lazy-loaded even for disabled libraries; late responses stay with their dialog.
+const detailsRequests = []
+window.go.Backend.Core.GetMemoryLibraryDetails = (...args) => new Promise((resolve, reject) => {
+  detailsRequests.push({ args, resolve, reject })
+})
+const memoryDetailsDialog = find(root, node => node.type === 'test-dialog' && 'details' in node.props && 'library' in node.props)
+const detailsSnapshot = library => ({ ...library, description: '详情介绍', data: {
+  'memory-test': { data: '当前记忆正文', description: ['标签'], date: '2026-11-18T06:00:00Z' },
+} })
+const firstDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[1])
+await flush()
+assert.deepEqual(detailsRequests[0].args, ['chat', 'workspace-2', 'local'])
+assert.equal(memoryDetailsDialog.props.library.id, 'local')
+assert.equal(memoryDetailsDialog.props.loading, true)
+assert.equal(memoryDetailsDialog.props.details, null)
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'], 'viewing disabled memory must not enable it')
+memoryDetailsDialog.props.onClose()
+await flush()
+assert.equal(memoryDetailsDialog.props.library, null)
+assert.equal(memoryDetailsDialog.props.loading, false)
+assert.equal(memoryDialog.props.open, true, 'closing details should preserve the settings dialog')
+const secondDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[0])
+await flush()
+detailsRequests[1].resolve(detailsSnapshot(memoryLibraries[0]))
+await secondDetailsLoad
+await flush()
+detailsRequests[0].resolve(detailsSnapshot(memoryLibraries[1]))
+await firstDetailsLoad
+await flush()
+assert.equal(memoryDetailsDialog.props.details.id, 'global', 'a response from a closed library must not overwrite the current details')
+assert.equal(memoryDetailsDialog.props.loading, false)
+memoryDetailsDialog.props.onClose()
+
+const failedDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[2])
+await flush()
+detailsRequests[2].reject(new Error('详情读取失败'))
+await failedDetailsLoad
+await flush()
+assert.match(memoryDetailsDialog.props.error, /详情读取失败/)
+assert.equal(memoryDetailsDialog.props.loading, false)
+const retryDetailsLoad = memoryDetailsDialog.props.onRetry()
+await flush()
+assert.equal(memoryDetailsDialog.props.error, '')
+assert.equal(memoryDetailsDialog.props.loading, true)
+assert.deepEqual(detailsRequests[3].args, ['chat', 'workspace-2', 'shared'])
+detailsRequests[3].resolve(detailsSnapshot(memoryLibraries[2]))
+await retryDetailsLoad
+await flush()
+assert.equal(memoryDetailsDialog.props.details.id, 'shared')
+memoryDetailsDialog.props.onClose()
+await flush()
+
 memoryDialog.props.onDelete(memoryLibraries[1])
 await flush()
 assert.equal(deleteCalls, 0)
@@ -324,5 +381,53 @@ await find(root, node => node.type === 'test-dialog' && node.props.mode === 'ren
 await flush()
 assert.deepEqual(renameArguments, ['chat', 'workspace-2', 'created', '新名称'])
 
+const oldChatLoad = memoryDialog.props.onInfo(memoryLibraries[0])
+await flush()
+chat.session = { ...chat.session, id: 'another-chat' }
+await flush()
+assert.equal(memoryDialog.props.open, false)
+assert.equal(memoryDetailsDialog.props.library, null)
+detailsRequests[4].resolve(detailsSnapshot(memoryLibraries[0]))
+await oldChatLoad
+await flush()
+assert.equal(memoryDetailsDialog.props.details, null, 'a previous conversation must not restore closed details')
+
+chat.session = { ...chat.session, id: 'chat' }
+await flush()
+await showMemorySettings()
+const oldWorkspaceLoad = memoryDialog.props.onInfo(memoryLibraries[0])
+await flush()
+chat.session.workspaceId = 'workspace-1'
+await flush()
+assert.equal(memoryDialog.props.open, false)
+assert.equal(memoryDetailsDialog.props.library, null)
+detailsRequests[5].reject(new Error('旧工作区的详情读取失败'))
+await oldWorkspaceLoad
+await flush()
+assert.equal(memoryDetailsDialog.props.error, '', 'a previous workspace error must not affect the current dialog')
+
+await showMemorySettings()
+const closedSettingsLoad = memoryDialog.props.onInfo(memoryLibraries[0])
+await flush()
+memoryDialog.props.onCancel()
+await flush()
+assert.equal(memoryDetailsDialog.props.library, null)
+detailsRequests[6].resolve(detailsSnapshot(memoryLibraries[0]))
+await closedSettingsLoad
+await flush()
+assert.equal(memoryDetailsDialog.props.details, null, 'closing settings must invalidate pending detail loads')
+
+await showMemorySettings()
+const deactivatedDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[0])
+await flush()
+pageActive.value = false
+await flush()
+detailsRequests[7].resolve(detailsSnapshot(memoryLibraries[0]))
+await deactivatedDetailsLoad
+pageActive.value = true
+await flush()
+assert.equal(memoryDialog.props.open, false)
+assert.equal(memoryDetailsDialog.props.library, null, 'leaving the page must close details and discard their pending response')
+
 app.unmount()
-console.log('Chat edit and settings checks passed: editing, streaming, IME, workspace switch confirmation, system messages, memory management confirmation, and create/rename actions.')
+console.log('Chat edit and settings checks passed: editing, streaming, IME, workspace/memory confirmations, lazy details, retries, and response isolation after close, context switches, and deactivation.')

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, ListToolSets, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
+import { onChatDelta, onChatTool, ListToolSets, GetMemoryLibraryDetails, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
@@ -10,7 +10,8 @@ import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
 import MemorySelectionDialog from '../components/MemorySelectionDialog.vue'
 import MemoryLibraryDialog from '../components/MemoryLibraryDialog.vue'
-import type { MemoryLibrary, MemoryLibraryAction } from '../api'
+import MemoryDetailsDialog from '../components/MemoryDetailsDialog.vue'
+import type { MemoryLibrary, MemoryLibraryAction, MemoryLibraryDetails } from '../api'
 import ToolKitDetailsDialog from '../components/ToolKitDetailsDialog.vue'
 import ToolCallDetails from '../components/ToolCallDetails.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
@@ -165,6 +166,10 @@ const memoryLoadFailed = ref(false)
 const memorySaving = ref(false)
 const memoryManaging = ref(false)
 const memoryError = ref('')
+const memoryDetailsLibrary = ref<MemoryLibrary | null>(null)
+const memoryDetails = ref<MemoryLibraryDetails | null>(null)
+const memoryDetailsLoading = ref(false)
+const memoryDetailsError = ref('')
 const memoryAction = ref<{ kind: 'create' | 'rename' | 'delete' | 'scope'; library?: MemoryLibrary } | null>(null)
 const memoryActionError = ref('')
 const memoryActionName = computed(() => memoryAction.value?.library?.name === 'Main' ? '全局主记忆' : memoryAction.value?.library?.name ?? '')
@@ -172,10 +177,12 @@ const memoryScopeMessage = computed(() => memoryAction.value?.library?.scope ===
   ? `将「${memoryActionName.value}」提升为全局记忆。所有工作区都可以看见它，并可在各自的对话中启用；模型写入需要完全访问权限。是否继续？`
   : `将「${memoryActionName.value}」改为「${workspaceName.value}」的工作区记忆。其他工作区将无法看见它，并会移除对应的启用记录。是否继续？`)
 let memoryDialogRequest = 0
+let memoryDetailsRequest = 0
 
 async function openMemorySettings() {
   if (chat.sending || chat.workspaceChanging || memoryManaging.value) return
   closeMenus()
+  closeMemoryDetails()
   memorySettingsOpen.value = true
   memoryLoading.value = true
   memoryLoadFailed.value = false
@@ -207,7 +214,10 @@ async function saveMemorySettings(ids: string[]) {
   memoryError.value = ''
   try {
     await chat.setMemoryLibraries(ids)
-    if (request === memoryDialogRequest) memorySettingsOpen.value = false
+    if (request === memoryDialogRequest) {
+      closeMemoryDetails()
+      memorySettingsOpen.value = false
+    }
   } catch (err) {
     if (request === memoryDialogRequest) memoryError.value = String(err)
   } finally {
@@ -217,11 +227,49 @@ async function saveMemorySettings(ids: string[]) {
 
 function closeMemorySettings() {
   if (memorySaving.value || memoryManaging.value) return
+  closeMemoryDetails()
   memorySettingsOpen.value = false
   memoryAction.value = null
   ++memoryDialogRequest
 }
+
+function closeMemoryDetails() {
+  ++memoryDetailsRequest
+  memoryDetailsLibrary.value = null
+  memoryDetails.value = null
+  memoryDetailsLoading.value = false
+  memoryDetailsError.value = ''
+}
+
+async function openMemoryDetails(library: MemoryLibrary) {
+  if (!memorySettingsOpen.value || memoryLoading.value || memorySaving.value || memoryManaging.value
+    || memoryLoadFailed.value || memoryAction.value || chat.sending || chat.workspaceChanging) return
+  const request = ++memoryDetailsRequest
+  const chatId = chat.session?.id ?? ''
+  const workspaceId = chat.currentWorkspaceId
+  memoryDetailsLibrary.value = library
+  memoryDetails.value = null
+  memoryDetailsLoading.value = true
+  memoryDetailsError.value = ''
+  const isCurrent = () => request === memoryDetailsRequest && memorySettingsOpen.value
+    && memoryDetailsLibrary.value?.id === library.id
+    && (chat.session?.id ?? '') === chatId && chat.currentWorkspaceId === workspaceId
+  try {
+    const details = await GetMemoryLibraryDetails(chatId, workspaceId, library.id)
+    if (isCurrent()) memoryDetails.value = details
+  } catch (err) {
+    if (isCurrent()) memoryDetailsError.value = String(err)
+  } finally {
+    if (isCurrent()) memoryDetailsLoading.value = false
+  }
+}
+
+function retryMemoryDetails() {
+  if (memoryDetailsLibrary.value) return openMemoryDetails(memoryDetailsLibrary.value)
+}
+
 watch(() => [chat.session?.id, chat.currentWorkspaceId], () => {
+  closeMemoryDetails()
   memorySettingsOpen.value = false
   memorySaving.value = false
   memoryManaging.value = false
@@ -234,6 +282,7 @@ function openMemoryAction(kind: 'create' | 'rename' | 'delete' | 'scope', librar
   if (memoryLoading.value || memorySaving.value || memoryManaging.value || memoryLoadFailed.value) return
   if (kind !== 'create' && (!library || library.name === 'Main')) return
   if (kind === 'scope' && library?.scope === 'global' && !chat.currentWorkspaceId) return
+  closeMemoryDetails()
   memoryActionError.value = ''
   memoryAction.value = { kind, library }
 }
@@ -725,6 +774,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   pageUnmounted = true
+  closeMemoryDetails()
   closeToolDetails()
   document.removeEventListener('pointerdown', closeMenusOnOutside)
   document.removeEventListener('keydown', onGlobalKeydown)
@@ -1219,7 +1269,10 @@ watch(
     :error="memoryError" :load-failed="memoryLoadFailed"
     @confirm="saveMemorySettings" @cancel="closeMemorySettings" @retry="openMemorySettings"
     @create="openMemoryAction('create')" @rename="openMemoryAction('rename', $event)"
-    @delete="openMemoryAction('delete', $event)" @scope="openMemoryAction('scope', $event)" />
+    @delete="openMemoryAction('delete', $event)" @scope="openMemoryAction('scope', $event)"
+    @info="openMemoryDetails" />
+  <MemoryDetailsDialog :library="memoryDetailsLibrary" :details="memoryDetails"
+    :loading="memoryDetailsLoading" :error="memoryDetailsError" @close="closeMemoryDetails" @retry="retryMemoryDetails" />
   <MemoryLibraryDialog :open="memoryAction?.kind === 'create' || memoryAction?.kind === 'rename'"
     :mode="memoryAction?.kind === 'rename' ? 'rename' : 'create'" :initial-name="memoryAction?.library?.name"
     :workspace-id="chat.currentWorkspaceId" :workspace-name="chat.currentWorkspace?.name"

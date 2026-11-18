@@ -134,11 +134,15 @@ function find(node, predicate) {
   if (predicate(node)) return node
   for (const child of node.children ?? []) { const found = find(child, predicate); if (found) return found }
 }
-function text(node) { return (node.text ?? '') + (node.children ?? []).map(text).join('') }
+function text(node) { return node.type === '#comment' ? '' : (node.text ?? '') + (node.children ?? []).map(text).join('') }
 const renderer = createRenderer({
   createElement: element, createText: value => ({ ...element('#text'), text: value }), createComment: value => ({ ...element('#comment'), text: value }),
   setText: (node, value) => { node.text = value }, setElementText: (node, value) => { node.text = value; node.children = [] },
-  patchProp: (node, key, _old, value) => { node.props[key] = value; if (key === 'value') node._value = value },
+  patchProp: (node, key, _old, value) => {
+    node.props[key] = value
+    if (key === 'value') node._value = value
+    if (key === 'open') node.open = value != null && value !== false
+  },
   insert(node, parent, anchor = null) { detach(node); node.parent = parent; parent.children.splice(anchor ? parent.children.indexOf(anchor) : parent.children.length, 0, node) },
   remove: detach, parentNode: node => node.parent,
   nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
@@ -153,13 +157,14 @@ const body = element('body')
 globalThis.Document = class {}
 globalThis.ShadowRoot = class {}
 globalThis.document = Object.assign(new Document(), { activeElement: null })
-let confirmed, cancelled = 0, managementAction
+let confirmed, cancelled = 0, managementAction, infoLibrary
 const app = renderer.createApp({ render: () => h(Dialog, { ...props,
   onConfirm: ids => { confirmed = ids }, onCancel: () => { cancelled++ },
   onCreate: () => { managementAction = 'create' },
   onRename: library => { managementAction = ['rename', library.id] },
   onDelete: library => { managementAction = ['delete', library.id] },
   onScope: library => { managementAction = ['scope', library.id] },
+  onInfo: library => { infoLibrary = library },
 }) })
 app.mount(root)
 await nextTick()
@@ -214,6 +219,16 @@ button('更改作用范围').props.onClick()
 assert.deepEqual(managementAction, ['scope', 'local'])
 await nextTick()
 
+menuButton('全局主记忆的信息').props.onClick()
+assert.equal(infoLibrary.id, 'global', 'main memory information must remain available')
+await clickMenu('项目的选项')
+menuButton('项目的信息').props.onClick()
+await nextTick()
+assert.equal(infoLibrary.id, 'local')
+assert.equal(find(root, node => node.props.role === 'menu'), undefined, 'viewing information must close the operation menu')
+find(root, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+assert.deepEqual(confirmed, ['local'], 'viewing information must not alter the enabled selection')
+
 // Refresh after a management action must preserve unsaved checkbox changes.
 props.libraries = [...libraries, { id: 'extra', name: '新记忆', scope: 'global' }]
 await nextTick()
@@ -226,6 +241,7 @@ assert.deepEqual(confirmed, [], 'deleted memory must disappear from unsaved sele
 props.managing = true
 await nextTick()
 assert.equal(button('创建记忆').props.disabled, true)
+assert.equal(menuButton('全局主记忆的信息').props.disabled, true)
 button('取消').props.onClick()
 assert.equal(cancelled, 0)
 props.managing = false
@@ -278,7 +294,104 @@ await nextTick()
 find(body, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
 assert.deepEqual(formResult, ['通用笔记', 'global'])
 formApp.unmount()
+
+// Mount the real details component: native folds, local tag/content search, and load states.
+const detailsDescriptor = parse(fs.readFileSync(path.join(frontend, 'src/components/MemoryDetailsDialog.vue'), 'utf8')).descriptor
+const detailsScript = compileScript(detailsDescriptor, { id: 'memory-details-test', inlineTemplate: true })
+const { default: DetailsDialog } = await import(dataModule(rewrite((await transformWithOxc(detailsScript.content, 'MemoryDetailsDialog.ts')).code)))
+const detailsProps = reactive({ library: libraries[1], details: null, loading: true, error: '' })
+let detailsClosed = 0, detailsRetries = 0
+const detailsApp = renderer.createApp({ render: () => h(DetailsDialog, { ...detailsProps,
+  onClose: () => { detailsClosed++ }, onRetry: () => { detailsRetries++ },
+}) })
+detailsApp.mount(root)
+await nextTick()
+await nextTick()
+const detailsDialog = find(body, node => node.type === 'dialog')
+assert.equal(detailsDialog.open, true)
+assert.ok(text(body).includes('正在加载记忆') && text(body).includes('项目') && text(body).includes('工作区记忆'))
+const snapshot = {
+  ...libraries[1], description: '记录工作区的偏好',
+  data: {
+    'memory-a': { data: '喜欢使用 Go 语言\n保留换行', date: '2026-11-18T06:00:00Z', description: ['开发', 'CAF'] },
+    'memory-b': { data: '会议安排在星期三', date: '2026-11-18T07:00:00Z', description: ['日程', 'Meeting'] },
+    'memory-c': { data: '咖啡不要加糖', date: '2026-11-18T08:00:00Z', description: null },
+  },
+}
+detailsProps.details = snapshot
+detailsProps.loading = false
+await nextTick()
+const entryNodes = () => {
+  const rows = []
+  function collect(node) {
+    if (node.type === 'details' && node.props.class === 'memory-entry') rows.push(node)
+    for (const child of node.children ?? []) collect(child)
+  }
+  collect(body)
+  return rows
+}
+assert.equal(entryNodes().length, 3)
+assert.ok(entryNodes().every(node => !node.open), 'individual memories should start folded')
+assert.ok(text(body).includes('记录工作区的偏好') && text(body).includes('memory-a') && text(body).includes('2026-11-18T06:00:00Z'))
+const dataSection = find(body, node => node.type === 'details' && node.props.class === 'memory-data')
+assert.equal(dataSection.open, true)
+const searchInput = find(body, node => node.type === 'input' && node.props.type === 'search')
+async function search(value) {
+  searchInput.value = value
+  searchInput.listeners.get('input')({ target: searchInput })
+  await nextTick()
+}
+dataSection.open = false
+await search('  caf  ')
+assert.equal(entryNodes().length, 1, 'search should match tags without case or outer whitespace')
+assert.ok(text(entryNodes()[0]).includes('喜欢使用 Go'))
+assert.equal(dataSection.open, true, 'search should unfold the data section')
+await search('星期三')
+assert.equal(entryNodes().length, 1)
+assert.ok(text(entryNodes()[0]).includes('会议安排'))
+await search('咖啡')
+assert.equal(entryNodes().length, 1, 'content search should handle null tags')
+await search('gO')
+assert.equal(entryNodes().length, 1, 'content matching should ignore case')
+await search('找不到的内容')
+assert.equal(entryNodes().length, 0)
+assert.ok(text(body).includes('没有匹配的记忆') && text(body).includes('0 / 3'))
+await search('')
+assert.equal(entryNodes().length, 3)
+
+detailsProps.loading = true
+await nextTick()
+assert.equal(entryNodes().length, 0, 'loading should hide a previous snapshot')
+detailsProps.loading = false
+detailsProps.error = '正文加载失败'
+await nextTick()
+assert.equal(entryNodes().length, 0)
+assert.ok(find(body, node => node.props.role === 'alert'))
+find(body, node => node.type === 'button' && text(node) === '重新加载').props.onClick()
+assert.equal(detailsRetries, 1)
+detailsProps.error = ''
+detailsProps.details = { ...libraries[0], data: {} }
+detailsProps.library = libraries[0]
+await nextTick()
+await nextTick()
+assert.ok(text(body).includes('全局主记忆') && text(body).includes('全局记忆') && text(body).includes('暂无记忆数据'))
+await search('保留查询')
+find(body, node => node.type === 'button' && text(node) === '关闭').props.onClick()
+assert.equal(detailsClosed, 1)
+detailsProps.library = null
+await nextTick()
+await nextTick()
+assert.equal(detailsDialog.open, false)
+detailsProps.library = libraries[1]
+detailsProps.details = snapshot
+await nextTick()
+await nextTick()
+assert.equal(detailsDialog.open, true)
+assert.equal(find(body, node => node.type === 'input').value, '', 'reopening should clear the previous search')
+assert.equal(entryNodes().length, 3)
+detailsApp.unmount()
+
 const page = fs.readFileSync(path.join(frontend, 'src/pages/ChatPage.vue'), 'utf8')
 assert.match(page, /role="menuitem"[^>]*@click="openMemorySettings"/)
 assert.match(page, /<MemorySelectionDialog/)
-console.log('Memory settings checks passed: scope labels, menus, create form, selection preservation, workspace drafts, management refresh, and chat-switch isolation.')
+console.log('Memory settings checks passed: scope labels, menus, forms, selection preservation, information events, folded entries, tag/content search, loading, and retries.')

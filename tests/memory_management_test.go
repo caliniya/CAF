@@ -18,6 +18,137 @@ import (
 	"github.com/caliniya/caf/utils/id"
 )
 
+func TestMemoryLibraryDetailsVisibilityAndCurrentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	core := useChatTaskCore(t)
+	first, err := core.CreateWorkspace("详情项目一", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := core.CreateWorkspace("详情项目二", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := core.CreateChat("", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := core.SetChatWorkspace(task.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := core.SetChatMemoryLibraries(task.ID, []string{}); err != nil {
+		t.Fatal(err)
+	}
+	server, err := core.Servers.Get[*memory.MemoryServer](memory.MemoryServerName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := server.CreateRecollection(ctx, "详情笔记", "记录当前项目的偏好", memory.ScopeWorkspace, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := server.CreateRecollection(ctx, "其他项目笔记", "", memory.ScopeWorkspace, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	global, err := server.CreateRecollection(ctx, "详情通用笔记", "", memory.ScopeGlobal, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := server.AddMemory(ctx, local.ID, "旧正文", "旧标签")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.UpdateMemory(ctx, local.ID, key, "当前正文", "Go", "CAF"); err != nil {
+		t.Fatal(err)
+	}
+	untagged, err := server.AddMemory(ctx, local.ID, "无标签的正文")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, chatID, workspaceID, libraryID string
+		allowed                              bool
+	}{
+		{"disabled local", task.ID, first.ID, local.ID, true},
+		{"persisted workspace overrides supplied workspace", task.ID, second.ID, local.ID, true},
+		{"forged workspace cannot expose another project", task.ID, second.ID, hidden.ID, false},
+		{"draft in current workspace", "", first.ID, local.ID, true},
+		{"draft in another workspace", "", second.ID, local.ID, false},
+		{"draft without workspace", "", "", local.ID, false},
+		{"global without workspace", "", "", global.ID, true},
+		{"global in another workspace", "", second.ID, global.ID, true},
+		{"disabled main", task.ID, first.ID, mainMemoryID(t, server), true},
+		{"missing library", task.ID, first.ID, "missing", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			details, err := core.GetMemoryLibraryDetails(test.chatID, test.workspaceID, test.libraryID)
+			if !test.allowed {
+				if err == nil || details != nil {
+					t.Fatal("hidden or missing memory returned details")
+				}
+				return
+			}
+			if err != nil || details.ID != test.libraryID {
+				t.Fatalf("visible memory could not be read: %+v / %v", details, err)
+			}
+		})
+	}
+
+	// 查看当前记忆不依赖历史文件，也不应返回修改前的正文。
+	if err := os.WriteFile(filepath.Join(core.Paths.Data, "memory", local.Name, "history.json"), []byte("invalid history"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	details, err := core.GetMemoryLibraryDetails(task.ID, second.ID, local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if details.Name != local.Name || details.Description != local.Description || details.Scope != memory.ScopeWorkspace || details.WorkspaceID != first.ID || len(details.Data) != 2 {
+		t.Fatalf("incorrect metadata or current data: %+v", details)
+	}
+	entry := details.Data[key]
+	if entry.Data != "当前正文" || entry.MemoryDate == "" || entry.Tag == nil || !slices.Equal([]string(*entry.Tag), []string{"Go", "CAF"}) {
+		t.Fatalf("current memory content, time, or tags changed: %+v", entry)
+	}
+	payload, err := json.Marshal(details)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["id"] != local.ID || wire["description"] != local.Description || wire["workspaceId"] != first.ID {
+		t.Fatalf("metadata was not serialized at the top level: %s", payload)
+	}
+	data, ok := wire["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing data object: %s", payload)
+	}
+	item, ok := data[key].(map[string]any)
+	if !ok || item["data"] != "当前正文" || item["date"] != entry.MemoryDate || !reflect.DeepEqual(item["description"], []any{"Go", "CAF"}) {
+		t.Fatalf("memory JSON is incompatible with the details UI: %s", payload)
+	}
+
+	// 返回的 map 和标签都是副本，查看方的修改不会影响服务中的记忆。
+	entry.Data = "只修改返回值"
+	(*entry.Tag)[0] = "只修改返回标签"
+	details.Data[key] = entry
+	delete(details.Data, untagged)
+	again, err := server.GetRecollection(ctx, local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := again.Data[key]
+	if len(again.Data) != 2 || stored.Data != "当前正文" || (*stored.Tag)[0] != "Go" {
+		t.Fatal("mutating returned details changed stored memory")
+	}
+	settings, err := core.GetChatMemorySettings(task.ID)
+	if err != nil || len(settings.EnabledIDs) != 0 {
+		t.Fatalf("viewing details enabled a memory library: %+v / %v", settings, err)
+	}
+}
+
 func TestMemoryManagementScopesVisibilityAndMainProtection(t *testing.T) {
 	ctx := context.Background()
 	core := useChatTaskCore(t)

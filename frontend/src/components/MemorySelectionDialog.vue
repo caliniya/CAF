@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { Info } from '@lucide/vue'
 import type { MemoryLibrary } from '../api'
 
 const props = defineProps<{
@@ -16,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   confirm: [ids: string[]]; cancel: []; retry: []; create: []
   rename: [library: MemoryLibrary]; delete: [library: MemoryLibrary]; scope: [library: MemoryLibrary]
+  info: [library: MemoryLibrary]
 }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 const selectedIDs = ref<string[]>([])
@@ -101,8 +103,12 @@ function onEscape(event: KeyboardEvent) {
                 <span v-if="library.description && library.name !== 'Main'" class="item-description">{{ library.description }}</span>
               </span>
             </label>
-            <div class="item-actions">
-              <button type="button" class="memory-menu-button" :aria-label="`${displayName(library)}的选项`"
+            <div class="item-actions" :class="{ 'item-actions--open': menuID === library.id }">
+              <button type="button" class="memory-row-button memory-info-button" :aria-label="`${displayName(library)}的信息`"
+                title="记忆信息" aria-haspopup="dialog" :disabled="busy || loadFailed" @click="menuID = ''; emit('info', library)">
+                <Info :size="15" :stroke-width="1.7" aria-hidden="true" />
+              </button>
+              <button type="button" class="memory-row-button memory-menu-button" :aria-label="`${displayName(library)}的选项`"
                 aria-haspopup="menu" :aria-expanded="menuID === library.id" :disabled="busy || loadFailed"
                 @click="toggleMenu(library.id, $event)"><span aria-hidden="true">⋯</span></button>
               <div v-if="menuID === library.id" class="memory-menu" role="menu" :style="menuPosition">
@@ -150,8 +156,12 @@ function onEscape(event: KeyboardEvent) {
 .item-name { font-size: 13px; overflow-wrap: anywhere; }
 .item-description { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .scope { flex-shrink: 0; font-size: 11px; color: var(--muted); }
-.memory-menu-button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 23px; cursor: pointer; }
-.memory-menu-button:hover, .memory-menu-button[aria-expanded="true"] { background: var(--surface); color: var(--ink); }
+.item-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.memory-row-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 120ms ease, background-color 120ms ease; }
+.item:hover .memory-row-button, .item:focus-within .memory-row-button, .item-actions--open .memory-row-button { opacity: 1; pointer-events: auto; }
+.memory-row-button:hover:enabled, .memory-row-button:focus-visible, .memory-row-button[aria-expanded="true"] { background: rgb(128 128 128 / 13%); }
+.memory-row-button:disabled { cursor: default; }
+.memory-menu-button { font-size: 21px; line-height: 1; }
 .memory-menu { position: fixed; z-index: 2; width: 170px; padding: 5px; border: 1px solid var(--outline); border-radius: 9px; background: var(--surface); box-shadow: 0 8px 24px rgb(22 29 50 / 18%); }
 .memory-menu button { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: left; font-size: 12.5px; cursor: pointer; }
 .memory-menu button:hover:enabled { background: var(--tonal); }
@@ -162,4 +172,5 @@ function onEscape(event: KeyboardEvent) {
 .note { color: var(--muted); margin: 12px 0 0; }
 .error { color: var(--danger, #b42318); margin-top: 8px; }
 .picker-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 18px; }
+@media (hover: none) { .memory-row-button { opacity: 1; pointer-events: auto; } }
 </style>
