@@ -24,6 +24,7 @@ const emit = defineEmits<{
 const dialog = ref<HTMLDialogElement | null>(null)
 const selectedIDs = ref<string[]>([])
 const menuID = ref('')
+const menuLibrary = computed(() => props.libraries.find(library => library.id === menuID.value))
 const menuPosition = ref({ left: '0px', top: '0px' })
 const busy = computed(() => props.saving || props.managing)
 let selectionReady = false
@@ -67,7 +68,7 @@ function toggleMenu(id: string, event: MouseEvent) {
   menuID.value = id
 }
 function closeMenuOnOutside(event: PointerEvent) {
-  if (!(event.target as HTMLElement).closest('.item-actions')) menuID.value = ''
+  if (!(event.target as HTMLElement).closest('.item-actions, .memory-menu')) menuID.value = ''
 }
 function onEscape(event: KeyboardEvent) {
   if (event.key === 'Escape' && menuID.value) {
@@ -93,7 +94,7 @@ function onEscape(event: KeyboardEvent) {
         <button type="button" class="btn btn-ghost btn-sm" :disabled="loading || busy || loadFailed" @click="selectedIDs = []">全部禁用</button>
         <button type="button" class="btn btn-ghost btn-sm create-memory" :disabled="loading || busy || loadFailed" @click="emit('create')">创建记忆</button>
       </div>
-      <div class="picker-list" :aria-busy="loading">
+      <div class="picker-list" :aria-busy="loading" @scroll="menuID = ''">
         <p v-if="loading" class="empty">正在加载记忆…</p>
         <template v-else>
           <div v-for="library in libraries" :key="library.id" class="item">
@@ -113,16 +114,6 @@ function onEscape(event: KeyboardEvent) {
               <button type="button" class="memory-row-button memory-menu-button" :aria-label="`${displayName(library)}的选项`"
                 aria-haspopup="menu" :aria-expanded="menuID === library.id" :disabled="busy || loadFailed"
                 @click="toggleMenu(library.id, $event)"><span aria-hidden="true">⋯</span></button>
-              <div v-if="menuID === library.id" class="memory-menu" role="menu" :style="menuPosition">
-                <button type="button" role="menuitem" :disabled="library.name === 'Main'"
-                  @click="menuID = ''; emit('rename', library)">重命名</button>
-                <button type="button" class="delete-memory" role="menuitem" :disabled="library.name === 'Main'"
-                  @click="menuID = ''; emit('delete', library)">删除</button>
-                <button type="button" role="menuitem"
-                  :disabled="library.name === 'Main' || (library.scope === 'global' && !workspaceId)"
-                  :title="library.name === 'Main' ? '全局主记忆的名称和作用范围固定，无法删除' : (!workspaceId ? '当前对话未使用工作区' : '')"
-                  @click="menuID = ''; emit('scope', library)">更改作用范围</button>
-              </div>
             </div>
           </div>
           <p v-if="!libraries.length" class="empty">暂无可用记忆</p>
@@ -136,6 +127,16 @@ function onEscape(event: KeyboardEvent) {
         <button type="submit" class="btn btn-primary" :disabled="loading || busy || loadFailed">{{ saving ? '正在保存…' : '保存设置' }}</button>
       </footer>
     </form>
+    <div v-if="menuLibrary" class="memory-menu" role="menu" :style="menuPosition">
+      <button type="button" role="menuitem" :disabled="menuLibrary.name === 'Main'"
+        @click="emit('rename', menuLibrary); menuID = ''">重命名</button>
+      <button type="button" class="delete-memory" role="menuitem" :disabled="menuLibrary.name === 'Main'"
+        @click="emit('delete', menuLibrary); menuID = ''">删除</button>
+      <button type="button" role="menuitem"
+        :disabled="menuLibrary.name === 'Main' || (menuLibrary.scope === 'global' && !workspaceId)"
+        :title="menuLibrary.name === 'Main' ? '全局主记忆的名称和作用范围固定，无法删除' : (!workspaceId ? '当前对话未使用工作区' : '')"
+        @click="emit('scope', menuLibrary); menuID = ''">更改作用范围</button>
+    </div>
   </dialog>
 </template>
 
@@ -160,7 +161,7 @@ function onEscape(event: KeyboardEvent) {
 .scope { flex-shrink: 0; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .item-actions { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 .memory-row-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 120ms ease, background-color 120ms ease; }
-.item:hover .memory-row-button, .item:focus-within .memory-row-button, .item-actions--open .memory-row-button { opacity: 1; pointer-events: auto; }
+.item:hover .memory-row-button, .item-actions:has(.memory-row-button:focus-visible) .memory-row-button, .item-actions--open .memory-row-button { opacity: 1; pointer-events: auto; }
 .memory-row-button:hover:enabled, .memory-row-button:focus-visible, .memory-row-button[aria-expanded="true"] { background: rgb(128 128 128 / 13%); }
 .memory-row-button:disabled { cursor: default; }
 .memory-menu-button { font-size: 21px; line-height: 1; }

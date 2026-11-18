@@ -217,6 +217,11 @@ assert.equal(button('重命名').props.disabled, true)
 assert.equal(button('删除').props.disabled, true)
 assert.equal(button('更改作用范围').props.disabled, true)
 await clickMenu('项目的选项')
+const floatingMenu = find(root, node => node.props.role === 'menu')
+assert.equal(floatingMenu.parent, dialog, 'the library menu must sit outside the scrolling list')
+dialog.props.onPointerdown({ target: { closest: selector => selector.includes('.memory-menu') ? floatingMenu : null } })
+await nextTick()
+assert.ok(find(root, node => node.props.role === 'menu'), 'clicking an option must not close the menu before the action')
 button('重命名').props.onClick()
 assert.deepEqual(managementAction, ['rename', 'local'])
 await nextTick()
@@ -228,6 +233,10 @@ await clickMenu('项目的选项')
 button('更改作用范围').props.onClick()
 assert.deepEqual(managementAction, ['scope', 'local'])
 await nextTick()
+await clickMenu('项目的选项')
+find(root, node => node.props.class === 'picker-list').props.onScroll()
+await nextTick()
+assert.equal(find(root, node => node.props.role === 'menu'), undefined, 'scrolling must close a menu anchored to its old position')
 
 menuButton('全局主记忆的信息').props.onClick()
 assert.equal(infoLibrary.id, 'global', 'main memory information must remain available')
@@ -314,10 +323,11 @@ formApp.unmount()
 const detailsDescriptor = parse(fs.readFileSync(path.join(frontend, 'src/components/MemoryDetailsDialog.vue'), 'utf8')).descriptor
 const detailsScript = compileScript(detailsDescriptor, { id: 'memory-details-test', inlineTemplate: true })
 const { default: DetailsDialog } = await import(dataModule(rewrite((await transformWithOxc(detailsScript.content, 'MemoryDetailsDialog.ts')).code)))
-const detailsProps = reactive({ library: libraries[1], details: null, loading: true, error: '', workspaces })
-let detailsClosed = 0, detailsRetries = 0
+const detailsProps = reactive({ library: libraries[1], details: null, loading: true, error: '', workspaces, busy: false })
+let detailsClosed = 0, detailsRetries = 0, entryAction
 const detailsApp = renderer.createApp({ render: () => h(DetailsDialog, { ...detailsProps,
   onClose: () => { detailsClosed++ }, onRetry: () => { detailsRetries++ },
+  onCreate: () => { entryAction = ['create'] }, onEdit: id => { entryAction = ['edit', id] }, onDelete: id => { entryAction = ['delete', id] },
 }) })
 detailsApp.mount(root)
 await nextTick()
@@ -329,8 +339,8 @@ assert.ok(text(body).includes('开发项目工作区记忆'), 'details should sh
 const snapshot = {
   ...libraries[1], description: '记录工作区的偏好',
   data: {
-    'memory-a': { data: '喜欢使用 Go 语言\n保留换行', date: '2026-11-18T06:00:00Z', description: ['开发', 'CAF'] },
-    'memory-b': { data: '会议安排在星期三', date: '2026-11-18T07:00:00Z', description: ['日程', 'Meeting'] },
+    'memory-a': { name: '开发偏好', data: '喜欢使用 Go 语言\n保留换行', date: '2026-11-18T06:00:00Z', description: ['开发', 'CAF'] },
+    'memory-b': { name: '会议日程', data: '会议安排在星期三', date: '2026-11-18T07:00:00Z', description: ['日程', 'Meeting'] },
     'memory-c': { data: '咖啡不要加糖', date: '2026-11-18T08:00:00Z', description: null },
   },
 }
@@ -349,6 +359,9 @@ const entryNodes = () => {
 assert.equal(entryNodes().length, 3)
 assert.ok(text(body).includes('开发项目工作区记忆'))
 assert.ok(entryNodes().every(node => !node.open), 'individual memories should start folded')
+assert.ok(text(entryNodes()[0]).includes('开发偏好'))
+assert.equal(text(entryNodes()[0]).split(snapshot.data['memory-a'].data).length - 1, 1, 'memory content must be rendered exactly once')
+assert.ok(!text(find(entryNodes()[0], node => node.type === 'summary')).includes(snapshot.data['memory-a'].data), 'folded titles should contain a name and tags, without repeating the body')
 assert.ok(text(body).includes('记录工作区的偏好') && text(body).includes('memory-a') && text(body).includes('2026-11-18T06:00:00Z'))
 const dataSection = find(body, node => node.type === 'details' && node.props.class === 'memory-data')
 assert.equal(dataSection.open, true)
@@ -375,6 +388,40 @@ assert.equal(entryNodes().length, 0)
 assert.ok(text(body).includes('没有匹配的记忆') && text(body).includes('0 / 3'))
 await search('')
 assert.equal(entryNodes().length, 3)
+
+find(body, node => node.type === 'button' && text(node) === '创建记忆').props.onClick()
+assert.deepEqual(entryAction, ['create'])
+const openEntryMenu = async label => {
+  find(body, node => node.type === 'button' && node.props['aria-label'] === label).props.onClick({
+    stopPropagation() {}, preventDefault() {}, currentTarget: { getBoundingClientRect: () => ({ top: 220, bottom: 248, right: 540 }) },
+  })
+  await nextTick()
+}
+await openEntryMenu('开发偏好的选项')
+assert.equal(entryNodes()[0].open, false, 'opening the menu must not unfold the entry')
+assert.equal(find(body, node => node.props.role === 'menu').parent, detailsDialog, 'entry menus must stay outside the scroll area')
+find(body, node => node.type === 'button' && text(node) === '编辑').props.onClick()
+await nextTick()
+assert.deepEqual(entryAction, ['edit', 'memory-a'])
+assert.equal(find(body, node => node.props.role === 'menu'), undefined)
+await openEntryMenu('会议日程的选项')
+find(body, node => node.type === 'button' && text(node) === '删除').props.onClick()
+await nextTick()
+assert.deepEqual(entryAction, ['delete', 'memory-b'])
+await openEntryMenu('开发偏好的选项')
+find(body, node => node.props.class === 'memory-details-content').props.onScroll()
+await nextTick()
+assert.equal(find(body, node => node.props.role === 'menu'), undefined)
+await openEntryMenu('开发偏好的选项')
+await search('CAF')
+assert.equal(find(body, node => node.props.role === 'menu'), undefined, 'filtering must close the old menu')
+await search('')
+detailsProps.busy = true
+await nextTick()
+assert.equal(find(body, node => node.type === 'button' && text(node) === '创建记忆').props.disabled, true)
+find(body, node => node.type === 'button' && text(node) === '关闭').props.onClick()
+assert.equal(detailsClosed, 0, 'saving must keep the details dialog open')
+detailsProps.busy = false
 
 detailsProps.loading = true
 await nextTick()
@@ -416,7 +463,73 @@ await nextTick()
 assert.ok(text(body).includes('已删除的工作区记忆'), 'a removed workspace must have a readable label')
 detailsApp.unmount()
 
+// Exercise the real create/edit form, including field preservation and tag normalization.
+const entryDescriptor = parse(fs.readFileSync(path.join(frontend, 'src/components/MemoryEntryDialog.vue'), 'utf8')).descriptor
+const entryScript = compileScript(entryDescriptor, { id: 'memory-entry-form-test', inlineTemplate: true })
+const { default: EntryDialog } = await import(dataModule(rewrite((await transformWithOxc(entryScript.content, 'MemoryEntryDialog.ts')).code)))
+const entryProps = reactive({ open: true, mode: 'edit', memoryId: 'memory-a', entry: snapshot.data['memory-a'], busy: false, error: '' })
+let entryInput, entryCancelled = 0
+const entryApp = renderer.createApp({ render: () => h(EntryDialog, { ...entryProps,
+  onConfirm: input => { entryInput = input }, onCancel: () => { entryCancelled++ },
+}) })
+entryApp.mount(root)
+await nextTick()
+await nextTick()
+const entryDialog = find(body, node => node.type === 'dialog')
+assert.equal(entryDialog.open, true)
+assert.ok(text(body).includes('编辑记忆') && text(body).includes('memory-a'))
+const field = label => find(body, node => node.props['aria-label'] === label)
+assert.equal(field('记忆名称').value, '开发偏好')
+assert.equal(field('记忆内容').value, snapshot.data['memory-a'].data)
+assert.equal(field('记忆时间').value, snapshot.data['memory-a'].date)
+function setField(label, value) {
+  const input = field(label)
+  input.value = value
+  input.listeners.get('input')({ target: input })
+}
+setField('记忆名称', '  新偏好  ')
+setField('记忆时间', '2026-11-17T10:12:13.123456789+08:00')
+setField('记忆内容', ' 新正文\n保持换行 ')
+setField('记忆标签', ' Go, CAF\nGo，中文标签\n')
+await nextTick()
+find(body, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+assert.deepEqual(entryInput, { name: '新偏好', date: '2026-11-17T10:12:13.123456789+08:00', data: ' 新正文\n保持换行 ', tags: ['Go', 'CAF', '中文标签'] })
+entryInput = undefined
+setField('记忆时间', '无效时间')
+await nextTick()
+find(body, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+assert.equal(entryInput, undefined)
+assert.equal(find(body, node => node.type === 'button' && text(node) === '确认保存').props.disabled, true)
+entryProps.busy = true
+await nextTick()
+find(body, node => node.type === 'button' && text(node) === '取消').props.onClick()
+assert.equal(entryCancelled, 0)
+entryProps.busy = false
+entryProps.error = '保存失败'
+await nextTick()
+assert.ok(find(body, node => node.props.role === 'alert'))
+entryProps.open = false
+await nextTick()
+await nextTick()
+assert.equal(entryDialog.open, false)
+entryProps.mode = 'create'
+entryProps.entry = undefined
+entryProps.memoryId = undefined
+entryProps.error = ''
+entryProps.open = true
+await nextTick()
+await nextTick()
+assert.ok(text(body).includes('创建记忆') && !text(body).includes('memory-a'))
+assert.equal(field('记忆时间'), undefined, 'creation should use server time without a date field')
+assert.equal(field('记忆名称').value, '')
+setField('记忆名称', '新记忆')
+setField('记忆内容', '记忆正文')
+await nextTick()
+find(body, node => node.type === 'form').props.onSubmit({ preventDefault() {} })
+assert.deepEqual(entryInput, { name: '新记忆', data: '记忆正文', tags: [] })
+entryApp.unmount()
+
 const page = fs.readFileSync(path.join(frontend, 'src/pages/ChatPage.vue'), 'utf8')
 assert.match(page, /role="menuitem"[^>]*@click="openMemorySettings"/)
 assert.match(page, /<MemorySelectionDialog/)
-console.log('Memory settings checks passed: scope labels, menus, forms, selection preservation, information events, folded entries, tag/content search, loading, and retries.')
+console.log('Memory settings checks passed: floating menus, scoped labels, single body rendering, entry actions, create/edit forms, tags, local search, selection preservation, and retries.')

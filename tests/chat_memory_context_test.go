@@ -11,6 +11,7 @@ import (
 
 	memory "github.com/caliniya/caf/Memory"
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	backend "github.com/caliniya/caf/core/Backend"
 )
 
 func TestChatMemoryContextExcludesDisabledLibrariesAndLocksSettingsDuringGeneration(t *testing.T) {
@@ -26,7 +27,8 @@ func TestChatMemoryContextExcludesDisabledLibrariesAndLocksSettingsDuringGenerat
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.AddMemory(context.Background(), globalID, "visible-memory-marker"); err != nil {
+	entryID, err := server.AddMemory(context.Background(), globalID, "visible-memory-marker")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := server.AddMemory(context.Background(), disabled.ID, "disabled-memory-marker"); err != nil {
@@ -73,6 +75,16 @@ func TestChatMemoryContextExcludesDisabledLibrariesAndLocksSettingsDuringGenerat
 		}
 		if err := core.SetMemoryLibraryScope(task.ID, "", disabled.ID, memory.ScopeGlobal); err == nil {
 			t.Error("memory scope changed during generation")
+		}
+		input := backend.MemoryEntryInput{Name: "名称", Data: "正文", Date: "2026-11-18T08:00:00Z"}
+		if _, err := core.CreateMemoryEntry(task.ID, "", globalID, input); err == nil {
+			t.Error("entry created during generation")
+		}
+		if _, err := core.UpdateMemoryEntry(task.ID, "", globalID, entryID, input); err == nil {
+			t.Error("entry edited during generation")
+		}
+		if _, err := core.DeleteMemoryEntry(task.ID, "", globalID, entryID); err == nil {
+			t.Error("entry deleted during generation")
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"reply\"}}]}\n\ndata: [DONE]\n\n")

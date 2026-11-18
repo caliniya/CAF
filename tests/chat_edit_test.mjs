@@ -300,7 +300,7 @@ window.go.Backend.Core.GetMemoryLibraryDetails = (...args) => new Promise((resol
 })
 const memoryDetailsDialog = find(root, node => node.type === 'test-dialog' && 'details' in node.props && 'library' in node.props)
 const detailsSnapshot = library => ({ ...library, description: '详情介绍', data: {
-  'memory-test': { data: '当前记忆正文', description: ['标签'], date: '2026-11-18T06:00:00Z' },
+  'memory-test': { name: '当前记忆', data: '当前记忆正文', description: ['标签'], date: '2026-11-18T06:00:00Z' },
 } })
 const firstDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[1])
 await flush()
@@ -325,6 +325,104 @@ await firstDetailsLoad
 await flush()
 assert.equal(memoryDetailsDialog.props.details.id, 'global', 'a response from a closed library must not overwrite the current details')
 assert.equal(memoryDetailsDialog.props.loading, false)
+
+// Entry management must use the current library and wait for explicit form/confirmation actions.
+let createEntryArgs, updateEntryArgs, deleteEntryArgs, deletedEntries = 0
+window.go.Backend.Core.CreateMemoryEntry = async (...args) => {
+  createEntryArgs = args
+  return { ...detailsSnapshot(memoryLibraries[0]), data: {
+    'memory-created': { name: args[3].name, data: args[3].data, description: args[3].tags, date: '2026-11-18T09:00:00Z' },
+  } }
+}
+window.go.Backend.Core.UpdateMemoryEntry = async (...args) => {
+  updateEntryArgs = args
+  return { ...memoryDetailsDialog.props.details, data: {
+    ...memoryDetailsDialog.props.details.data,
+    [args[3]]: { name: args[4].name, data: args[4].data, description: args[4].tags, date: args[4].date },
+  } }
+}
+window.go.Backend.Core.DeleteMemoryEntry = async (...args) => {
+  deleteEntryArgs = args
+  deletedEntries++
+  return { ...memoryDetailsDialog.props.details, data: {} }
+}
+const entryForm = () => find(root, node => node.type === 'test-dialog' && 'memory-id' in node.props)
+memoryDetailsDialog.props.onCreate()
+await flush()
+assert.equal(entryForm().props.open, true)
+assert.equal(entryForm().props.mode, 'create')
+assert.equal(createEntryArgs, undefined, 'opening creation must not persist an entry')
+const createdInput = { name: '新记忆', data: '手动填写正文', tags: ['标签'] }
+await entryForm().props.onConfirm(createdInput)
+await flush()
+assert.deepEqual(createEntryArgs, ['chat', 'workspace-2', 'global', createdInput])
+assert.equal(entryForm().props.open, false)
+assert.equal(memoryDetailsDialog.props.details.data['memory-created'].name, '新记忆')
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'], 'entry creation must not change library selection')
+memoryDetailsDialog.props.onEdit('memory-created')
+await flush()
+assert.equal(entryForm().props.open, true)
+assert.equal(entryForm().props.mode, 'edit')
+assert.equal(entryForm().props['memory-id'], 'memory-created')
+assert.equal(entryForm().props.entry.name, '新记忆')
+const editedInput = { name: '已改名', data: '编辑后正文', date: '2026-11-17T08:00:00Z', tags: [] }
+await entryForm().props.onConfirm(editedInput)
+await flush()
+assert.deepEqual(updateEntryArgs, ['chat', 'workspace-2', 'global', 'memory-created', editedInput])
+assert.equal(memoryDetailsDialog.props.details.data['memory-created'].name, '已改名')
+memoryDetailsDialog.props.onDelete('memory-created')
+await flush()
+assert.equal(deletedEntries, 0, 'opening deletion must wait for a second confirmation')
+assert.equal(dialogByTitle('删除单条记忆').props.open, true)
+assert.match(dialogByTitle('删除单条记忆').props.message, /已改名[\s\S]*历史/)
+dialogByTitle('删除单条记忆').props.onCancel()
+await flush()
+assert.equal(deletedEntries, 0)
+assert.ok(memoryDetailsDialog.props.details.data['memory-created'])
+memoryDetailsDialog.props.onDelete('memory-created')
+await flush()
+await dialogByTitle('删除单条记忆').props.onConfirm()
+await flush()
+assert.deepEqual(deleteEntryArgs, ['chat', 'workspace-2', 'global', 'memory-created'])
+assert.equal(deletedEntries, 1)
+assert.equal(dialogByTitle('删除单条记忆').props.open, false)
+assert.deepEqual(memoryDetailsDialog.props.details.data, {})
+
+memoryDetailsDialog.props.onCreate()
+await flush()
+window.go.Backend.Core.CreateMemoryEntry = async () => { throw new Error('记忆保存失败') }
+await entryForm().props.onConfirm(createdInput)
+await flush()
+assert.equal(entryForm().props.open, true, 'failed saves must preserve the open form')
+assert.match(entryForm().props.error, /记忆保存失败/)
+entryForm().props.onCancel()
+await flush()
+assert.equal(entryForm().props.open, false)
+
+// A save from another conversation must not reopen a form or replace current details.
+let finishOldEntrySave
+window.go.Backend.Core.CreateMemoryEntry = () => new Promise(resolve => { finishOldEntrySave = resolve })
+memoryDetailsDialog.props.onCreate()
+await flush()
+const oldEntrySave = entryForm().props.onConfirm(createdInput)
+await flush()
+assert.equal(entryForm().props.busy, true)
+assert.equal(memoryDetailsDialog.props.busy, true)
+memoryDetailsDialog.props.onClose()
+await flush()
+assert.equal(memoryDetailsDialog.props.library.id, 'global', 'a pending save must keep its dialog open')
+chat.session = { ...chat.session, id: 'other-entry-chat' }
+await flush()
+assert.equal(entryForm().props.open, false)
+assert.equal(memoryDetailsDialog.props.library, null)
+finishOldEntrySave(detailsSnapshot(memoryLibraries[0]))
+await oldEntrySave
+await flush()
+assert.equal(memoryDetailsDialog.props.details, null)
+assert.equal(entryForm().props.busy, false)
+chat.session = { ...chat.session, id: 'chat' }
+await flush()
+await showMemorySettings()
 memoryDetailsDialog.props.onClose()
 
 const failedDetailsLoad = memoryDialog.props.onInfo(memoryLibraries[2])
@@ -370,7 +468,7 @@ await flush()
 assert.equal(scopeCalls, 1)
 memoryDialog.props.onCreate()
 await flush()
-const memoryForm = find(root, node => node.type === 'test-dialog' && node.props.mode === 'create')
+const memoryForm = find(root, node => node.type === 'test-dialog' && node.props.mode === 'create' && 'initial-name' in node.props)
 assert.equal(memoryForm.props.open, true)
 await memoryForm.props.onConfirm('新记忆', 'workspace')
 await flush()
