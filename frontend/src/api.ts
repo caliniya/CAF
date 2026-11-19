@@ -83,6 +83,7 @@ interface CoreBindings {
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
 	SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void>
+	SubmitToolApproval(chatId: string, requestId: string, choice: ToolApprovalChoice): Promise<ChatToolConfig | null>
   EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void>
   RegenerateChatMessage(id: string, nodeId: string, reasoningEffort: string): Promise<void>
 }
@@ -178,7 +179,7 @@ export interface StoredChatMessage {
   role: string
   content: string
   reasoning?: string
-  tool_calls?: { id: string; name: string; arguments: string; display_name?: string; display_type?: string; display_content?: string }[]
+  tool_calls?: { id: string; name: string; arguments: string; display_name?: string; display_type?: string; display_content?: string; approval?: ToolApproval }[]
   tool_call_id?: string
   tool_error?: string
 }
@@ -281,7 +282,24 @@ export interface ToolSetDescriptor {
 // 对话级覆盖：只写显式设置的 ToolKit，未写的项继承全局默认
 export interface ChatToolConfig {
   permission?: PermissionLevel
+  strictMode?: boolean
+  allowedTools?: Record<string, { scope: 'workspace' | 'tool'; workspaceId?: string }>
   sets?: Record<string, { kits?: Record<string, boolean> }>
+}
+
+export type ToolApprovalChoice = 'reject' | 'once' | 'workspace' | 'tool' | 'elevate'
+
+export interface ToolApproval {
+  callId: string
+  toolId: string
+  name: string
+  arguments: string
+  reason: string
+  workspaceId?: string
+  workspaceName?: string
+  workspaceAllowed: boolean
+  higherPermission?: PermissionLevel
+  decision?: ToolApprovalChoice | 'canceled'
 }
 
 export interface ModelProbeResult {
@@ -495,6 +513,11 @@ export interface ChatToolEvent {
   content?: string
   requestId?: string
   answer?: string
+  approval?: string | ToolApproval
+}
+
+export async function SubmitToolApproval(chatId: string, requestId: string, choice: ToolApprovalChoice): Promise<ChatToolConfig | null> {
+  return (await bridge()).SubmitToolApproval(chatId, requestId, choice)
 }
 
 export async function SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void> {

@@ -39,6 +39,7 @@ import {
   type TokenUsage,
   type Workspace,
   type PermissionLevel,
+  type ToolApproval,
 } from '../api'
 import { useConfigsStore } from './configs'
 
@@ -71,6 +72,7 @@ export interface ProcessItem {
   requestId?: string
   answer?: string
   error?: string
+  approval?: ToolApproval
 }
 
 export interface ChatMessage {
@@ -125,6 +127,10 @@ export const useChatStore = defineStore('chat', {
     },
     permission(): string {
       return { 1: '只读', 2: '自动编辑', 3: '自动审批', 4: '完全访问' }[this.permissionLevel]
+    },
+    strictMode(state): boolean {
+      const config = state.session ? state.session.toolConfig : state.pendingToolConfig
+      return config?.strictMode ?? useConfigsStore().toolNormalConfig?.strictMode ?? false
     },
     ctxUsedTokens(state): number | null {
       if (state.usage) {
@@ -333,6 +339,9 @@ export const useChatStore = defineStore('chat', {
           if (tool.requestId !== undefined) item.requestId = tool.requestId
           if (tool.answer !== undefined) item.answer = tool.answer
           if (tool.error !== undefined) item.error = tool.error
+          if (tool.approval !== undefined) {
+            try { item.approval = typeof tool.approval === 'string' ? JSON.parse(tool.approval) : tool.approval } catch { /* 忽略无效事件数据 */ }
+          }
           if (tool.event !== 'update') {
             item.status = tool.event === 'fail' ? 'fail' : 'done'
             item.requestId = undefined
@@ -416,6 +425,7 @@ export const useChatStore = defineStore('chat', {
                 displayType: call.display_type, displayContent: call.display_content,
                 content: call.display_content === 'arguments' || call.display_content?.startsWith('arguments.') ? call.arguments : result?.content,
                 answer: call.display_type === 'question' ? result?.content : undefined,
+                approval: call.approval,
                 error: result?.tool_error ?? (!result ? '调用未完成' : undefined),
               })
             }
@@ -481,7 +491,21 @@ export const useChatStore = defineStore('chat', {
     },
     async setPermission(permission: PermissionLevel) {
       const current = (this.session ? this.session.toolConfig : this.pendingToolConfig) ?? {}
-      await this.updateToolConfig({ ...current, permission })
+      const next = { ...current, permission }
+      if (permission < this.permissionLevel) delete next.allowedTools
+      await this.updateToolConfig(next)
+    },
+    async setStrictMode(strictMode: boolean) {
+      const current = (this.session ? this.session.toolConfig : this.pendingToolConfig) ?? {}
+      await this.updateToolConfig({ ...current, strictMode })
+    },
+    async clearToolGrants() {
+      const current = { ...(this.session ? this.session.toolConfig : this.pendingToolConfig) }
+      delete current.allowedTools
+      await this.updateToolConfig(current)
+    },
+    applyApprovalConfig({ chatId, config }: { chatId: string; config: ChatToolConfig | null }) {
+      if (this.session?.id === chatId) this.session.toolConfig = config ?? undefined
     },
     async loadWorkspaces() {
       this.workspaces = await ListWorkspaces()

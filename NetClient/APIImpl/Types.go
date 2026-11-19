@@ -21,12 +21,13 @@ type ChatMessage struct {
 
 // ToolCall 是一次工具调用。Arguments 是 JSON 对象的字符串形式
 type ToolCall struct {
-	ID             string `json:"id"`   // 本次调用的 ID，用于关联工具结果。
-	Name           string `json:"name"` // API 函数名，即 ToolMeta.ID。
-	Arguments      string `json:"arguments"`
-	DisplayName    string `json:"display_name,omitempty"` // 仅用于界面和历史记录，不发送给模型。
-	DisplayType    string `json:"display_type,omitempty"` // 展示字段不发送给模型。
-	DisplayContent string `json:"display_content,omitempty"`
+	ID             string        `json:"id"`   // 本次调用的 ID，用于关联工具结果。
+	Name           string        `json:"name"` // API 函数名，即 ToolMeta.ID。
+	Arguments      string        `json:"arguments"`
+	DisplayName    string        `json:"display_name,omitempty"` // 仅用于界面和历史记录，不发送给模型。
+	DisplayType    string        `json:"display_type,omitempty"` // 展示字段不发送给模型。
+	DisplayContent string        `json:"display_content,omitempty"`
+	Approval       *ToolApproval `json:"approval,omitempty"`
 }
 
 // Tool 是提供给模型的工具声明

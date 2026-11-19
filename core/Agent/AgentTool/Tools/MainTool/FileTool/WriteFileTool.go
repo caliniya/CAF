@@ -45,6 +45,34 @@ func (t *WriteFile) Meta() *agenttool.ToolMeta {
 	return &t.ToolMeta
 }
 
+func (t *WriteFile) PermissionFor(ctx *agenttool.ToolContext, arg map[string]any) (agenttool.ToolPermission, error) {
+	path, err := resolveFilePath(ctx, arg)
+	if err != nil {
+		return agenttool.ToolPermission{}, err
+	}
+	if _, ok := arg["content"].(string); !ok {
+		return agenttool.ToolPermission{}, errors.New("参数 content 必须是字符串")
+	}
+	if _, err := parseFileLineRange(arg); err != nil {
+		return agenttool.ToolPermission{}, err
+	}
+	if ctx != nil && ctx.WorkSpace != "" {
+		workspace, err := filepath.Abs(ctx.WorkSpace)
+		if err != nil {
+			return agenttool.ToolPermission{}, err
+		}
+		target, err := filepath.Abs(path)
+		if err != nil {
+			return agenttool.ToolPermission{}, err
+		}
+		relative, err := filepath.Rel(workspace, target)
+		if err == nil && filepath.IsLocal(relative) {
+			return agenttool.ToolPermission{Level: agenttool.PermissionAutoEdit, Workspace: true, Reason: "当前权限不允许写入工作区文件"}, nil
+		}
+	}
+	return agenttool.ToolPermission{Level: agenttool.PermissionFullAccess, Reason: "写入工作区外的文件需要授权"}, nil
+}
+
 func (t *WriteFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string, error) {
 	if ctx == nil || !ctx.Check(agenttool.PermissionAutoEdit) {
 		if ctx != nil && ctx.PermissionLevel == agenttool.PermissionAutoEdit && ctx.WorkSpace == "" {
@@ -66,7 +94,7 @@ func (t *WriteFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string,
 	}
 
 	var workspace, relativePath string
-	if ctx.PermissionLevel == agenttool.PermissionAutoEdit {
+	if ctx.PermissionLevel == agenttool.PermissionAutoEdit || ctx.WorkspaceOnly {
 		workspace, err = filepath.Abs(ctx.WorkSpace)
 		if err != nil {
 			return "", fmt.Errorf("解析工作区路径失败：%w", err)
@@ -101,6 +129,9 @@ func (t *WriteFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string,
 		if err != nil {
 			return "", err
 		}
+	}
+	if ctx.Context != nil && ctx.Context.Err() != nil {
+		return "", ctx.Context.Err()
 	}
 	if workspace != "" {
 		// 在实际写入时约束路径，防止符号链接或目录替换绕过工作区边界。

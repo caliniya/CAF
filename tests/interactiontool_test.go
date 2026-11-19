@@ -23,7 +23,7 @@ import (
 func TestInteractionToolQuestionValidationAndHost(t *testing.T) {
 	kit := interactiontool.InitInteractionTool()
 	tool := kit.ListName()["AskUser"]
-	if len(kit.List()) != 1 || tool == nil || !kit.Enabled || tool.Meta().DisplayType != "question" || tool.Meta().DisplayContent != "arguments" {
+	if len(kit.List()) != 2 || tool == nil || !kit.Enabled || tool.Meta().DisplayType != "question" || tool.Meta().DisplayContent != "arguments" {
 		t.Fatalf("交互工具注册错误：%+v", kit)
 	}
 	if tool.ToType().Name != "AskUser" || tool.ToType().Parameters["properties"].(map[string]any)["timeout_seconds"] == nil {

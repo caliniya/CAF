@@ -79,6 +79,9 @@ func (s *Servers) initDefaults(core *Core) {
 	if _, exists := s.services[ChatServerName]; !exists {
 		s.services[ChatServerName] = NewChatServer(core)
 	}
+	if _, exists := s.services[ToolApprovalServerName]; !exists {
+		s.services[ToolApprovalServerName] = NewToolApprovalServer(core)
+	}
 }
 
 type Server interface {

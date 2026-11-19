@@ -477,6 +477,24 @@ async function pickPermission(level: PermissionLevel) {
   }
 }
 
+async function toggleStrictMode() {
+  try {
+    await chat.setStrictMode(!chat.strictMode)
+    closeMenus()
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
+async function clearToolGrants() {
+  try {
+    await chat.clearToolGrants()
+    closeMenus()
+  } catch (err) {
+    chat.error = String(err)
+  }
+}
+
 const toolSets = ref<ToolSetDescriptor[]>([])
 const toolOverrides = ref<Record<string, boolean>>({})
 const toolsLoading = ref(false)
@@ -579,10 +597,11 @@ async function saveOverrides(next: Record<string, boolean>) {
     sets[setID].kits[kitID] = on
   }
   const current = chat.session ? chat.session.toolConfig : chat.pendingToolConfig
-  const permission = current?.permission
-  const config = Object.keys(next).length || permission ? { sets, permission } : null
+  const config = { ...current }
+  if (Object.keys(next).length) config.sets = sets
+  else delete config.sets
   try {
-    await chat.updateToolConfig(config)
+    await chat.updateToolConfig(Object.keys(config).length ? config : null)
   } catch (err) {
     chat.error = String(err)
   }
@@ -960,7 +979,8 @@ watch(
 watch(
   () => {
     const last = chat.messages[chat.messages.length - 1]
-    const processLength = last?.process?.reduce((total, item) => total + (item.content?.length ?? 0), 0) ?? 0
+    const processLength = last?.process?.reduce((total, item) => total + (item.content?.length ?? 0)
+      + (item.approval?.arguments.length ?? 0) + (item.requestId?.length ?? 0), 0) ?? 0
     return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${processLength}:${chat.error.length}`
   },
   async () => {
@@ -990,7 +1010,7 @@ watch(
                 <p class="process-reasoning">{{ item.content }}</p>
               </details>
               <p v-else-if="item.kind === 'text'" class="process-text">{{ item.content }}</p>
-              <ToolCallDetails v-else :item="item" :chat-id="chat.session?.id" />
+              <ToolCallDetails v-else :item="item" :chat-id="chat.session?.id" @approved="chat.applyApprovalConfig" />
             </template>
           </div>
         </details>
@@ -1149,6 +1169,19 @@ watch(
                   </div>
                 </div>
 
+                <div class="menu-sep"></div>
+                <button type="button" class="menu-row" role="menuitemcheckbox" :aria-checked="chat.strictMode"
+                  :class="{ on: chat.strictMode }" :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging"
+                  @click="toggleStrictMode">
+                  <span class="menu-row-label">启用严格模式</span>
+                  <span class="menu-spacer"></span>
+                  <Check v-if="chat.strictMode" class="check" :size="14" :stroke-width="2" />
+                </button>
+                <button v-if="Object.keys((chat.session ? chat.session.toolConfig : chat.pendingToolConfig)?.allowedTools ?? {}).length"
+                  type="button" class="menu-row" title="取消此对话保存的单工具和工作区授权"
+                  :disabled="chat.sending || chat.workspaceChanging || chat.toolConfigChanging" @click="clearToolGrants">
+                  <span class="menu-row-label">清除工具授权</span>
+                </button>
                 <div class="menu-sep"></div>
                 <button type="button" class="menu-footer" @click="openTools">工具配置</button>
               </div>

@@ -41,6 +41,10 @@ func Init(assets fs.FS) error {
 	if err != nil {
 		return err
 	}
+	approvalServer, err := backend.Platform.Servers.Get[*backend.ToolApprovalServer](backend.ToolApprovalServerName)
+	if err != nil {
+		return err
+	}
 
 	timeContext, stopTime := context.WithCancel(context.Background())
 	defer stopTime()
@@ -59,6 +63,9 @@ func Init(assets fs.FS) error {
 			}
 			if err := chatServer.Start(ctx); err != nil {
 				runtime.LogError(ctx, "启动对话服务失败："+err.Error())
+			}
+			if err := approvalServer.Start(ctx); err != nil {
+				runtime.LogError(ctx, "启动工具审批服务失败："+err.Error())
 			}
 			if err := qqServer.Start(ctx); err != nil {
 				runtime.LogError(ctx, "启动 QQ 服务失败："+err.Error())
@@ -97,6 +104,9 @@ func Init(assets fs.FS) error {
 			defer cancel()
 			if err := chatServer.Close(closeCtx); err != nil {
 				runtime.LogError(ctx, "关闭对话服务失败："+err.Error())
+			}
+			if err := approvalServer.Close(closeCtx); err != nil {
+				runtime.LogError(ctx, "关闭工具审批服务失败："+err.Error())
 			}
 			if err := qqServer.Close(closeCtx); err != nil {
 				runtime.LogError(ctx, "关闭 QQ 服务失败："+err.Error())

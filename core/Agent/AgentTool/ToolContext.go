@@ -10,12 +10,17 @@ import (
 type ToolContext struct {
 	WorkSpace string
 	PermissionLevel
+	// WorkspaceOnly 在单工具工作区授权下仍保留实际写入的目录约束。
+	WorkspaceOnly bool
 	// Context 随本次工具执行超时而取消，等待交互的工具必须监听它。
 	Context context.Context
 	// AskUser 由宿主注入；工具模块通过它等待回答，不依赖桌面事件或后端包。
-	AskUser func(context.Context, UserQuestion) (string, error)
+	AskUser              func(context.Context, UserQuestion) (string, error)
+	RequestToolExecution ExecutionRequester
+	// MemoryScope 返回目标是否属于当前工作区，同时校验启用状态和作用域。
+	MemoryScope func(context.Context, string) (bool, error)
 	// CreateMemory 由宿主检查对话启用库和库作用域后持久化，返回记忆 ID。
-	CreateMemory func(context.Context, string, string, []string) (string, error)
+	CreateMemory func(*ToolContext, string, string, []string) (string, error)
 }
 
 type PermissionLevel int
@@ -39,7 +44,7 @@ func (c ToolContext) Check(level PermissionLevel) bool {
 		return false
 	}
 	// 自动编辑只能在选中的工作区中写入；没有工作区时只允许读取。
-	if c.PermissionLevel == PermissionAutoEdit && c.WorkSpace == "" && level >= PermissionAutoEdit {
+	if (c.PermissionLevel == PermissionAutoEdit || c.WorkspaceOnly) && c.WorkSpace == "" && level >= PermissionAutoEdit {
 		return false
 	}
 	if c.PermissionLevel == PermissionAutoApprove {

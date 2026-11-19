@@ -362,15 +362,19 @@ func (c *Core) toolContextFor(session *chat.ChatTask) (*agenttool.ToolContext, e
 			return nil, err
 		}
 	}
-	permission := agenttool.PermissionAutoEdit
-	if c.Configs != nil && c.Configs.ToolNormalConfig != nil && c.Configs.ToolNormalConfig.Permission != 0 {
-		permission = c.Configs.ToolNormalConfig.Permission
-	}
-	if session.ToolConfig != nil && session.ToolConfig.Permission != 0 {
-		permission = session.ToolConfig.Permission
-	}
+	permission := c.toolPermission(session.ToolConfig)
 	if permission < agenttool.PermissionReadOnly || permission > agenttool.PermissionFullAccess {
 		return nil, errors.New("无效的工具权限配置")
 	}
 	return agenttool.CreateContext(path, permission), nil
+}
+
+func (c *Core) toolPermission(config *agenttool.ChatToolConfig) agenttool.PermissionLevel {
+	if config != nil && config.Permission != 0 {
+		return config.Permission
+	}
+	if c.Configs != nil && c.Configs.ToolNormalConfig != nil && c.Configs.ToolNormalConfig.Permission != 0 {
+		return c.Configs.ToolNormalConfig.Permission
+	}
+	return agenttool.PermissionAutoEdit
 }

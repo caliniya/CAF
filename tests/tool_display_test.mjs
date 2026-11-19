@@ -8,7 +8,7 @@ const frontend = path.resolve('frontend')
 const require = createRequire(path.join(frontend, 'package.json'))
 const { transformWithOxc } = await import(pathToFileURL(require.resolve('vite')).href)
 const { parse, compileScript } = await import(pathToFileURL(require.resolve('@vue/compiler-sfc')).href)
-const { createSSRApp, h } = await import(pathToFileURL(require.resolve('vue')).href)
+const { createSSRApp, createRenderer, reactive, h, nextTick } = await import(pathToFileURL(require.resolve('vue')).href)
 const { renderToString } = await import(pathToFileURL(require.resolve('@vue/server-renderer')).href)
 const { createPinia, setActivePinia } = await import(pathToFileURL(require.resolve('pinia')).href)
 const dataModule = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -100,4 +100,111 @@ assert.match(html, /写入的原文/)
 assert.doesNotMatch(html, /bytes_written/)
 assert.doesNotMatch(html, /<details[^>]* open/)
 assert.equal(process[3].content, '{"matches":["example.txt"],"truncated":false}')
+
+// Approval events preserve the tool's normal presentation and restore an inactive audit record from history.
+const approval = { callId: 'blocked', toolId: 'WriteFile', name: '覆盖写入文件', arguments: '{"path":["file.txt"],"content":"原始正文"}',
+  reason: '当前权限不允许写入', workspaceId: 'workspace', workspaceName: '项目', workspaceAllowed: true, higherPermission: 2 }
+chat.messages = [{ role: 'assistant', content: '' }]
+chat.applyTool({ chatId: 'chat', callId: 'approval-call', toolId: 'WriteFile', name: '覆盖写入文件', event: 'start', displayType: 'info', displayContent: 'arguments.content', content: approval.arguments })
+chat.applyTool({ chatId: 'chat', callId: 'approval-call', event: 'update', requestId: 'approval-request', approval: JSON.stringify(approval) })
+item = chat.messages[0].process[0]
+assert.deepEqual(item.approval, approval)
+html = await render(item)
+assert.match(html, /等待审批/)
+assert.match(html, /允许本次/)
+assert.match(html, /拒绝/)
+assert.match(html, /原始正文/)
+assert.match(html, /file\.txt/)
+chat.applyTool({ chatId: 'chat', callId: 'approval-call', event: 'done', approval: { ...approval, decision: 'workspace' } })
+html = await render(item)
+assert.doesNotMatch(html, /更多允许选项/)
+assert.match(html, /已允许在此工作区内使用这个工具/)
+assert.equal(item.requestId, undefined)
+
+const historyCall = chat.session.tree.root.next[0].next[0].child[4].tool_calls[0]
+historyCall.approval = { ...approval, decision: 'once' }
+chat.rebuildMessages()
+assert.deepEqual(chat.messages[1].process[2].approval, historyCall.approval)
+
+// Exercise actual button handlers, menus, duplicate-submit protection, errors and approval/config replies.
+const root = element('root'), body = element('body')
+function element(type) { return { type, props: {}, children: [], parent: null, text: '', getBoundingClientRect: () => ({ height: 125 }), contains: node => false } }
+function detach(node) { if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1) }
+function find(node, predicate) { if (predicate(node)) return node; for (const child of node.children) { const match = find(child, predicate); if (match) return match } }
+function all(node, predicate) { return [...(predicate(node) ? [node] : []), ...node.children.flatMap(child => all(child, predicate))] }
+const nodeText = node => node.text + node.children.map(nodeText).join('')
+const renderer = createRenderer({
+  createElement: element, createText: text => ({ ...element('#text'), text }), createComment: text => element('#comment'),
+  setText: (node, text) => { node.text = text }, setElementText: (node, text) => { node.text = text; node.children = [] },
+  patchProp: (node, key, previous, value) => { node.props[key] = value },
+  insert(node, parent, anchor = null) { detach(node); node.parent = parent; parent.children.splice(anchor ? parent.children.indexOf(anchor) : parent.children.length, 0, node) },
+  remove: detach, parentNode: node => node.parent, nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
+  querySelector: () => body,
+})
+const handlers = new Map()
+globalThis.document = { addEventListener: (name, handler) => handlers.set(name, handler), removeEventListener: name => handlers.delete(name) }
+let finishApproval, failApproval, approvalCalls = []
+globalThis.window = { innerWidth: 420, innerHeight: 550, addEventListener() {}, removeEventListener() {}, go: { Backend: { Core: {
+  SubmitToolApproval: (...args) => { approvalCalls.push(args); return new Promise((resolve, reject) => { finishApproval = resolve; failApproval = reject }) },
+} } } }
+const state = reactive({ item: { kind: 'tool', callId: 'ui-call', status: 'run', requestId: 'ui-request', approval, displayType: 'info', displayContent: 'arguments.content', content: approval.arguments }, chatId: 'chat' })
+const accepted = []
+const app = renderer.createApp({ render: () => h(ToolCallDetails, { ...state, onApproved: value => accepted.push(value) }) })
+app.mount(root)
+const flush = async () => { await new Promise(resolve => setImmediate(resolve)); await nextTick() }
+const buttons = () => all(root, node => node.type === 'button')
+const button = text => buttons().find(node => nodeText(node).trim() === text)
+const menuButton = () => buttons().find(node => node.props['aria-label'] === '更多允许选项')
+const toggleMenu = async () => { await menuButton().props.onClick({ currentTarget: { getBoundingClientRect: () => ({ right: 410, bottom: 480, top: 450 }) } }); await flush() }
+await flush()
+await toggleMenu()
+let menu = find(body, node => node.props.role === 'menu')
+assert.ok(menu)
+assert.match(nodeText(menu), /允许工作区内使用此工具/)
+assert.match(nodeText(menu), /允许此工具/)
+assert.match(nodeText(menu), /切换为更高权限.*自动编辑/)
+assert.equal(menu.props.style.left, '158px')
+assert.equal(menu.props.style.top, '320px')
+handlers.get('pointerdown')({ target: {} })
+await flush()
+assert.equal(find(body, node => node.props.role === 'menu'), undefined)
+let submitted = button('允许本次').props.onClick()
+await flush()
+assert.deepEqual(approvalCalls, [['chat', 'ui-request', 'once']])
+await button('拒绝').props.onClick()
+assert.equal(approvalCalls.length, 1, 'approval writes must not be duplicated')
+failApproval(new Error('审批保存失败'))
+await submitted
+await flush()
+assert.match(nodeText(root), /审批保存失败/)
+assert.ok(button('允许本次'), 'a failure must keep the pending approval usable')
+submitted = button('允许本次').props.onClick()
+await flush()
+const approvedConfig = { permission: 1, strictMode: true, allowedTools: { WriteFile: { scope: 'workspace', workspaceId: 'workspace' } } }
+finishApproval(approvedConfig)
+await submitted
+await flush()
+assert.deepEqual(accepted[0], { chatId: 'chat', config: approvedConfig })
+assert.equal(button('允许本次'), undefined)
+assert.match(nodeText(root), /已允许本次/)
+
+state.item = { ...state.item, callId: 'external-call', requestId: 'external-request', approval: { ...approval, workspaceAllowed: false, higherPermission: 4 } }
+await flush()
+await toggleMenu()
+menu = find(body, node => node.props.role === 'menu')
+assert.doesNotMatch(nodeText(menu), /允许工作区内使用此工具/)
+assert.match(nodeText(menu), /完全访问/)
+state.chatId = 'different-chat'
+state.item = { ...state.item, callId: 'changed-call', requestId: undefined, status: 'fail', approval: { ...approval, decision: 'canceled' } }
+await flush()
+assert.equal(find(body, node => node.props.role === 'menu'), undefined, 'a previous approval menu must close after context changes')
+app.unmount()
+assert.equal(handlers.size, 0)
+
+chat.session.toolConfig = { permission: 1, strictMode: false }
+chat.applyApprovalConfig({ chatId: 'other', config: approvedConfig })
+assert.equal(chat.strictMode, false)
+chat.applyApprovalConfig({ chatId: 'chat', config: approvedConfig })
+assert.equal(chat.strictMode, true)
+assert.deepEqual(chat.session.toolConfig.allowedTools, approvedConfig.allowedTools)
 console.log('Tool display checks passed: live question events, history restoration, expansion, form, and read/write/search content.')

@@ -18,6 +18,7 @@ import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	memorytool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool"
 	create "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/CreateMemory"
+	backend "github.com/caliniya/caf/core/Backend"
 )
 
 func TestChatMemorySettingsPersistAndRemoveMissingIDs(t *testing.T) {
@@ -218,6 +219,26 @@ func TestCreateMemoryToolEnforcesEnabledLibrariesAndExactGlobalPermission(t *tes
 			}))
 			defer model.Close()
 			core.Configs.EnablesConfig.ServerAddress = model.URL
+			previousEmit := backend.Emit
+			t.Cleanup(func() { backend.Emit = previousEmit })
+			backend.Emit = func(event string, data ...any) {
+				if event != backend.EventChatTool {
+					return
+				}
+				var payload map[string]string
+				if err := json.Unmarshal([]byte(data[0].(string)), &payload); err != nil {
+					t.Error(err)
+					return
+				}
+				if payload["approval"] != "" && payload["requestId"] != "" {
+					if test.allowed {
+						t.Error("已有权限的操作不应要求审批")
+					}
+					if _, err := core.SubmitToolApproval(task.ID, payload["requestId"], backend.ApprovalReject); err != nil {
+						t.Error(err)
+					}
+				}
+			}
 			if err := core.SendChatMessage(task.ID, "记住这件事", "high"); err != nil {
 				t.Fatal(err)
 			}
@@ -243,7 +264,7 @@ func TestCreateMemoryToolValidatesArgumentsAndCancellation(t *testing.T) {
 	tool := create.InitCreateMemory().ListName()["CreateMemory"]
 	calls := 0
 	ctx := agenttool.CreateContext("", agenttool.PermissionAutoEdit)
-	ctx.CreateMemory = func(_ context.Context, library, data string, tags []string) (string, error) {
+	ctx.CreateMemory = func(_ *agenttool.ToolContext, library, data string, tags []string) (string, error) {
 		calls++
 		if library != "library" || data != "body" || !reflect.DeepEqual(tags, []string{"tag"}) {
 			t.Error("arguments changed")

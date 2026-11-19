@@ -528,5 +528,50 @@ await flush()
 assert.equal(memoryDialog.props.open, false)
 assert.equal(memoryDetailsDialog.props.library, null, 'leaving the page must close details and discard their pending response')
 
+// Strict mode uses the existing persisted tool config and preserves unrelated switches and grants.
+const toolConfigCalls = []
+window.go.Backend.Core.SetChatToolConfig = async (id, raw) => {
+  const config = JSON.parse(raw)
+  toolConfigCalls.push([id, config])
+  return { ...chat.session, toolConfig: config }
+}
+chat.session.toolConfig = { permission: 1, sets: { '主工具集': { kits: { '文件操作工具': false } } }, allowedTools: { WriteFile: { scope: 'workspace', workspaceId: 'workspace-1' } } }
+await flush()
+const openPermissions = async () => {
+  await find(root, node => node.type === 'button' && node.props.class?.includes('perm-trigger')).props.onClick()
+  await flush()
+}
+const strictToggle = () => find(root, node => node.type === 'button' && node.props.role === 'menuitemcheckbox' && nodeText(node).includes('启用严格模式'))
+await openPermissions()
+assert.equal(strictToggle().props['aria-checked'], false)
+await strictToggle().props.onClick()
+await flush()
+assert.equal(chat.strictMode, true)
+assert.equal(toolConfigCalls.at(-1)[1].strictMode, true)
+assert.equal(toolConfigCalls.at(-1)[1].sets['主工具集'].kits['文件操作工具'], false)
+assert.equal(toolConfigCalls.at(-1)[1].allowedTools.WriteFile.scope, 'workspace')
+await openPermissions()
+assert.equal(strictToggle().props['aria-checked'], true)
+chat.sending = true
+await flush()
+assert.equal(strictToggle().props.disabled, true)
+chat.sending = false
+await flush()
+await strictToggle().props.onClick()
+await flush()
+assert.equal(chat.strictMode, false)
+assert.equal(toolConfigCalls.at(-1)[1].strictMode, false)
+await openPermissions()
+const clearGrants = find(root, node => node.type === 'button' && nodeText(node).includes('清除工具授权'))
+assert.ok(clearGrants)
+await clearGrants.props.onClick()
+await flush()
+assert.equal(toolConfigCalls.at(-1)[1].allowedTools, undefined)
+chat.session.toolConfig.allowedTools = { WriteFile: { scope: 'tool' } }
+chat.session.toolConfig.permission = 4
+await chat.setPermission(1)
+await flush()
+assert.equal(toolConfigCalls.at(-1)[1].allowedTools, undefined, 'lowering permissions must revoke previous grants')
+
 app.unmount()
 console.log('Chat edit and settings checks passed: editing, streaming, IME, workspace/memory confirmations, lazy details, retries, and response isolation after close, context switches, and deactivation.')

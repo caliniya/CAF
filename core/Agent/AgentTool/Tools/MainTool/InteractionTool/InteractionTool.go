@@ -18,7 +18,7 @@ func (t *InteractionTool) ListName() map[string]AgentTool.Tool { return t.Tools 
 func (t *InteractionTool) Meta() AgentTool.ToolKitMeta         { return *t.ToolKitMeta }
 
 func InitInteractionTool() *InteractionTool {
-	tools := []AgentTool.Tool{&AskUser{}}
+	tools := []AgentTool.Tool{&AskUser{}, &RequestToolExecution{}}
 	registered := make(map[string]AgentTool.Tool, len(tools))
 	for _, tool := range tools {
 		tool.Load()

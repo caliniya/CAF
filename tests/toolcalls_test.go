@@ -226,8 +226,8 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
 				}
-				if len(request.Tools) != len(agenttool.Tools) {
-					t.Errorf("工具声明数量错误：%d，期望 %d", len(request.Tools), len(agenttool.Tools))
+				if len(request.Tools) != len(agenttool.Tools)-1 {
+					t.Errorf("普通模式工具声明应排除申请工具：%d，期望 %d", len(request.Tools), len(agenttool.Tools)-1)
 				}
 				requestToolIDs := make(map[string]bool, len(request.Tools))
 				for _, tool := range request.Tools {

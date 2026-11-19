@@ -907,7 +907,29 @@ func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Sets == nil && cfg.Permission == 0 {
+	previousPermission := c.toolPermission(session.ToolConfig)
+	if c.toolPermission(&cfg) < previousPermission {
+		cfg.AllowedTools = nil
+	}
+	for toolID, grant := range cfg.AllowedTools {
+		if agenttool.Tools[toolID] == nil || toolID == agenttool.RequestToolExecutionID {
+			return nil, errors.New("授权记录包含无效工具")
+		}
+		if grant.Scope != agenttool.GrantTool && grant.Scope != agenttool.GrantWorkspace {
+			return nil, errors.New("授权作用范围无效")
+		}
+		if grant.Scope == agenttool.GrantWorkspace {
+			if grant.WorkspaceID == "" {
+				return nil, errors.New("工作区授权缺少工作区 ID")
+			}
+			if _, err := c.workspaceByIDLocked(grant.WorkspaceID); err != nil {
+				return nil, err
+			}
+		} else if grant.WorkspaceID != "" {
+			return nil, errors.New("工具授权不能附带工作区限制")
+		}
+	}
+	if cfg.Sets == nil && cfg.Permission == 0 && cfg.StrictMode == nil && len(cfg.AllowedTools) == 0 {
 		session.ToolConfig = nil
 	} else {
 		session.ToolConfig = &cfg
@@ -944,10 +966,18 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 				if tm == nil || !tm.Enabled {
 					continue
 				}
+				if tm.ID == agenttool.RequestToolExecutionID && !c.strictToolMode(session) {
+					continue
+				}
 				if converted, ok := agenttool.ToolList[tm.ID]; ok {
 					enabled = append(enabled, converted)
 				}
 			}
+		}
+	}
+	if c.strictToolMode(session) && !slices.ContainsFunc(enabled, func(tool apiImpl.Tool) bool { return tool.Name == agenttool.RequestToolExecutionID }) {
+		if request, exists := agenttool.ToolList[agenttool.RequestToolExecutionID]; exists && agenttool.Tools[agenttool.RequestToolExecutionID].Meta().Enabled {
+			enabled = append(enabled, request)
 		}
 	}
 	return enabled
@@ -1182,9 +1212,11 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	}
 	toolContext.Context = ctx
 	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
-	permission := toolContext.PermissionLevel
-	toolContext.CreateMemory = func(callCtx context.Context, libraryID, data string, tags []string) (string, error) {
-		return c.createChatMemory(callCtx, session.WorkspaceID, enabledMemoryIDs, permission, libraryID, data, tags)
+	toolContext.MemoryScope = func(callCtx context.Context, libraryID string) (bool, error) {
+		return c.chatMemoryScope(callCtx, session.WorkspaceID, enabledMemoryIDs, libraryID)
+	}
+	toolContext.CreateMemory = func(callCtx *agenttool.ToolContext, libraryID, data string, tags []string) (string, error) {
+		return c.createChatMemory(callCtx.Context, session.WorkspaceID, enabledMemoryIDs, callCtx.PermissionLevel, libraryID, data, tags, callCtx.WorkspaceOnly)
 	}
 	memoryContext, err := c.chatMemoryContext(ctx, session)
 	if err != nil {
@@ -1224,6 +1256,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	tools := c.enabledTools(session)
 	request.Thinking = session.ReasoningEffort
 	request.Tools = tools
+	approvals, err := c.Servers.Get[*ToolApprovalServer](ToolApprovalServerName)
+	if err != nil {
+		return err
+	}
+	toolRun := &toolExecutionRun{
+		core: c, approvals: approvals, session: session, generation: run,
+		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
+		strict: c.strictToolMode(session), blocked: make(map[string]apiImpl.ToolCall), seen: make(map[string]bool),
+	}
 	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
 	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
 	history := make([]apiImpl.ChatMessage, 0, len(request.Messages)+2)
@@ -1241,6 +1282,8 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if memoryContext != "" {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: memoryContext})
 	}
+	policyIndex := len(history)
+	history = append(history, apiImpl.ChatMessage{Role: "system"})
 	history = append(history, request.Messages...)
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
@@ -1251,6 +1294,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			return err
 		}
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
+		history[policyIndex].Content = toolPolicyPrompt(toolRun.strict, toolContext, session.ToolConfig)
 		request.Messages = history
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 			if delta.Content != "" {
@@ -1293,7 +1337,8 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 
 		history = append(history, assistant)
-		for _, call := range assistant.ToolCalls {
+		for callIndex := range assistant.ToolCalls {
+			call := &assistant.ToolCalls[callIndex]
 			if err := ctx.Err(); err != nil {
 				c.saveReplyLocked(directory, session)
 				return err
@@ -1307,11 +1352,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				payload["content"] = call.Arguments
 			}
 			EmitJSON(EventChatTool, payload)
-			callContext := *toolContext
-			callContext.AskUser = func(ctx context.Context, question agenttool.UserQuestion) (string, error) {
-				return c.askUser(ctx, id, reply.ID, call.ID, question)
-			}
-			output, callErr := executeToolCall(call, &callContext, tools)
+			output, callErr := toolRun.execute(call)
 			toolError := ""
 			if callErr != nil {
 				payload["event"] = "fail"
@@ -1332,6 +1373,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			if call.DisplayType == "question" {
 				payload["answer"] = output
 			}
+			if call.Approval != nil {
+				body, _ := json.Marshal(call.Approval)
+				payload["approval"] = string(body)
+			}
 			EmitJSON(EventChatTool, payload)
 			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output, ToolError: toolError}
 			history = append(history, toolMsg)
@@ -1346,72 +1391,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	}
 
 	return c.saveReplyLocked(directory, session)
-}
-
-// executeToolCall 只执行本轮启用的工具，按 ToolMeta.ID 取实例并检查权限、参数和超时。
-func executeToolCall(call apiImpl.ToolCall, ctx *agenttool.ToolContext, enabledTools []apiImpl.Tool) (string, error) {
-	tool := agenttool.Tools[call.Name]
-	if tool == nil {
-		return "", fmt.Errorf("未找到工具 %q", call.Name)
-	}
-	meta := tool.Meta()
-	if meta == nil {
-		return "", errors.New("工具缺少元信息")
-	}
-	if !meta.Enabled || !slices.ContainsFunc(enabledTools, func(tool apiImpl.Tool) bool { return tool.Name == call.Name }) {
-		return "", errToolDisabled
-	}
-	required := meta.Permission
-	if required == 0 {
-		required = agenttool.PermissionReadOnly
-	}
-	if ctx == nil || !ctx.Check(required) {
-		if ctx != nil && ctx.WorkSpace == "" && ctx.PermissionLevel == agenttool.PermissionAutoEdit && required >= agenttool.PermissionAutoEdit {
-			return "", errors.New("未使用工作区，自动编辑权限下禁止写入文件")
-		}
-		return "", fmt.Errorf("没有执行工具 %q 所需的权限", meta.Name)
-	}
-	args := map[string]any{}
-	if raw := strings.TrimSpace(call.Arguments); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &args); err != nil {
-			return "", fmt.Errorf("参数解析失败：%w", err)
-		}
-	}
-	timeout, err := meta.TimeoutFor(args)
-	if err != nil {
-		return "", err
-	}
-	parent := ctx.Context
-	if parent == nil {
-		parent = context.Background()
-	}
-	executionContext, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-	callContext := *ctx
-	callContext.Context = executionContext
-
-	type result struct {
-		output string
-		err    error
-	}
-	done := make(chan result, 1)
-	go func() {
-		output, err := tool.Fun(&callContext, args)
-		done <- result{output: output, err: err}
-	}()
-
-	select {
-	case r := <-done:
-		if executionContext.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("执行超时（%s）", timeout)
-		}
-		return r.output, r.err
-	case <-executionContext.Done():
-		if executionContext.Err() == context.DeadlineExceeded {
-			return "", fmt.Errorf("执行超时（%s）", timeout)
-		}
-		return "", executionContext.Err()
-	}
 }
 
 func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask) error {

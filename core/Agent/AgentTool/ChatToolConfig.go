@@ -1,17 +1,39 @@
 package AgentTool
 
+import "maps"
+
 // ChatToolConfig 是工具启停策略：纯数据、可序列化。
 // 同一类型用于两处——ChatTask.ToolConfig（对话级）与 Configs.ToolNormalConfig（全局默认）。
 //
 // 键不存在表示"继承上一层"，因此只写入显式设置的项：
 // 对话级缺失 → 查全局默认；全局缺失 → 用 kit 的代码默认值。
 type ChatToolConfig struct {
-	Permission PermissionLevel        `json:"permission,omitempty"`
-	Sets       map[string]ToolSetInfo `json:"sets,omitempty"`
+	Permission   PermissionLevel        `json:"permission,omitempty"`
+	StrictMode   *bool                  `json:"strictMode,omitempty"`
+	AllowedTools map[string]ToolGrant   `json:"allowedTools,omitempty"`
+	Sets         map[string]ToolSetInfo `json:"sets,omitempty"`
 }
 
 type ToolSetInfo struct {
 	Kits map[string]bool `json:"kits,omitempty"`
+}
+
+func (c *ChatToolConfig) Clone() *ChatToolConfig {
+	if c == nil {
+		return nil
+	}
+	copy := *c
+	if c.StrictMode != nil {
+		strict := *c.StrictMode
+		copy.StrictMode = &strict
+	}
+	copy.AllowedTools = maps.Clone(c.AllowedTools)
+	copy.Sets = maps.Clone(c.Sets)
+	for id, set := range copy.Sets {
+		set.Kits = maps.Clone(set.Kits)
+		copy.Sets[id] = set
+	}
+	return &copy
 }
 
 // Kit 读取某个 kit 的显式设置；explicit 为 false 表示没有覆盖，调用方应继续向上一层查找。
@@ -69,8 +91,11 @@ func (c *ChatToolConfig) remove(setID, kitID string) {
 
 // Normalize 清掉空壳（空 Kits、空 Sets），保证"没有任何覆盖"时序列化不产生字段。
 func (c *ChatToolConfig) Normalize() {
-	if c == nil || c.Sets == nil {
+	if c == nil {
 		return
+	}
+	if len(c.AllowedTools) == 0 {
+		c.AllowedTools = nil
 	}
 	for setID, set := range c.Sets {
 		if len(set.Kits) == 0 {
