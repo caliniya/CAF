@@ -1,4 +1,7 @@
 # CAF
+
+[![CI](https://github.com/caliniya/CAF/actions/workflows/ci.yml/badge.svg)](https://github.com/caliniya/CAF/actions/workflows/ci.yml)
+
 # caliniya's agent frame
 
 CAF 是 Go/Wails 制作的 Agent 框架软件。
