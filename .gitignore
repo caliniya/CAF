@@ -8,6 +8,8 @@
 /build/bin/
 /build/generated/
 /build/checks/
+/build/package/
+/build/release/
 /build/native-src/
 /build/native-src.zip
 /build/native-publish/

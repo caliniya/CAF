@@ -1,0 +1,48 @@
+name: Release one platform
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+-windows'
+      - 'v[0-9]+.[0-9]+.[0-9]+-linux'
+      - 'v[0-9]+.[0-9]+.[0-9]+-mac'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  targets:
+    name: Validate platform release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      enabled: ${{ steps.targets.outputs.enabled }}
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: targets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 .github/scripts/build-matrix.py platform
+
+  build:
+    name: Build selected platform
+    needs: targets
+    if: needs.targets.outputs.enabled == 'true'
+    uses: ./.github/workflows/build-desktop.yml
+    with:
+      matrix: ${{ needs.targets.outputs.matrix }}
+      package: true
+
+  publish:
+    name: Publish platform release
+    needs: [targets, build]
+    if: needs.targets.outputs.enabled == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release.yml

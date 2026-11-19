@@ -1,0 +1,53 @@
+name: Set up desktop build
+description: Install the pinned Go/Wails toolchain, Node.js and native desktop dependencies
+
+inputs:
+  arch:
+    description: Target Go architecture
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install Linux desktop libraries
+      if: runner.os == 'Linux' && inputs.arch != 'arm'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+    - name: Install Linux ARMv7 cross compiler and libraries
+      if: runner.os == 'Linux' && inputs.arch == 'arm'
+      shell: bash
+      run: |
+        sudo dpkg --add-architecture armhf
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          build-essential pkg-config gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+          libgtk-3-dev:armhf libwebkit2gtk-4.1-dev:armhf
+
+    - name: Install frontend dependencies
+      shell: bash
+      working-directory: frontend
+      run: npm ci
+
+    - name: Install Wails CLI at the go.mod version
+      shell: bash
+      run: |
+        go mod download
+        wails_version="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)"
+        go install "github.com/wailsapp/wails/v2/cmd/wails@${wails_version}"

@@ -1,0 +1,122 @@
+name: Build desktop targets
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: JSON build matrix with platform, goos, arch and runner
+        required: true
+        type: string
+      run-checks:
+        description: Run headless Go checks before compiling
+        default: false
+        type: boolean
+      package:
+        description: Package and upload release artifacts
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.platform }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: ${{ matrix.platform == 'windows' && '0' || '1' }}
+      GOFLAGS: -mod=readonly
+      GOARM: '7'
+      CAF_DATA_DIR: ${{ github.workspace }}/build/checks/ci-data
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-desktop
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Compile frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Go static analysis
+        if: inputs.run-checks
+        run: go vet -tags bindings ./...
+
+      - name: Go headless tests
+        if: inputs.run-checks
+        run: go test -count=1 -timeout 5m -tags bindings ./...
+
+      - name: Compile desktop application
+        env:
+          TARGET_GOOS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          build_args=(-platform "${TARGET_GOOS}/${TARGET_ARCH}" -s -m -nosyncgomod -trimpath)
+          if [[ "$TARGET_GOOS" == 'linux' ]]; then
+            build_args+=(-tags webkit2_41)
+            if [[ "$TARGET_ARCH" == 'arm' ]]; then
+              export CC=arm-linux-gnueabihf-gcc
+              export CXX=arm-linux-gnueabihf-g++
+              export PKG_CONFIG_LIBDIR=/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+            fi
+          fi
+          wails build "${build_args[@]}"
+
+      - name: Package release archive
+        if: inputs.package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          version="${RELEASE_TAG%-${TARGET_PLATFORM}}"
+          asset_arch="$TARGET_ARCH"
+          if [[ "$TARGET_ARCH" == 'arm' ]]; then
+            asset_arch=armv7
+          fi
+          asset_name="CAF-${version}-${TARGET_PLATFORM}-${asset_arch}"
+          mkdir -p build/release build/package
+          cp LICENSE build/package/
+          cp -R LICENSES build/package/
+
+          case "$TARGET_PLATFORM" in
+            windows)
+              test -f build/bin/CAF.exe
+              cp build/bin/CAF.exe build/package/
+              (cd build/package && 7z a -tzip "../release/${asset_name}.zip" .)
+              ;;
+            linux)
+              test -x build/bin/CAF
+              cp build/bin/CAF build/package/
+              tar -czf "build/release/${asset_name}.tar.gz" -C build/package .
+              ;;
+            mac)
+              test -f build/bin/CAF.app/Contents/MacOS/CAF
+              cp -R build/bin/CAF.app build/package/
+              ditto -c -k --sequesterRsrc build/package "build/release/${asset_name}.zip"
+              ;;
+            *)
+              echo "Unsupported platform: $TARGET_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Upload release artifact
+        if: inputs.package
+        uses: actions/upload-artifact@v4
+        with:
+          name: caf-${{ matrix.platform }}-${{ matrix.arch }}
+          path: build/release/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

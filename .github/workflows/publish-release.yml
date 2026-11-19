@@ -1,0 +1,48 @@
+name: Publish release archives
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Upload archives to the tag release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download packaged targets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: caf-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate SHA-256 checksums
+        shell: bash
+        working-directory: release-assets
+        run: |
+          shopt -s nullglob
+          archives=(CAF-*.zip CAF-*.tar.gz)
+          if [[ ${#archives[@]} -eq 0 ]]; then
+            echo 'No release archives were downloaded' >&2
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS.txt
+
+      - name: Create or update the tag release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* \
+              --repo "$RELEASE_REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --repo "$RELEASE_REPOSITORY" --verify-tag \
+              --title "$RELEASE_TAG" --generate-notes
+          fi

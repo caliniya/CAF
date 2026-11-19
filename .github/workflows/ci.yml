@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targets:
+    name: Select CI targets
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: targets
+        run: python3 .github/scripts/build-matrix.py ci
+
+  checks:
+    name: Static checks and desktop builds
+    needs: targets
+    uses: ./.github/workflows/build-desktop.yml
+    with:
+      matrix: ${{ needs.targets.outputs.matrix }}
+      run-checks: true
