@@ -16,4 +16,6 @@ type FilePlatform interface {
 	MoveFile(source, destination string) error
 	CreateDirectory(name string, perm fs.FileMode) error
 	DeleteFile(name string) error
+	// RemoveAllInRoot 删除 root 内的相对路径及其子项，禁止越过 root 或删除 root 本身。
+	RemoveAllInRoot(root, name string) error
 }

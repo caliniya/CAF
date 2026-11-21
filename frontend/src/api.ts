@@ -32,6 +32,7 @@ interface CoreBindings {
 	UpdateClientExtensionChatConfig(clientId: string, extensionId: string, config: ExtensionChatConfig): Promise<ExtensionChatConfig>
 	ListQQContexts(clientId: string, extensionId: string): Promise<QQContextInfo[]>
 	ClearQQContext(clientId: string, extensionId: string, contextId: string): Promise<void>
+	DeleteQQContext(clientId: string, extensionId: string, contextId: string): Promise<void>
   GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
   GetWorkspaceMemorySettings(workspaceId: string): Promise<ChatMemorySettings>
   GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails>
@@ -178,6 +179,9 @@ export function ListQQContexts(clientId: string, extensionId: string): Promise<Q
 }
 export function ClearQQContext(clientId: string, extensionId: string, contextId: string): Promise<void> {
   return bridge().then(c => c.ClearQQContext(clientId, extensionId, contextId))
+}
+export function DeleteQQContext(clientId: string, extensionId: string, contextId: string): Promise<void> {
+  return bridge().then(c => c.DeleteQQContext(clientId, extensionId, contextId))
 }
 
 export interface ChatSummary {

@@ -212,6 +212,19 @@ func (c *Core) ListQQContexts(clientID, extensionID string) ([]QQContextInfo, er
 
 // 清除只重置对话树；旧树归档，模型配置、工作区文件和长期记忆保留。
 func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
+	return c.resetQQContext(clientID, extensionID, contextID, false)
+}
+
+// 删除取消该上下文的任务，移除对话、归档和内部工作区；共享个人记忆保留。
+func (c *Core) DeleteQQContext(clientID, extensionID, contextID string) error {
+	return c.resetQQContext(clientID, extensionID, contextID, true)
+}
+
+func (c *Core) resetQQContext(clientID, extensionID, contextID string, remove bool) error {
+	action := "清除"
+	if remove {
+		action = "删除"
+	}
 	c.extMu.Lock()
 	if _, _, err := c.clientExtensionLocked(clientID, extensionID); err != nil {
 		c.extMu.Unlock()
@@ -248,9 +261,9 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 		c.extMu.Unlock()
 		select {
 		case <-r.done:
-			return c.ClearQQContext(clientID, extensionID, contextID)
+			return c.resetQQContext(clientID, extensionID, contextID, remove)
 		case <-time.After(15 * time.Second):
-			return errors.New("QQ 上下文正在关闭，请稍后重试清除")
+			return fmt.Errorf("QQ 上下文正在关闭，请稍后重试%s", action)
 		}
 	}
 	keys := []string{}
@@ -268,7 +281,7 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 		if r.clearing[key] {
 			r.mu.Unlock()
 			c.extMu.Unlock()
-			return errors.New("QQ 上下文正在清除")
+			return fmt.Errorf("QQ 上下文正在%s", action)
 		}
 	}
 	if !offline {
@@ -286,7 +299,7 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 		}
 	}
 	r.cancelDecisionsLocked()
-	r.recent, r.batches = map[string][]qqRecentMessage{}, map[string][]qqRecentMessage{}
+	r.recent, r.batches = map[string][]qqRecentMessage{}, map[string][]qqChatJob{}
 	r.mu.Unlock()
 	if offline {
 		defer c.extMu.Unlock()
@@ -306,7 +319,7 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 		select {
 		case <-done:
 		case <-ctx.Done():
-			return errors.New("旧 QQ 生成尚未结束，请稍后重试清除")
+			return fmt.Errorf("旧 QQ 生成尚未结束，请稍后重试%s", action)
 		}
 	}
 	if !offline {
@@ -318,6 +331,9 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if remove {
+		return r.deleteContextsLocked(keys)
+	}
 	for _, key := range keys {
 		record := r.records[key]
 		session, err := r.readSession(record)
@@ -346,6 +362,65 @@ func (c *Core) ClearQQContext(clientID, extensionID, contextID string) error {
 		r.records[key] = record
 	}
 	return r.saveContextsLocked()
+}
+
+func (r *qqChatRuntime) deleteContextsLocked(keys []string) error {
+	// 在递归删除前校验所有目标；删除路径只从宿主根目录和合法 ID 生成。
+	for _, key := range keys {
+		record := r.records[key]
+		if !identity.Valid(record.ID, identity.Chat) {
+			return errors.New("待删除的 QQ 上下文 ID 无效")
+		}
+		if _, err := r.core.qqWorkspacePath(r.adapterID, record.Workspace.ID); err != nil {
+			return err
+		}
+	}
+	err := func() error {
+		r.storageMu.Lock()
+		defer r.storageMu.Unlock()
+		if r.storageClosed {
+			return context.Canceled
+		}
+		deleted := map[string]bool{}
+		for _, key := range keys {
+			record := r.records[key]
+			for _, relative := range []string{
+				filepath.Join("sessions", record.ID+".json"), filepath.Join("sessions", record.ID+".json.tmp"), filepath.Join("history", record.ID),
+			} {
+				if err := r.core.FS.RemoveAllInRoot(r.directory, relative); err != nil {
+					return fmt.Errorf("删除 QQ 对话文件失败：%w", err)
+				}
+			}
+			if err := r.core.FS.RemoveAllInRoot(r.core.Paths.InternalWorkspaces, filepath.Join(r.adapterID, record.Workspace.ID)); err != nil {
+				return fmt.Errorf("删除 QQ 内部工作区失败：%w", err)
+			}
+			deleted[key] = true
+		}
+		items := make([]QQContextInfo, 0, len(r.records)-len(keys))
+		for key, item := range r.records {
+			if !deleted[key] {
+				items = append(items, item)
+			}
+		}
+		sort.Slice(items, func(i, j int) bool { return items[i].Key < items[j].Key })
+		return r.core.writeJSONLocked(filepath.Join(r.directory, "contexts.json"), items)
+	}()
+	if err != nil {
+		return err
+	}
+	chatServer, _ := r.core.Servers.Get[*ChatServer](ChatServerName)
+	// 释放写入锁后再获取 ChatServer.mu，避免与其他上下文的保存形成反向等待。
+	if chatServer != nil {
+		chatServer.mu.Lock()
+		for _, key := range keys {
+			delete(chatServer.ChatList, r.records[key].ID)
+		}
+		chatServer.mu.Unlock()
+	}
+	for _, key := range keys {
+		delete(r.records, key)
+	}
+	return nil
 }
 
 func (r *qqChatRuntime) contextIDForKey(key string) string {

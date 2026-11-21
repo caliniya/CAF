@@ -38,7 +38,7 @@ type QQChatOptions struct {
 }
 
 func defaultQQChatOptions() QQChatOptions {
-	return QQChatOptions{GroupContext: true, GroupContextLength: 10, ContextIsolation: true, ProactiveWidth: 20, ProactiveCooldown: 60}
+	return QQChatOptions{GroupContext: true, GroupContextLength: 10, ContextIsolation: true, ProactiveWidth: 1, ProactiveCooldown: 60}
 }
 
 func copyQQChatOptions(value *QQChatOptions) QQChatOptions {

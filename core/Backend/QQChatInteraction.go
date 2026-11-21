@@ -105,7 +105,7 @@ func (r *qqChatRuntime) answerInteraction(message qq.QQMessage, command qq.Comma
 }
 
 func (r *qqChatRuntime) command(owner *ExtensionClient, binding ClientExtension, options QQChatOptions, message qq.QQMessage, command qq.Command) {
-	text := fmt.Sprintf("可用指令：\n/%s help — 查看帮助\n/%s status — 查看客户端状态\n/%s clear — 清除当前上下文\n/%s clear agent — 清除自己的 agent 上下文\n/%s answer 请求ID 回答 — 回答模型提问\n/%s approve 请求ID once|workspace|reject — 处理内部工作区工具申请", binding.Name, binding.Name, binding.Name, binding.Name, binding.Name, binding.Name)
+	text := fmt.Sprintf("可用指令：\n/%s help — 查看帮助\n/%s status — 查看客户端状态\n/%s clear — 清除当前上下文\n/%s clear agent — 清除自己的 agent 上下文\n/%s delete — 查看删除当前上下文的确认指令\n/%s delete agent — 查看删除自己的 agent 上下文的确认指令\n/%s answer 请求ID 回答 — 回答模型提问\n/%s approve 请求ID once|workspace|reject — 处理内部工作区工具申请", binding.Name, binding.Name, binding.Name, binding.Name, binding.Name, binding.Name, binding.Name, binding.Name)
 	switch command.Name {
 	case "help":
 		if len(command.Args) > 0 {
@@ -124,18 +124,31 @@ func (r *qqChatRuntime) command(owner *ExtensionClient, binding ClientExtension,
 		} else {
 			text = answer
 		}
-	case "clear":
+	case "clear", "delete":
 		agent := qqMentioned(message) && options.AgentEnabled
-		if len(command.Args) == 1 && command.Args[0] == "agent" {
+		args := command.Args
+		if len(args) > 0 && args[0] == "agent" {
 			agent = true
-		} else if len(command.Args) != 0 {
-			text = "清除指令支持 clear 或 clear agent"
+			args = args[1:]
+		}
+		remove := command.Name == "delete"
+		confirmed := remove && len(args) == 1 && args[0] == "confirm"
+		if len(args) != 0 && !confirmed {
+			text = "上下文指令支持 clear、clear agent、delete 或 delete agent；删除时追加 confirm 确认"
 			break
 		}
 		key, _ := qqRoute(message, options, agent)
 		id := r.contextIDForKey(key)
 		if id == "" {
 			text = "当前上下文为空。"
+			break
+		}
+		if remove && !confirmed {
+			suffix := ""
+			if agent {
+				suffix = " agent"
+			}
+			text = "删除将永久移除当前上下文、归档历史和整个内部工作区，取消旧任务；共享个人记忆保留。确认删除请发送：/" + binding.Name + " delete" + suffix + " confirm"
 			break
 		}
 		// 等待旧模型退出放在独立任务中，不阻塞消息接收或其他用户的回复。
@@ -148,10 +161,17 @@ func (r *qqChatRuntime) command(owner *ExtensionClient, binding ClientExtension,
 		r.mu.Unlock()
 		go func() {
 			defer r.wg.Done()
-			err := r.core.ClearQQContext(r.clientID, r.adapterID, id)
+			operation := r.core.ClearQQContext
+			if remove {
+				operation = r.core.DeleteQQContext
+			}
+			err := operation(r.clientID, r.adapterID, id)
 			result := "已清除当前上下文，工作区文件和长期记忆保留。"
+			if remove {
+				result = "已删除当前上下文、归档历史和内部工作区，共享个人记忆保留。"
+			}
 			if err != nil {
-				result = "清除失败：" + err.Error()
+				result = "上下文操作失败：" + err.Error()
 			}
 			if err := r.send(r.ctx, message, result); err != nil {
 				r.report(err)

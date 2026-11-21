@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	platform "github.com/caliniya/caf/platform"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -65,4 +66,20 @@ func (fsys *DesktopFileSystem) CreateDirectory(name string, perm fs.FileMode) er
 
 func (fsys *DesktopFileSystem) DeleteFile(name string) error {
 	return os.Remove(name)
+}
+
+func (fsys *DesktopFileSystem) RemoveAllInRoot(directory, name string) error {
+	name = filepath.Clean(name)
+	if !filepath.IsAbs(directory) || name == "." || !filepath.IsLocal(name) {
+		return errors.New("删除目标必须是根目录内的相对路径，且不能为根目录本身")
+	}
+	root, err := os.OpenRoot(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.RemoveAll(name)
 }

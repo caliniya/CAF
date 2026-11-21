@@ -128,18 +128,24 @@ func useQQChat(t *testing.T, parameters map[string]string, respond func(http.Res
 
 func (f *qqChatFixture) message(t *testing.T, kind string, user, group int, text string, mention bool) {
 	t.Helper()
-	f.sequence++
-	segments := []any{}
+	segments := []qq.QQMessageSegment{}
 	if mention {
-		segments = append(segments, map[string]any{"type": "at", "data": map[string]any{"qq": "10001"}})
+		segments = append(segments, qq.QQMessageSegment{Type: qq.QQSegmentAt, Data: map[string]any{"qq": "10001"}})
 	}
-	segments = append(segments, map[string]any{"type": "text", "data": map[string]any{"text": text}})
+	segments = append(segments, qq.QQText(text))
+	f.messageSegments(t, kind, user, group, segments...)
+}
+
+func (f *qqChatFixture) messageSegments(t *testing.T, kind string, user, group int, segments ...qq.QQMessageSegment) int {
+	t.Helper()
+	f.sequence++
 	packet := map[string]any{"post_type": "message", "message_type": kind, "sub_type": "normal", "message_id": f.sequence,
 		"self_id": 10001, "user_id": user, "time": 1795200000, "message": segments, "sender": map[string]any{"user_id": user, "nickname": fmt.Sprint(user)}}
 	if group > 0 {
 		packet["group_id"] = group
 	}
 	writeOneBotPacket(t, f.connection, packet)
+	return f.sequence
 }
 
 func (f *qqChatFixture) request(t *testing.T) api.ChatCompletionsRequest {

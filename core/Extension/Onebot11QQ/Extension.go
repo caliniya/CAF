@@ -76,7 +76,7 @@ func OneBot11Descriptor() extension.Descriptor {
 			{Key: "whitelist", Label: "白名单列表", Kind: "text", Help: "用逗号或空格分隔 QQ 号；开启白名单且列表为空时不接受聊天。", EnabledWhen: "whitelistEnabled", EditableWhileRunning: true},
 			{Key: "contextIsolation", Label: "上下文隔离", Kind: "boolean", Default: "true", Help: "开启时每个人独立，私聊和群聊共用该人的上下文；关闭时各群共享，私聊仍按人分开。", EditableWhileRunning: true},
 			{Key: "proactiveEnabled", Label: "启用主动消息", Kind: "boolean", Default: "false", Help: "将群消息打包，让模型判断是否主动发言；启用 QQ 白名单时只打包白名单成员。", EditableWhileRunning: true},
-			{Key: "proactiveWidth", Label: "主动消息宽度", Kind: "integer", Default: "20", Minimum: 1, Maximum: 100, EnabledWhen: "proactiveEnabled", EditableWhileRunning: true},
+			{Key: "proactiveWidth", Label: "主动消息宽度", Kind: "integer", Default: "1", Minimum: 1, Maximum: 100, EnabledWhen: "proactiveEnabled", Help: "默认每条符合条件的群消息单独判断；判断或回复期间的消息排队，冷却期间跳过。", EditableWhileRunning: true},
 			{Key: "proactiveCooldown", Label: "主动发言间隔（秒）", Kind: "integer", Default: "60", Minimum: 0, Maximum: 3600, EnabledWhen: "proactiveEnabled", Help: "两次主动发言之间的最短间隔；是否发言的判断不写入聊天历史。", EditableWhileRunning: true},
 			{Key: "longTermMemory", Label: "启用长期记忆", Kind: "boolean", Default: "false", Help: "按机器人 QQ 和发送者建立内部个人记忆，清除上下文时保留。", EditableWhileRunning: true},
 			{Key: "agentEnabled", Label: "启用 agent 对话", Kind: "boolean", Default: "false", Help: "群聊 @ 机器人进入每个人独立的 agent 上下文；关闭时 @ 视为普通消息。", EditableWhileRunning: true},
@@ -186,6 +186,19 @@ func (instance *ReverseWSExtension) SendMessage(ctx context.Context, message QQM
 		return SendResult{}, extension.ErrNotStarted
 	}
 	return instance.client.SendMessage(ctx, message)
+}
+
+func (instance *ReverseWSExtension) GetMessage(ctx context.Context, messageID string) (QQMessage, error) {
+	instance.mu.RLock()
+	state := instance.state
+	instance.mu.RUnlock()
+	if state == extension.StateClosed {
+		return QQMessage{}, extension.ErrClosed
+	}
+	if state != extension.StateRunning {
+		return QQMessage{}, extension.ErrNotStarted
+	}
+	return instance.client.GetMessage(ctx, messageID)
 }
 
 func (instance *ReverseWSExtension) Invoke(ctx context.Context, capability string, arguments json.RawMessage) (json.RawMessage, error) {

@@ -18,6 +18,11 @@ type QQClient interface {
 	Close() error
 }
 
+// MessageReader 是适配器读取引用原文的可选能力，不依赖上层聊天上下文。
+type MessageReader interface {
+	GetMessage(context.Context, string) (QQMessage, error)
+}
+
 type ClientInfo struct {
 	SelfID    string `json:"self_id"`
 	Nickname  string `json:"nickname,omitempty"`
