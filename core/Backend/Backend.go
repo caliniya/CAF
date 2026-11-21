@@ -1181,7 +1181,8 @@ const maxToolRounds = 10
 
 var errToolDisabled = errors.New("此工具被禁用")
 
-func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string) error {
+func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string, executionOptions ...*chatExecutionOptions) error {
+	options := firstExecutionOptions(executionOptions)
 	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
 	if serviceErr != nil {
 		return serviceErr
@@ -1206,7 +1207,14 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if err != nil {
 		return err
 	}
-	toolContext, err := c.toolContextFor(session)
+	var toolContext *agenttool.ToolContext
+	if options != nil && options.workspace != nil {
+		var path string
+		path, err = c.validateWorkspacePath(options.workspace.Path)
+		toolContext = agenttool.CreateContext(path, c.toolPermission(session.ToolConfig))
+	} else {
+		toolContext, err = c.toolContextFor(session)
+	}
 	if err != nil {
 		return err
 	}
@@ -1218,7 +1226,14 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	toolContext.CreateMemory = func(callCtx *agenttool.ToolContext, libraryID, data string, tags []string) (string, error) {
 		return c.createChatMemory(callCtx.Context, session.WorkspaceID, enabledMemoryIDs, callCtx.PermissionLevel, libraryID, data, tags, callCtx.WorkspaceOnly)
 	}
-	memoryContext, err := c.chatMemoryContext(ctx, session)
+	memoryContext := ""
+	if options != nil {
+		toolContext.MemoryScope = options.memoryScope
+		toolContext.CreateMemory = options.createMemory
+		memoryContext = options.memoryContext
+	} else {
+		memoryContext, err = c.chatMemoryContext(ctx, session)
+	}
 	if err != nil {
 		return err
 	}
@@ -1227,7 +1242,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	reply.ReasoningEffort = session.ReasoningEffort
 	session.UpdatedAt = time.Now().UTC()
 	chatServer.mu.Lock()
-	err = c.saveChatLocked(directory, session)
+	err = c.saveExecutionChatLocked(directory, session, options)
 	chatServer.mu.Unlock()
 	if err != nil {
 		return err
@@ -1264,6 +1279,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		core: c, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
 		strict: c.strictToolMode(session), blocked: make(map[string]apiImpl.ToolCall), seen: make(map[string]bool),
+		options: options,
 	}
 	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
 	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
@@ -1282,6 +1298,9 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if memoryContext != "" {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: memoryContext})
 	}
+	if options != nil && options.systemPrompt != "" {
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: options.systemPrompt})
+	}
 	policyIndex := len(history)
 	history = append(history, apiImpl.ChatMessage{Role: "system"})
 	history = append(history, request.Messages...)
@@ -1290,7 +1309,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 
 	for round := 0; round <= maxToolRounds; round++ {
 		if err := ctx.Err(); err != nil {
-			c.saveReplyLocked(directory, session)
+			c.saveReplyLocked(directory, session, options)
 			return err
 		}
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
@@ -1327,7 +1346,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		produced = append(produced, assistant)
 		reply.Child = produced
 		if streamErr != nil {
-			c.saveReplyLocked(directory, session)
+			c.saveReplyLocked(directory, session, options)
 			return streamErr
 		}
 
@@ -1340,7 +1359,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		for callIndex := range assistant.ToolCalls {
 			call := &assistant.ToolCalls[callIndex]
 			if err := ctx.Err(); err != nil {
-				c.saveReplyLocked(directory, session)
+				c.saveReplyLocked(directory, session, options)
 				return err
 			}
 			payload := map[string]string{
@@ -1385,15 +1404,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 
 		session.UpdatedAt = time.Now().UTC()
-		if err := c.saveReplyLocked(directory, session); err != nil {
+		if err := c.saveReplyLocked(directory, session, options); err != nil {
 			return err
 		}
 	}
 
-	return c.saveReplyLocked(directory, session)
+	return c.saveReplyLocked(directory, session, options)
 }
 
-func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask) error {
+func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask, options ...*chatExecutionOptions) error {
 	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
 	if serviceErr != nil {
 		return serviceErr
@@ -1401,5 +1420,5 @@ func (c *Core) saveReplyLocked(directory string, session *chat.ChatTask) error {
 
 	chatServer.mu.Lock()
 	defer chatServer.mu.Unlock()
-	return c.saveChatLocked(directory, session)
+	return c.saveExecutionChatLocked(directory, session, firstExecutionOptions(options))
 }

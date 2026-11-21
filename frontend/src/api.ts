@@ -28,6 +28,10 @@ export interface Configs {
 }
 
 interface CoreBindings {
+	GetClientExtensionChatConfig(clientId: string, extensionId: string): Promise<ExtensionChatConfig>
+	UpdateClientExtensionChatConfig(clientId: string, extensionId: string, config: ExtensionChatConfig): Promise<ExtensionChatConfig>
+	ListQQContexts(clientId: string, extensionId: string): Promise<QQContextInfo[]>
+	ClearQQContext(clientId: string, extensionId: string, contextId: string): Promise<void>
   GetChatMemorySettings(id: string): Promise<ChatMemorySettings>
   GetWorkspaceMemorySettings(workspaceId: string): Promise<ChatMemorySettings>
   GetMemoryLibraryDetails(chatId: string, workspaceId: string, id: string): Promise<MemoryLibraryDetails>
@@ -98,7 +102,7 @@ export interface ClientExtension {
 export interface ExtensionParameter {
   key: string
   label: string
-  kind: 'text' | 'secret' | 'integer'
+  kind: 'text' | 'secret' | 'integer' | 'boolean'
   required: boolean
   default?: string
   placeholder?: string
@@ -107,6 +111,7 @@ export interface ExtensionParameter {
   minimum?: number
   maximum?: number
   editableWhileRunning: boolean
+  enabledWhen?: string
 }
 
 export interface ExtensionInformation {
@@ -120,6 +125,7 @@ export interface ExtensionDescriptor {
   implementation: string
   name: string
   description?: string
+  needsModel: boolean
   parameters: ExtensionParameter[]
   information: ExtensionInformation[]
 }
@@ -140,6 +146,38 @@ export interface ExtensionClient {
   id: string
   name: string
   extensions: ClientExtension[]
+}
+
+export interface ExtensionChatConfig {
+  configId: string
+  model: string
+  personaId: string
+  reasoningEffort: string
+  toolConfig: ChatToolConfig | null
+}
+
+export interface QQContextInfo {
+  id: string
+  key: string
+  kind: 'person' | 'private' | 'group' | 'agent'
+  botId: string
+  userId?: string
+  groupId?: string
+  workspace: Workspace
+  updatedAt: string
+}
+
+export function GetClientExtensionChatConfig(clientId: string, extensionId: string): Promise<ExtensionChatConfig> {
+  return bridge().then(c => c.GetClientExtensionChatConfig(clientId, extensionId))
+}
+export function UpdateClientExtensionChatConfig(clientId: string, extensionId: string, config: ExtensionChatConfig): Promise<ExtensionChatConfig> {
+  return bridge().then(c => c.UpdateClientExtensionChatConfig(clientId, extensionId, config))
+}
+export function ListQQContexts(clientId: string, extensionId: string): Promise<QQContextInfo[]> {
+  return bridge().then(c => c.ListQQContexts(clientId, extensionId))
+}
+export function ClearQQContext(clientId: string, extensionId: string, contextId: string): Promise<void> {
+  return bridge().then(c => c.ClearQQContext(clientId, extensionId, contextId))
 }
 
 export interface ChatSummary {

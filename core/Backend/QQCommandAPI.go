@@ -2,19 +2,23 @@ package Backend
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
 )
 
 type qqCommandJob struct {
-	Message onebot11qq.QQMessage
+	Message    onebot11qq.QQMessage
+	ReceivedAt time.Time
 }
 
 func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtension) {
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
+	return c.qqCommandOwnerLocked(adapterID)
+}
+
+func (c *Core) qqCommandOwnerLocked(adapterID string) (*ExtensionClient, ClientExtension) {
 	clients, err := c.listExtensionClientsLocked()
 	if err != nil {
 		return nil, ClientExtension{}
@@ -29,60 +33,42 @@ func (c *Core) qqCommandOwner(adapterID string) (*ExtensionClient, ClientExtensi
 	return nil, ClientExtension{}
 }
 
-// 明确指令使用固定逻辑回复；不调用模型，也不发起主动对话。
+// 连接事件消费者只负责入队；指令路由和每个上下文的生成独立执行。
 func (c *Core) runQQCommands(ctx context.Context, adapterID string, client onebot11qq.Extension, jobs <-chan qqCommandJob) {
-	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
-	if serviceErr != nil {
-		return
-	}
-
-	seen := map[string]bool{}
-	order := []string{}
+	var runtime *qqChatRuntime
+	defer func() {
+		if runtime != nil {
+			runtime.shutdown()
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case job := <-jobs:
+		case job, open := <-jobs:
+			if !open {
+				return
+			}
 			if ctx.Err() != nil {
 				return
 			}
-			owner, binding := c.qqCommandOwner(adapterID)
-			if owner == nil {
-				continue
-			}
-			command, ok := onebot11qq.ParseCommand(job.Message, binding.Name)
-			if !ok {
-				continue
-			}
-			key := fmt.Sprintf("%s:%s:%s:%s", job.Message.Type, job.Message.GroupID, job.Message.UserID, job.Message.ID)
-			if job.Message.ID != "" {
-				if seen[key] {
+			if runtime == nil {
+				var err error
+				runtime, err = c.newQQChatRuntime(ctx, adapterID, client)
+				if err != nil || runtime == nil {
+					if err != nil {
+						if server, serviceErr := c.Servers.Get[*QQServer](QQServerName); serviceErr == nil {
+							server.mu.Lock()
+							if running := server.clients[adapterID]; running != nil && running.client == client {
+								running.err = err.Error()
+							}
+							server.mu.Unlock()
+						}
+					}
 					continue
 				}
-				seen[key] = true
-				order = append(order, key)
-				if len(order) > 256 {
-					delete(seen, order[0])
-					order = order[1:]
-				}
 			}
-			text := fmt.Sprintf("可用指令：\n/%s help — 查看帮助\n/%s status — 查看客户端状态", binding.Name, binding.Name)
-			if command.Name == "status" && len(command.Args) == 0 {
-				text = fmt.Sprintf("客户端：%s\nID：%s\n扩展：%s\nQQ：%s", owner.Name, owner.ID, binding.Name, client.Info().SelfID)
-			} else if command.Name != "help" || len(command.Args) > 0 {
-				text = "无法识别该指令。\n" + text
-			}
-			reply := onebot11qq.QQMessage{Type: job.Message.Type, UserID: job.Message.UserID, GroupID: job.Message.GroupID, Segments: []onebot11qq.QQMessageSegment{onebot11qq.QQText(text)}}
-			callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			_, err := client.SendMessage(callCtx, reply)
-			cancel()
-			if err != nil && ctx.Err() == nil {
-				qqServer.mu.Lock()
-				if running := qqServer.clients[adapterID]; running != nil && running.client == client {
-					running.err = err.Error()
-				}
-				qqServer.mu.Unlock()
-			}
+			runtime.handle(job)
 		}
 	}
 }

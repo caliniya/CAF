@@ -4,6 +4,7 @@
 !/.vscode/tasks.json
 !/.vscode/extensions.json
 /data/
+/InternalWorkspaces/
 /build/dev-data/
 /build/bin/
 /build/generated/

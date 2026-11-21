@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/wailsapp/wails/v2 v2.17.1
+	github.com/wailsapp/wails/v2 v2.17.0
 )
 
 require (

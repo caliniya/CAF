@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Pencil } from '@lucide/vue'
+import { ArrowLeft, Pencil, Settings2, MessagesSquare } from '@lucide/vue'
 import type { ExtensionOption } from '../api'
 import { useExtensionClientPage } from '../composables/useExtensionClientPage'
 import ExtensionEditorDialog from '../components/ExtensionEditorDialog.vue'
+import ExtensionChatConfigDialog from '../components/ExtensionChatConfigDialog.vue'
+import QQContextsDialog from '../components/QQContextsDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,8 +17,10 @@ const option = computed(() => ext.options.find((value) => value.clientId === cli
 const descriptor = computed(() => ext.types.find((value) => value.type === option.value?.type))
 const busy = computed(() => ext.pending.includes('extension:' + id.value))
 const editing = ref<ExtensionOption>()
+const chatConfigOpen = ref(false)
+const contextsOpen = ref(false)
 
-watch([clientId, id], () => { editing.value = undefined })
+watch([clientId, id], () => { editing.value = undefined; chatConfigOpen.value = false; contextsOpen.value = false })
 function edit() {
   if (option.value && !loading.value && !busy.value) editing.value = { ...option.value, values: { ...option.value.values } }
 }
@@ -46,10 +50,13 @@ function deleted(extensionId: string) {
           <div v-for="field in descriptor?.information" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ option.values[field.key] || '—' }}</dd></div>
         </dl>
         <p v-if="option.lastError" class="extension-page-error" role="alert">{{ option.lastError }}</p>
+        <div class="chat-actions"><button v-if="descriptor?.needsModel" type="button" class="btn" :disabled="busy" @click="chatConfigOpen = true"><Settings2 :size="15" />对话配置</button><button v-if="option.type === 'onebot11qq'" type="button" class="btn" :disabled="busy" @click="contextsOpen = true"><MessagesSquare :size="15" />上下文管理</button></div>
       </div>
       <p v-else-if="!error && !ext.optionsError" class="extension-page-hint">找不到此扩展，或它不属于当前客户端。</p>
     </div>
     <ExtensionEditorDialog v-if="editing" :open="true" :option="editing" :client-id="clientId" @close="editing = undefined" @deleted="deleted" />
+    <ExtensionChatConfigDialog v-if="chatConfigOpen && option" :open="true" :client-id="clientId" :extension-id="id" :name="option.name" @close="chatConfigOpen = false" />
+    <QQContextsDialog v-if="contextsOpen && option" :open="true" :client-id="clientId" :extension-id="id" :name="option.name" @close="contextsOpen = false" />
   </section>
 </template>
 
@@ -62,5 +69,6 @@ function deleted(extensionId: string) {
 .extension-information dd { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .extension-enabled { display: inline-flex; padding: 2px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 12px; }
 .extension-enabled.on { background: var(--success-soft); color: var(--success); }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 @media(max-width: 640px) { .extension-information { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 20px; } }
 </style>

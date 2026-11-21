@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	extension "github.com/caliniya/caf/core/Extension"
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
@@ -20,15 +21,16 @@ const qqAdapterPath = "/onebot/v11/ws"
 
 // QQAdapter 的列表响应不包含令牌；编辑时通过 GetQQAdapter 单独读取。
 type QQAdapter struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	SelfID    string `json:"selfId"`
-	QQ        string `json:"qq"`
-	Address   string `json:"address"`
-	State     string `json:"state"`
-	LastError string `json:"lastError,omitempty"`
-	Token     string `json:"token,omitempty"`
-	Port      int    `json:"port"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	SelfID    string         `json:"selfId"`
+	QQ        string         `json:"qq"`
+	Address   string         `json:"address"`
+	State     string         `json:"state"`
+	LastError string         `json:"lastError,omitempty"`
+	Token     string         `json:"token,omitempty"`
+	Port      int            `json:"port"`
+	Options   *QQChatOptions `json:"chatOptions,omitempty"`
 }
 
 func (c *Core) loadQQAdaptersLocked() error {
@@ -70,6 +72,11 @@ func (c *Core) loadQQAdaptersLocked() error {
 			return errors.New("QQ 适配器配置包含无效或重复的 ID / 端口")
 		}
 		ids[config.ID], ports[config.Port] = true, true
+		if config.Options != nil {
+			if _, err := parseQQChatOptions(config.Options.parameters(), nil); err != nil {
+				return fmt.Errorf("QQ 聊天选项无效：%w", err)
+			}
+		}
 	}
 	qqServer.adapters = stored.Adapters
 	if qqServer.adapters == nil {
@@ -209,6 +216,8 @@ func (c *Core) GetQQAdapter(id string) (*QQAdapter, error) {
 	}
 	view := qqServer.qqAdapterViewLocked(qqServer.adapters[i])
 	view.Token = qqServer.adapters[i].Token
+	options := copyQQChatOptions(qqServer.adapters[i].Options)
+	view.Options = &options
 	return &view, nil
 }
 
@@ -253,7 +262,7 @@ func (c *Core) CreateQQAdapter(name, token, selfID string) (*QQAdapter, error) {
 	return c.createQQAdapter(name, token, selfID, 0)
 }
 
-func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter, error) {
+func (c *Core) createQQAdapter(name, token, selfID string, port int, chatOptions ...*QQChatOptions) (*QQAdapter, error) {
 	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
 	if serviceErr != nil {
 		return nil, serviceErr
@@ -281,6 +290,9 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int) (*QQAdapter
 		return nil, err
 	}
 	config := qqAdapterConfig{ID: adapterID, Name: name, Token: token, SelfID: selfID, Port: port}
+	if len(chatOptions) > 0 {
+		config.Options = chatOptions[0]
+	}
 	configs := append(append([]qqAdapterConfig{}, qqServer.adapters...), config)
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return nil, err
@@ -293,7 +305,7 @@ func (c *Core) UpdateQQAdapter(id, name, token, selfID string) (*QQAdapter, erro
 	return c.updateQQAdapter(id, name, token, selfID, 0)
 }
 
-func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAdapter, error) {
+func (c *Core) updateQQAdapter(id, name, token, selfID string, port int, chatOptions ...*QQChatOptions) (*QQAdapter, error) {
 	qqServer, serviceErr := c.Servers.Get[*QQServer](QQServerName)
 	if serviceErr != nil {
 		return nil, serviceErr
@@ -323,6 +335,9 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int) (*QQAda
 	configs := append([]qqAdapterConfig{}, qqServer.adapters...)
 	configs[i].Name, configs[i].Token, configs[i].SelfID = name, token, selfID
 	configs[i].Port = port
+	if len(chatOptions) > 0 {
+		configs[i].Options = chatOptions[0]
+	}
 	if previous.SelfID != selfID {
 		configs[i].DetectedQQ = ""
 	}
@@ -390,8 +405,9 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 	if qqServer.clients == nil {
 		qqServer.clients = map[string]*qqAdapterRuntime{}
 	}
-	qqServer.clients[id] = &qqAdapterRuntime{client: client, cancel: cancel}
-	go c.consumeQQAdapterEvents(ctx, id, client)
+	running := &qqAdapterRuntime{client: client, cancel: cancel, done: make(chan struct{})}
+	qqServer.clients[id] = running
+	go func() { defer close(running.done); c.consumeQQAdapterEvents(ctx, id, client) }()
 	view := qqServer.qqAdapterViewLocked(config)
 	return &view, nil
 }
@@ -403,14 +419,17 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 		return
 	}
 
-	commands := make(chan qqCommandJob, 32)
-	go c.runQQCommands(ctx, id, client, commands)
+	commands := make(chan qqCommandJob, 256)
+	workerDone := make(chan struct{})
+	go func() { defer close(workerDone); c.runQQCommands(ctx, id, client, commands) }()
 	defer func() {
 		qqServer.mu.Lock()
-		defer qqServer.mu.Unlock()
 		if running := qqServer.clients[id]; running != nil && running.client == client {
 			running.cancel()
 		}
+		qqServer.mu.Unlock()
+		close(commands)
+		<-workerDone
 	}()
 	for envelope := range client.Events() {
 		var event onebot11qq.Event
@@ -438,8 +457,13 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 		qqServer.mu.Unlock()
 		if event.Message != nil {
 			select {
-			case commands <- qqCommandJob{Message: *event.Message}:
+			case commands <- qqCommandJob{Message: *event.Message, ReceivedAt: time.Now()}:
 			default:
+				qqServer.mu.Lock()
+				if running := qqServer.clients[id]; running != nil && running.client == client {
+					running.err = "QQ 消息队列已满，当前消息未提交对话处理"
+				}
+				qqServer.mu.Unlock()
 			}
 		}
 		if Emit != nil {
@@ -454,12 +478,12 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 		}
 	}
 	qqServer.mu.Lock()
-	defer qqServer.mu.Unlock()
 	if running := qqServer.clients[id]; running != nil && running.client == client {
 		running.cancel()
 		running.err = client.Info().LastError
 		running.client = nil
 	}
+	qqServer.mu.Unlock()
 }
 
 func (c *Core) StopQQAdapter(id string) (*QQAdapter, error) {
@@ -520,6 +544,7 @@ func (c *Core) deleteQQAdapterLocked(id string) error {
 	if err := c.saveQQAdaptersLocked(configs); err != nil {
 		return err
 	}
+	c.closeQQChatStorageLocked(id)
 	if running := qqServer.clients[id]; running != nil && running.client != nil {
 		running.cancel()
 		_ = running.client.Close()

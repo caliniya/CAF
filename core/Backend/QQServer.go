@@ -23,6 +23,10 @@ type QQServer struct {
 	clients  map[string]*qqAdapterRuntime
 	core     *Core
 	lifeMu   sync.Mutex // 串行执行服务初始化、启动和关闭。
+	chatMu   sync.Mutex
+	chats    map[string]*qqChatRuntime
+	memoryMu sync.Mutex
+	memories map[string]*qqPersonalMemory
 }
 
 var _ Server = (*QQServer)(nil)
@@ -86,9 +90,12 @@ func (q *QQServer) Close(ctx context.Context) error {
 	}
 	q.lifeMu.Lock()
 	defer q.lifeMu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	var errs []error
+	waits := []<-chan struct{}{}
 	for id, running := range q.clients {
 		if running.cancel != nil {
 			running.cancel()
@@ -98,7 +105,24 @@ func (q *QQServer) Close(ctx context.Context) error {
 				errs = append(errs, fmt.Errorf("关闭 QQ 适配器 %s：%w", id, err))
 			}
 		}
+		if running.done != nil {
+			waits = append(waits, running.done)
+		}
 		delete(q.clients, id)
+	}
+	q.mu.Unlock()
+	q.chatMu.Lock()
+	for _, runtime := range q.chats {
+		runtime.cancel()
+		waits = append(waits, runtime.done)
+	}
+	q.chatMu.Unlock()
+	for _, done := range waits {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return errors.Join(append(errs, ctx.Err())...)
+		}
 	}
 	if ctx != nil && ctx.Err() != nil {
 		errs = append(errs, ctx.Err())
@@ -107,16 +131,18 @@ func (q *QQServer) Close(ctx context.Context) error {
 }
 
 type qqAdapterConfig struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Token      string `json:"token"`
-	SelfID     string `json:"selfId,omitempty"`
-	DetectedQQ string `json:"detectedQQ,omitempty"`
-	Port       int    `json:"port"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Token      string         `json:"token"`
+	SelfID     string         `json:"selfId,omitempty"`
+	DetectedQQ string         `json:"detectedQQ,omitempty"`
+	Port       int            `json:"port"`
+	Options    *QQChatOptions `json:"chatOptions,omitempty"`
 }
 
 type qqAdapterRuntime struct {
 	client onebot11qq.Extension
 	err    string
 	cancel context.CancelFunc
+	done   chan struct{}
 }

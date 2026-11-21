@@ -22,7 +22,7 @@ func TestExtensionUIDescribesFormsAndInformation(t *testing.T) {
 		t.Fatalf("wrong extension type: %+v", types)
 	}
 	fields := types[0].Parameters
-	if len(fields) != 4 || fields[0].Key != "name" || !fields[0].Required || fields[1].Key != "token" || fields[1].Kind != "secret" || fields[2].Required || fields[3].Key != "port" || fields[3].Minimum != 1 || fields[3].Maximum != 65535 {
+	if len(fields) < 4 || !types[0].NeedsModel || fields[0].Key != "name" || !fields[0].Required || fields[1].Key != "token" || fields[1].Kind != "secret" || fields[2].Required || fields[3].Key != "port" || fields[3].Minimum != 1 || fields[3].Maximum != 65535 {
 		t.Fatalf("creation metadata incomplete: %+v", fields)
 	}
 	info := types[0].Information

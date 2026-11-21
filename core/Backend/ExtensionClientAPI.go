@@ -16,12 +16,11 @@ import (
 )
 
 type ClientExtension struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	Enabled   bool   `json:"enabled"`
-	AdapterID string `json:"adapterId,omitempty"`
+	Type      string               `json:"type"`
+	Name      string               `json:"name"`
+	Enabled   bool                 `json:"enabled"`
+	AdapterID string               `json:"adapterId,omitempty"`
 	Chat      *ExtensionChatConfig `json:"chat,omitempty"`
-	QQ        *QQChatOptions `json:"qq,omitempty"`
 }
 
 // ExtensionClient 是应用管理的数据容器，不引用外部工作区。
@@ -283,6 +282,7 @@ func (c *Core) setExtensionClientQQLocked(id, adapterID, name string, enabled bo
 		}
 	}
 	item := ClientExtension{Type: onebot11qq.ExtensionType, Name: name, AdapterID: adapterID, Enabled: enabled}
+	item.Chat = previous.Chat
 	if position < 0 {
 		client.Extensions = append(client.Extensions, item)
 	} else {
@@ -361,8 +361,17 @@ func (c *Core) DeleteExtensionClient(id string) error {
 	if err != nil {
 		return err
 	}
-	if err := c.archiveExtensionClientDirectoryLocked(directory, id); err != nil {
-		return err
+	adapterIDs := []string{}
+	for _, item := range client.Extensions {
+		if item.AdapterID != "" {
+			adapterIDs = append(adapterIDs, item.AdapterID)
+		}
+	}
+	resume := c.pauseQQChatStorageLocked(adapterIDs)
+	archiveErr := c.archiveExtensionClientDirectoryLocked(directory, id)
+	resume(archiveErr == nil)
+	if archiveErr != nil {
+		return archiveErr
 	}
 	for _, item := range client.Extensions {
 		if item.Type == onebot11qq.ExtensionType && item.AdapterID != "" {

@@ -63,7 +63,7 @@ func OneBot11Descriptor() extension.Descriptor {
 	return extension.Descriptor{
 		Type: ExtensionType, Implementation: "onebot11-reverse-ws", Name: "Onebot11QQ",
 		Description: "通过 OneBot 11 反向 WebSocket 接收 QQ 事件并发送消息",
-		NeedsModel: true,
+		NeedsModel:  true,
 		Parameters: []extension.ParameterField{
 			{Key: "name", Label: "名称", Kind: "text", Required: true, Pattern: `^[\p{L}\p{N}_-]{1,32}$`, Help: "指令使用 /名称，同一客户端中名称不能重复。", EditableWhileRunning: true},
 			{Key: "token", Label: "Token", Kind: "secret", Required: true, Placeholder: "连接令牌"},

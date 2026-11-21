@@ -2,6 +2,7 @@ package DesktopBackend
 
 import (
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -29,9 +30,11 @@ func PathsFromExecutable(executable, dataOverride string) (platform.Paths, error
 		data = filepath.Join(root, data)
 	}
 	data = filepath.Clean(data)
+
+	log.Print(root, "root", data, "data")
 	return platform.Paths{
 		Root: root, Data: data, Logs: filepath.Join(data, "logs"),
-		InternalWorkspaces: filepath.Join(root, "内部工作区"),
-		ConfigFile: filepath.Join(data, "config", "MainConfig.json"),
+		InternalWorkspaces: filepath.Join(root, "InternalWorkspaces"),
+		ConfigFile:         filepath.Join(data, "config", "MainConfig.json"),
 	}, nil
 }

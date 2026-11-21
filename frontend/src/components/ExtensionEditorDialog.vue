@@ -6,6 +6,7 @@ import ExtensionWindow from './ExtensionWindow.vue'
 import ExtensionParameterFields from './ExtensionParameterFields.vue'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import ExtensionTypeCatalog from './ExtensionTypeCatalog.vue'
+import ExtensionChatConfigDialog from './ExtensionChatConfigDialog.vue'
 const props = defineProps<{ open: boolean; option?: ExtensionOption; clientId: string }>()
 const emit = defineEmits<{ close: []; saved: []; deleted: [extensionId: string] }>()
 const ext = useExtensionStore()
@@ -15,12 +16,14 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const deleteOpen = ref(false)
+const chatConfigOpen = ref(false)
 const descriptor = computed(() => ext.types.find((type) => type.type === (props.option?.type ?? selectedType.value)))
 const formId = useId()
 let generation = 0
 onUnmounted(() => { generation++ })
 const valid = computed(() => !!descriptor.value && descriptor.value.parameters.every((field) => {
   const value = values.value[field.key] ?? ''
+  if (field.kind === 'boolean') return value === 'true' || value === 'false'
   if (!value.trim()) return !field.required
   if (field.kind === 'integer' && (!Number.isInteger(Number(value)) || Number(value) < (field.minimum ?? -Infinity) || Number(value) > (field.maximum ?? Infinity))) return false
   if (field.pattern) { try { if (!new RegExp(field.pattern, 'u').test(value)) return false } catch { /* native backend validates unsupported patterns */ } }
@@ -40,7 +43,7 @@ watch(selectedType, () => {
 })
 watch(() => [props.open, props.clientId, props.option?.id] as const, async ([open]) => {
   const current = ++generation
-  error.value = ''; deleteOpen.value = false; selectedType.value = ''; values.value = {}
+  error.value = ''; deleteOpen.value = false; chatConfigOpen.value = false; selectedType.value = ''; values.value = {}
   loading.value = false
   if (!open || !props.option) return
   loading.value = true
@@ -76,6 +79,8 @@ async function remove() {
       <ExtensionParameterFields v-if="descriptor" :fields="descriptor.parameters" :values="values" :busy="busy" :running="option?.running" @change="(key, value) => values[key] = value" />
     </form>
     <p v-if="error && !deleteOpen" class="error" role="alert">{{ error }}</p>
+    <button v-if="descriptor?.needsModel && option" type="button" class="btn" :disabled="busy || loading" @click="chatConfigOpen = true">对话配置</button>
+    <p v-else-if="descriptor?.needsModel" class="muted">创建后可在扩展页面配置模型、人设、工具和严格模式。</p>
     <template #footer>
       <button v-if="option" type="button" class="btn btn-danger-outline" :disabled="busy" @click="error = ''; deleteOpen = true">删除扩展</button>
       <button v-else-if="selectedType" type="button" class="btn btn-ghost" :disabled="busy" @click="selectedType = ''">返回类型列表</button>
@@ -84,6 +89,7 @@ async function remove() {
     </template>
   </ExtensionWindow>
   <ConfirmationDialog :open="deleteOpen" title="删除扩展" :message="'确定删除扩展「' + (option?.name ?? '') + '」？'" confirm-label="删除" danger :busy="busy" :error="error" @cancel="deleteOpen = false" @confirm="remove" />
+  <ExtensionChatConfigDialog v-if="chatConfigOpen && option" :open="true" :client-id="clientId" :extension-id="option.id" :name="option.name" @close="chatConfigOpen = false" />
 </template>
 <style scoped>
 .type-select { display: grid; gap: 8px; font-size: 13px; }select { width: 100%; height: 38px; padding: 0 10px; border: 1px solid var(--outline); border-radius: 8px; background: var(--surface); }.description { margin: 14px 0 18px; color: var(--muted); font-size: 12px; }.muted,.owner { color: var(--muted); font-size: 12px; }.owner { margin-top: 18px; }.error { margin-top: 14px; color: var(--danger); font-size: 13px; }.spacer { flex: 1; }

@@ -113,6 +113,7 @@ type toolExecutionRun struct {
 	strict     bool
 	blocked    map[string]api.ToolCall
 	seen       map[string]bool
+	options    *chatExecutionOptions
 }
 
 func (r *toolExecutionRun) effectiveContext(toolID string, permission agenttool.ToolPermission) (*agenttool.ToolContext, bool) {
@@ -168,6 +169,9 @@ func (r *toolExecutionRun) execute(call *api.ToolCall) (string, error) {
 
 func (r *toolExecutionRun) bindQuestion(ctx *agenttool.ToolContext, callID string) {
 	ctx.AskUser = func(parent context.Context, question agenttool.UserQuestion) (string, error) {
+		if r.options != nil && r.options.askUser != nil {
+			return r.options.askUser(parent, r.session.ID, r.nodeID, callID, question)
+		}
 		return r.core.askUser(parent, r.session.ID, r.nodeID, callID, question)
 	}
 }
@@ -204,7 +208,9 @@ func (r *toolExecutionRun) approve(display *api.ToolCall, original api.ToolCall,
 		return nil, err
 	}
 	chatServer.mu.Lock()
-	if workspace, err := r.core.workspaceByIDLocked(r.session.WorkspaceID); err == nil && workspace != nil {
+	if r.options != nil && r.options.workspace != nil {
+		view.WorkspaceName = r.options.workspace.Name
+	} else if workspace, err := r.core.workspaceByIDLocked(r.session.WorkspaceID); err == nil && workspace != nil {
 		view.WorkspaceName = workspace.Name
 	}
 	chatServer.mu.Unlock()
@@ -215,7 +221,11 @@ func (r *toolExecutionRun) approve(display *api.ToolCall, original api.ToolCall,
 		}
 	}
 	display.Approval = view
-	decision, err := r.approvals.request(r.context.Context, r.session.ID, r.nodeID, display.ID, view, func(choice string) (*agenttool.ChatToolConfig, error) {
+	requestApproval := r.approvals.request
+	if r.options != nil && r.options.approve != nil {
+		requestApproval = r.options.approve
+	}
+	decision, err := requestApproval(r.context.Context, r.session.ID, r.nodeID, display.ID, view, func(choice string) (*agenttool.ChatToolConfig, error) {
 		return r.applyApproval(choice, view)
 	})
 	if err != nil {
@@ -264,7 +274,7 @@ func (r *toolExecutionRun) applyApproval(choice string, view *api.ToolApproval) 
 	previous := r.session.ToolConfig
 	r.session.ToolConfig = config
 	r.session.UpdatedAt = time.Now().UTC()
-	if err := r.core.saveChatLocked(r.directory, r.session); err != nil {
+	if err := r.core.saveExecutionChatLocked(r.directory, r.session, r.options); err != nil {
 		r.session.ToolConfig = previous
 		return nil, err
 	}

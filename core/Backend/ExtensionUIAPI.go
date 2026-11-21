@@ -84,7 +84,13 @@ func (c *Core) GetExtensionParameters(id string) (map[string]string, error) {
 			adapter.Name = option.Name
 		}
 	}
-	return map[string]string{"name": adapter.Name, "token": adapter.Token, "selfId": adapter.SelfID, "port": strconv.Itoa(adapter.Port)}, nil
+	return qqExtensionParameters(adapter.Name, adapter), nil
+}
+
+func qqExtensionParameters(name string, adapter *QQAdapter) map[string]string {
+	values := copyQQChatOptions(adapter.Options).parameters()
+	values["name"], values["token"], values["selfId"], values["port"] = name, adapter.Token, adapter.SelfID, strconv.Itoa(adapter.Port)
+	return values
 }
 
 func parseOneBot11Parameters(parameters map[string]string) (string, string, string, int, error) {
@@ -107,7 +113,11 @@ func (c *Core) CreateExtension(kind string, parameters map[string]string) (*Exte
 	if err != nil {
 		return nil, err
 	}
-	adapter, err := c.createQQAdapter(name, token, selfID, port)
+	options, err := parseQQChatOptions(parameters, nil)
+	if err != nil {
+		return nil, err
+	}
+	adapter, err := c.createQQAdapter(name, token, selfID, port, options)
 	if err != nil {
 		return nil, err
 	}
@@ -151,15 +161,20 @@ func (c *Core) updateExtensionParametersLocked(id string, parameters map[string]
 	if err != nil {
 		return err
 	}
-	if _, err := c.updateQQAdapter(id, name, token, selfID, port); err != nil {
+	options, err := parseQQChatOptions(parameters, previous.Options)
+	if err != nil {
+		return err
+	}
+	if _, err := c.updateQQAdapter(id, name, token, selfID, port, options); err != nil {
 		return err
 	}
 	if owner != nil {
 		if err := c.saveExtensionClientLocked(owner); err != nil {
-			_, _ = c.updateQQAdapter(id, previous.Name, previous.Token, previous.SelfID, previous.Port)
+			_, _ = c.updateQQAdapter(id, previous.Name, previous.Token, previous.SelfID, previous.Port, previous.Options)
 			return err
 		}
 	}
+	c.cancelQQChatRuns(id)
 	return nil
 }
 
@@ -237,6 +252,10 @@ func (c *Core) CreateClientExtension(clientID, kind string, parameters map[strin
 	if err != nil {
 		return nil, err
 	}
+	options, err := parseQQChatOptions(parameters, nil)
+	if err != nil {
+		return nil, err
+	}
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
 	client, err := c.readExtensionClientLocked(clientID)
@@ -248,7 +267,7 @@ func (c *Core) CreateClientExtension(clientID, kind string, parameters map[strin
 			return nil, errors.New("该客户端已存在同名扩展")
 		}
 	}
-	adapter, err := c.createQQAdapter(name, token, selfID, port)
+	adapter, err := c.createQQAdapter(name, token, selfID, port, options)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +290,7 @@ func (c *Core) GetClientExtensionParameters(clientID, extensionID string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"name": client.Extensions[i].Name, "token": adapter.Token, "selfId": adapter.SelfID, "port": strconv.Itoa(adapter.Port)}, nil
+	return qqExtensionParameters(client.Extensions[i].Name, adapter), nil
 }
 
 func (c *Core) UpdateClientExtensionParameters(clientID, extensionID string, parameters map[string]string) error {
