@@ -17,7 +17,7 @@ export const useExtensionStore = defineStore('extensions', () => {
   const optionsError = ref('')
   let polling: ReturnType<typeof setInterval> | undefined
   let watchers = 0
-  let optionsRefreshing = false
+  let optionsRefreshing: Promise<void> | undefined
   let revision = 0
   async function refresh() {
     if (loading.value) return
@@ -57,16 +57,17 @@ export const useExtensionStore = defineStore('extensions', () => {
   async function remove(id: string) {
     return mutate(id, async () => { await DeleteExtensionClient(id); clients.value = clients.value.filter((item) => item.id !== id); options.value = options.value.filter((item) => item.clientId !== id) })
   }
-  async function refreshOptions() {
-    if (optionsRefreshing) return
-    optionsRefreshing = true
+  function refreshOptions(): Promise<void> {
+    if (optionsRefreshing) return optionsRefreshing
     const before = revision
-    try {
-      const [descriptors, owners] = await Promise.all([ListExtensionTypes(), ListExtensionClients()])
-      const result = (await Promise.all(owners.map((client) => ListClientExtensions(client.id)))).flat()
-      if (before === revision && !pending.value.length) { types.value = descriptors; clients.value = owners; loaded.value = true; options.value = result; optionsLoaded.value = true; optionsError.value = '' }
-    } catch (err) { optionsError.value = String(err) }
-    finally { optionsRefreshing = false }
+    optionsRefreshing = (async () => {
+      try {
+        const [descriptors, owners] = await Promise.all([ListExtensionTypes(), ListExtensionClients()])
+        const result = (await Promise.all(owners.map((client) => ListClientExtensions(client.id)))).flat()
+        if (before === revision && !pending.value.length) { types.value = descriptors; clients.value = owners; loaded.value = true; options.value = result; optionsLoaded.value = true; optionsError.value = '' }
+      } catch (err) { optionsError.value = String(err) }
+    })().finally(() => { optionsRefreshing = undefined })
+    return optionsRefreshing
   }
   function watchOptions() {
     watchers++

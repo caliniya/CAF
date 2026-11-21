@@ -25,9 +25,10 @@ watch(() => props.open, async (open) => {
 </template>
 <style scoped>
 .extension-window { width: min(540px, calc(100vw - 40px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--outline); border-radius: 14px; background: var(--surface); color: var(--ink); box-shadow: 0 24px 70px rgb(22 29 50 / 26%); }
+.extension-window[open] { display: flex; flex-direction: column; overflow: hidden; }
 .extension-window.wide { width: min(820px, calc(100vw - 40px)); }
 .extension-window::backdrop { background: rgb(22 29 50 / 42%); }
-.window-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; border-bottom: 1px solid var(--outline); }
+.window-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; border-bottom: 1px solid var(--outline); }
 .window-head h2 { font-size: 16px; font-weight: 600; }.window-close { flex-shrink: 0; width: 30px; padding: 0; }
-.window-content { padding: 20px; }.window-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--outline); }
+.window-content { min-height: 0; padding: 20px; overflow-y: auto; }.window-footer { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--outline); }
 </style>

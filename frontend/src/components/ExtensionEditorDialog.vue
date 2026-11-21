@@ -7,7 +7,7 @@ import ExtensionParameterFields from './ExtensionParameterFields.vue'
 import ConfirmationDialog from './ConfirmationDialog.vue'
 import ExtensionTypeCatalog from './ExtensionTypeCatalog.vue'
 const props = defineProps<{ open: boolean; option?: ExtensionOption; clientId: string }>()
-const emit = defineEmits<{ close: []; saved: [] }>()
+const emit = defineEmits<{ close: []; saved: []; deleted: [extensionId: string] }>()
 const ext = useExtensionStore()
 const selectedType = ref('')
 const values = ref<Record<string, string>>({})
@@ -59,9 +59,10 @@ async function save() {
   finally { busy.value = false }
 }
 async function remove() {
-  if (!props.option) return
+  if (!props.option || busy.value) return
+  const extensionId = props.option.id
   busy.value = true; error.value = ''
-  try { await ext.deleteOption(props.clientId, props.option.id); deleteOpen.value = false; emit('close') }
+  try { await ext.deleteOption(props.clientId, extensionId); deleteOpen.value = false; emit('deleted', extensionId); emit('close') }
   catch (err) { error.value = String(err) }
   finally { busy.value = false }
 }
