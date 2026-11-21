@@ -87,6 +87,7 @@ async function save() {
         <label class="reasoning">思考强度<select v-model="config.reasoningEffort"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
       </div>
       <div v-else-if="tab === 'persona'" class="choices">
+        <p class="hint">此人设用于普通 QQ 聊天和主动发言判断；agent 独立上下文始终使用默认人设。</p>
         <button v-for="item in personas" :key="item.id" type="button" class="choice" :class="{ selected: config.personaId === item.id }" @click="config.personaId = item.id"><span>{{ item.name }}<small>{{ item.description }}</small></span><Check v-if="config.personaId === item.id" :size="16" /></button>
       </div>
       <div v-else class="choices">

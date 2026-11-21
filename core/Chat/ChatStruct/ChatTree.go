@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	texts "github.com/caliniya/caf/utils/text"
 )
 
 // 对话树,树形结构是我可以想到的比较好的思路了
@@ -44,7 +45,7 @@ func (tree *ChatTree) ToChatRequest(model apiImpl.Model) (*apiImpl.ChatRequest, 
 	modelInfo := apiImpl.ChatMessage{
 		Role: "system",
 		Content: fmt.Sprintf(
-			"模型信息：\n模型名称：%s\n模型 ID：%s\n上下文窗口（context_window）：%s\n最大输出 token 数（max_output_tokens）：%s",
+			texts.ModelInfo,
 			name, model.ID, formatTokenLimit(model.MaxContext), formatTokenLimit(model.MaxOutputTokens),
 		),
 	}
@@ -56,9 +57,9 @@ func (tree *ChatTree) ToChatRequest(model apiImpl.Model) (*apiImpl.ChatRequest, 
 
 func formatTokenLimit(limit int) string {
 	if limit <= 0 {
-		return "未提供"
+		return texts.TokenLimitUnknown
 	}
-	return fmt.Sprintf("%d tokens", limit)
+	return fmt.Sprintf(texts.TokenLimit, limit)
 }
 
 // Start 在根节点下创建并选中一条新的对话起始分支。

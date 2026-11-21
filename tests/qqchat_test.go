@@ -35,6 +35,10 @@ type qqChatFixture struct {
 }
 
 func qqSSE(w http.ResponseWriter, content string, calls ...api.ToolCall) {
+	qqSSEUsage(w, content, nil, 0, calls...)
+}
+
+func qqSSEUsage(w http.ResponseWriter, content string, usage *api.TokenUsage, snapshots int, calls ...api.ToolCall) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	delta := map[string]any{"content": content}
 	if len(calls) > 0 {
@@ -45,7 +49,14 @@ func qqSSE(w http.ResponseWriter, content string, calls ...api.ToolCall) {
 		delta["tool_calls"] = values
 	}
 	body, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": delta, "finish_reason": "stop"}}})
-	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", body)
+	fmt.Fprintf(w, "data: %s\n\n", body)
+	if usage != nil {
+		body, _ := json.Marshal(map[string]any{"choices": []any{}, "usage": usage})
+		for range snapshots {
+			fmt.Fprintf(w, "data: %s\n\n", body)
+		}
+	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
 func useQQChat(t *testing.T, parameters map[string]string, respond func(http.ResponseWriter, *http.Request, api.ChatCompletionsRequest)) *qqChatFixture {

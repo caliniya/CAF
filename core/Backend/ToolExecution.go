@@ -12,6 +12,7 @@ import (
 	api "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	chat "github.com/caliniya/caf/core/Chat"
+	texts "github.com/caliniya/caf/utils/text"
 )
 
 type preparedToolCall struct {
@@ -292,14 +293,14 @@ func (c *Core) strictToolMode(session *chat.ChatTask) bool {
 }
 
 func toolPolicyPrompt(strict bool, ctx *agenttool.ToolContext, config *agenttool.ChatToolConfig) string {
-	mode := "权限不足时，宿主会自动提交审批并等待用户选择。"
+	mode := texts.ToolAutoApproval
 	if strict {
-		mode = "已启用严格模式。权限不足的工具调用不会执行，会返回调用 ID。需要继续时必须主动调用 RequestToolExecution 提交该 ID；批准后宿主会执行保存的原始调用，并由申请工具返回结果，不要再次执行原调用。"
+		mode = texts.ToolStrictApproval
 	}
 	grants := ""
 	if config != nil && len(config.AllowedTools) > 0 {
 		body, _ := json.Marshal(config.AllowedTools)
-		grants = " 当前对话已授权的工具：" + string(body) + "。工作区授权仅对对应工作区内的操作有效。"
+		grants = fmt.Sprintf(texts.ToolGrants, body)
 	}
-	return fmt.Sprintf("当前工具权限为 %d。%s用户拒绝后请调整方案。%s", ctx.PermissionLevel, mode, grants)
+	return fmt.Sprintf(texts.ToolPolicy, ctx.PermissionLevel, mode, grants)
 }

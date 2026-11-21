@@ -13,6 +13,7 @@ import (
 
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
+	persona "github.com/caliniya/caf/core/Persona"
 	identity "github.com/caliniya/caf/utils/id"
 )
 
@@ -25,6 +26,9 @@ type QQContextInfo struct {
 	GroupID   string         `json:"groupId,omitempty"`
 	Workspace chat.WorkSpace `json:"workspace"`
 	UpdatedAt time.Time      `json:"updatedAt"`
+	// 最近一次对话请求的输入 + 输出用量；nil 表示模型未提供统计。
+	ContextTokens      *int64 `json:"contextTokens"`
+	ContextWarningSent bool   `json:"contextWarningSent"`
 }
 
 func (c *Core) qqChatDirectory(clientID, adapterID string) (string, error) {
@@ -137,10 +141,13 @@ func (r *qqChatRuntime) ensureContextLocked(job qqChatJob) (QQContextInfo, error
 		userID, groupID = "", job.message.GroupID
 	}
 	record := QQContextInfo{ID: chatID, Key: job.key, Kind: job.kind, BotID: job.message.SelfID, UserID: userID, GroupID: groupID,
-		Workspace: chat.WorkSpace{ID: workspaceID, Name: name, Path: path}, UpdatedAt: time.Now().UTC()}
+		Workspace: chat.WorkSpace{ID: workspaceID, Name: name, Path: path}, UpdatedAt: time.Now().UTC(), ContextTokens: new(int64)}
 	session := chat.NewChatTask(chatID, name, job.config.ConfigID, job.config.Model, nil)
 	session.WorkspaceID = workspaceID
 	session.Tree.Root.PersonaID = job.config.PersonaID
+	if job.kind == "agent" {
+		session.Tree.Root.PersonaID = persona.DefaultID
+	}
 	if err := r.saveSession(session); err != nil {
 		return QQContextInfo{}, err
 	}
@@ -300,6 +307,7 @@ func (c *Core) resetQQContext(clientID, extensionID, contextID string, remove bo
 	}
 	r.cancelDecisionsLocked()
 	r.recent, r.batches = map[string][]qqRecentMessage{}, map[string][]qqChatJob{}
+	r.senderRecent = map[string][]qqRecentMessage{}
 	r.mu.Unlock()
 	if offline {
 		defer c.extMu.Unlock()
@@ -359,6 +367,8 @@ func (c *Core) resetQQContext(clientID, extensionID, contextID string, remove bo
 			return err
 		}
 		record.UpdatedAt = session.UpdatedAt
+		record.ContextTokens = new(int64)
+		record.ContextWarningSent = false
 		r.records[key] = record
 	}
 	return r.saveContextsLocked()

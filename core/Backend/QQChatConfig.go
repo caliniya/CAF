@@ -30,7 +30,7 @@ type QQChatOptions struct {
 	Whitelist          []string `json:"whitelist"`
 	ContextIsolation   bool     `json:"contextIsolation"`
 	ProactiveEnabled   bool     `json:"proactiveEnabled"`
-	ProactiveWidth     int      `json:"proactiveWidth"`
+	ProactiveContextLength *[2]int `json:"proactiveContextLength"`
 	ProactiveCooldown  int      `json:"proactiveCooldown"`
 	LongTermMemory     bool     `json:"longTermMemory"`
 	AgentEnabled       bool     `json:"agentEnabled"`
@@ -38,7 +38,7 @@ type QQChatOptions struct {
 }
 
 func defaultQQChatOptions() QQChatOptions {
-	return QQChatOptions{GroupContext: true, GroupContextLength: 10, ContextIsolation: true, ProactiveWidth: 1, ProactiveCooldown: 60}
+	return QQChatOptions{GroupContext: true, GroupContextLength: 10, ContextIsolation: true, ProactiveContextLength: &[2]int{10, 10}, ProactiveCooldown: 60}
 }
 
 func copyQQChatOptions(value *QQChatOptions) QQChatOptions {
@@ -49,6 +49,11 @@ func copyQQChatOptions(value *QQChatOptions) QQChatOptions {
 	copy.TriggerKeywords = slices.Clone(value.TriggerKeywords)
 	copy.Whitelist = slices.Clone(value.Whitelist)
 	copy.GroupWhitelist = slices.Clone(value.GroupWhitelist)
+	lengths := [2]int{10, 10}
+	if value.ProactiveContextLength != nil {
+		lengths = *value.ProactiveContextLength
+	}
+	copy.ProactiveContextLength = &lengths
 	return copy
 }
 
@@ -96,7 +101,7 @@ func parseQQChatOptions(parameters map[string]string, previous *QQChatOptions) (
 		minimum, maximum int
 	}{
 		{"groupContextLength", &options.GroupContextLength, 1, 100},
-		{"proactiveWidth", &options.ProactiveWidth, 1, 100}, {"proactiveCooldown", &options.ProactiveCooldown, 0, 3600},
+		{"proactiveCooldown", &options.ProactiveCooldown, 0, 3600},
 	} {
 		if value, exists := parameters[item.key]; exists {
 			number, err := strconv.Atoi(value)
@@ -104,6 +109,19 @@ func parseQQChatOptions(parameters map[string]string, previous *QQChatOptions) (
 				return nil, fmt.Errorf("%s 必须在 %d 到 %d 之间", item.key, item.minimum, item.maximum)
 			}
 			*item.target = number
+		}
+	}
+	if value, exists := parameters["proactiveContextLength"]; exists {
+		fields := strings.FieldsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || r == ',' || r == '，' })
+		if len(fields) != 2 {
+			return nil, errors.New("主动消息上下文长度需要两个数字：附近群聊消息条数、发送者历史消息条数")
+		}
+		for index, field := range fields {
+			number, err := strconv.Atoi(field)
+			if err != nil || number < 0 || number > 100 {
+				return nil, errors.New("主动消息上下文长度的两个数字都必须在 0 到 100 之间")
+			}
+			options.ProactiveContextLength[index] = number
 		}
 	}
 	for _, item := range []struct {
@@ -144,7 +162,7 @@ func (o QQChatOptions) parameters() map[string]string {
 		"triggerKeywords": strings.Join(o.TriggerKeywords, ", "), "groupContext": strconv.FormatBool(o.GroupContext),
 		"groupContextLength": strconv.Itoa(o.GroupContextLength), "whitelistEnabled": strconv.FormatBool(o.WhitelistEnabled),
 		"whitelist": strings.Join(o.Whitelist, ", "), "contextIsolation": strconv.FormatBool(o.ContextIsolation),
-		"proactiveEnabled": strconv.FormatBool(o.ProactiveEnabled), "proactiveWidth": strconv.Itoa(o.ProactiveWidth),
+		"proactiveEnabled": strconv.FormatBool(o.ProactiveEnabled), "proactiveContextLength": fmt.Sprintf("%d,%d", o.ProactiveContextLength[0], o.ProactiveContextLength[1]),
 		"proactiveCooldown": strconv.Itoa(o.ProactiveCooldown), "longTermMemory": strconv.FormatBool(o.LongTermMemory),
 		"agentEnabled": strconv.FormatBool(o.AgentEnabled), "groupWhitelist": strings.Join(o.GroupWhitelist, ", "),
 	}

@@ -15,6 +15,7 @@ import (
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	identity "github.com/caliniya/caf/utils/id"
+	texts "github.com/caliniya/caf/utils/text"
 )
 
 type workspaceIndex struct {
@@ -329,7 +330,7 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 		return nil, err
 	}
 	if len(path) > 0 {
-		node := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "system", Content: "系统消息:从「" + previousName + "」切换到「" + nextName + "」"})
+		node := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "system", Content: fmt.Sprintf(texts.WorkspaceChanged, previousName, nextName)})
 		if err := session.Tree.AddNext(path[len(path)-1].ID, node); err != nil {
 			return nil, err
 		}

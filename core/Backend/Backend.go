@@ -19,6 +19,7 @@ import (
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	persona "github.com/caliniya/caf/core/Persona"
 	identity "github.com/caliniya/caf/utils/id"
+	texts "github.com/caliniya/caf/utils/text"
 )
 
 // SelectDirectory 供前端调用平台文件夹选择器；取消时返回空字符串。
@@ -1291,9 +1292,9 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 	}
 	if toolContext.WorkSpace != "" {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前工作区路径：" + toolContext.WorkSpace + "。文件工具的相对路径以此目录为起点。"})
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: fmt.Sprintf(texts.ChatWorkspace, toolContext.WorkSpace)})
 	} else {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: "当前未使用工作区。自动编辑权限下只允许读取文件，不允许创建或修改文件。"})
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: texts.ChatWithoutWorkspace})
 	}
 	if memoryContext != "" {
 		history = append(history, apiImpl.ChatMessage{Role: "system", Content: memoryContext})
@@ -1315,6 +1316,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
 		history[policyIndex].Content = toolPolicyPrompt(toolRun.strict, toolContext, session.ToolConfig)
 		request.Messages = history
+		var requestUsage *apiImpl.TokenUsage
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 			if delta.Content != "" {
 				assistant.Content += delta.Content
@@ -1335,6 +1337,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			if delta.Usage != nil {
 				usage := *delta.Usage
 				reply.Usage = &usage
+				requestUsage = &usage
 			}
 			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
 				EmitJSON(EventChatDelta, map[string]any{
@@ -1343,6 +1346,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				})
 			}
 		})
+		// 流可能多次上报用量快照，只记录最后一份；不持有 ChatServer.mu。
+		if options != nil && options.recordUsage != nil {
+			options.recordUsage(requestUsage)
+		}
 		produced = append(produced, assistant)
 		reply.Child = produced
 		if streamErr != nil {

@@ -1,6 +1,10 @@
 package Persona
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	texts "github.com/caliniya/caf/utils/text"
+)
 
 // Persona 是对话的人设：告诉模型「你是谁」。
 //
@@ -11,9 +15,6 @@ type Persona struct {
 	Description string `json:"description,omitempty"`
 	System      string `json:"system"`
 }
-
-const promptPrefix = "以下是你的角色设定 : " +
-	"\n"
 
 // Prompt 返回可直接作为 system 消息的文本。
 func (p Persona) Prompt() (string, error) {
@@ -29,7 +30,7 @@ func (p Persona) Prompt() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return promptPrefix + string(data), nil
+	return texts.PersonaPrefix + string(data), nil
 }
 
 // DefaultID 是没有显式选择时使用的人设。

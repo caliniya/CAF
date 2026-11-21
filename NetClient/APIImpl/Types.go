@@ -64,7 +64,15 @@ type TokenUsage struct {
 	PromptTokens            int                     `json:"prompt_tokens"`
 	CompletionTokens        int                     `json:"completion_tokens"`
 	TotalTokens             int                     `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokenDetails     `json:"prompt_tokens_details,omitempty"`
+	PromptCacheHitTokens    *int                    `json:"prompt_cache_hit_tokens,omitempty"`
+	PromptCacheMissTokens   *int                    `json:"prompt_cache_miss_tokens,omitempty"`
 	CompletionTokensDetails *CompletionTokenDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type PromptTokenDetails struct {
+	// nil 表示未上报缓存用量，明确返回 0 才表示没有命中。
+	CachedTokens *int `json:"cached_tokens,omitempty"`
 }
 
 type CompletionTokenDetails struct {

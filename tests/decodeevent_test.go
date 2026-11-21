@@ -74,6 +74,39 @@ func TestDecodeEventUsage(t *testing.T) {
 	}
 }
 
+func TestDecodeEventCacheUsageFormats(t *testing.T) {
+	for _, test := range []struct {
+		name, data string
+		hit, miss  *int
+		cached     *int
+	}{
+		{"unreported", `{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}`, nil, nil, nil},
+		{"cached-zero", `{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":0}}`, nil, nil, intPointer(0)},
+		{"cached", `{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":80}}`, nil, nil, intPointer(80)},
+		{"deepseek-zero", `{"prompt_tokens":120,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":120}`, intPointer(0), intPointer(120), nil},
+		{"deepseek", `{"prompt_tokens":120,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":40}`, intPointer(80), intPointer(40), nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deltas, err := (&apiImpl.ChatCompletionAPI{}).DecodeEvent(`{"choices":[],"usage":` + test.data + `}`)
+			if err != nil || len(deltas) != 1 || deltas[0].Usage == nil {
+				t.Fatalf("cache usage not decoded: %+v / %v", deltas, err)
+			}
+			usage := deltas[0].Usage
+			var cached *int
+			if usage.PromptTokensDetails != nil {
+				cached = usage.PromptTokensDetails.CachedTokens
+			}
+			for _, pair := range [][2]*int{{usage.PromptCacheHitTokens, test.hit}, {usage.PromptCacheMissTokens, test.miss}, {cached, test.cached}} {
+				if (pair[0] == nil) != (pair[1] == nil) || pair[0] != nil && *pair[0] != *pair[1] {
+					t.Fatalf("missing and explicit cache counts were confused: %+v", usage)
+				}
+			}
+		})
+	}
+}
+
+func intPointer(value int) *int { return &value }
+
 // 工具调用分片:首行带 index/id/name,后续行只追加 arguments,
 // 在 finish_reason=tool_calls 时一次性吐出完整调用。
 func TestDecodeEventToolCallAggregation(t *testing.T) {

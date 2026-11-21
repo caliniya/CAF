@@ -141,6 +141,17 @@ export interface ExtensionOption {
   running: boolean
   values: Record<string, string>
   lastError?: string
+  usage?: QQTokenStats
+}
+
+export interface QQTokenStats {
+  requests: number
+  usageRequests: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  cachedPromptTokens: number
+  cachePromptTokens: number
 }
 
 export interface ExtensionClient {
@@ -166,6 +177,8 @@ export interface QQContextInfo {
   groupId?: string
   workspace: Workspace
   updatedAt: string
+  contextTokens: number | null
+  contextWarningSent: boolean
 }
 
 export function GetClientExtensionChatConfig(clientId: string, extensionId: string): Promise<ExtensionChatConfig> {
@@ -538,6 +551,9 @@ export interface TokenUsage {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  prompt_tokens_details?: { cached_tokens?: number }
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
   completion_tokens_details?: { reasoning_tokens?: number }
 }
 

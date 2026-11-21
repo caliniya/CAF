@@ -20,6 +20,7 @@ type ExtensionOption struct {
 	Running    bool              `json:"running"`
 	Values     map[string]string `json:"values"`
 	LastError  string            `json:"lastError,omitempty"`
+	Usage      *QQTokenStats     `json:"usage,omitempty"`
 }
 
 func (c *Core) ListExtensionTypes() []extension.Descriptor {
@@ -62,6 +63,12 @@ func (c *Core) ListExtensions() ([]ExtensionOption, error) {
 				if binding.AdapterID == config.ID {
 					option.ClientID, option.ClientName, option.Name, option.Enabled = client.ID, client.Name, binding.Name, binding.Enabled
 				}
+			}
+		}
+		if option.ClientID != "" {
+			option.Usage, err = c.qqTokenStatsLocked(option.ClientID, option.ID)
+			if err != nil {
+				return nil, err
 			}
 		}
 		options = append(options, option)
@@ -238,7 +245,11 @@ func (c *Core) ListClientExtensions(clientID string) ([]ExtensionOption, error) 
 		if running := qqServer.clients[binding.AdapterID]; running != nil && running.client != nil {
 			values = running.client.UIValues()
 		}
-		options = append(options, ExtensionOption{ID: binding.AdapterID, Type: binding.Type, Name: binding.Name, ClientID: client.ID, ClientName: client.Name, Enabled: binding.Enabled, Running: view.State != "stopped", Values: values, LastError: view.LastError})
+		usage, err := c.qqTokenStatsLocked(client.ID, binding.AdapterID)
+		if err != nil {
+			return nil, err
+		}
+		options = append(options, ExtensionOption{ID: binding.AdapterID, Type: binding.Type, Name: binding.Name, ClientID: client.ID, ClientName: client.Name, Enabled: binding.Enabled, Running: view.State != "stopped", Values: values, LastError: view.LastError, Usage: usage})
 	}
 	return options, nil
 }

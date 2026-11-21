@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
+	"sort"
 	"strconv"
 	"time"
 
@@ -95,12 +95,28 @@ func (r *qqChatRuntime) resolveReferences(parent context.Context, job qqChatJob)
 	return result
 }
 
-// 宽度大于 1 时，附近消息中不重复追加已经包含在主动消息批次中的消息。
-func qqProactiveNearby(nearby, batch []qqRecentMessage) []qqRecentMessage {
-	result := slices.Clone(nearby)
-	return slices.DeleteFunc(result, func(item qqRecentMessage) bool {
-		return item.Message.ID != "" && slices.ContainsFunc(batch, func(other qqRecentMessage) bool {
-			return item.Message.SelfID == other.Message.SelfID && item.Message.ID == other.Message.ID
-		})
+// 两部分按各自长度截取，合并去重后按消息时间排列；快照中没有当前触发消息或未来消息。
+func qqProactiveContext(nearby, sender []qqRecentMessage, lengths [2]int) []qqRecentMessage {
+	result := make([]qqRecentMessage, 0, lengths[0]+lengths[1])
+	seen := map[string]bool{}
+	for index, items := range [][]qqRecentMessage{nearby, sender} {
+		for _, item := range items[max(0, len(items)-lengths[index]):] {
+			key := item.Message.SelfID + ":" + item.Message.ID
+			if item.Message.ID == "" {
+				key = fmt.Sprintf("%s:%s:%s:%d:%s", item.Message.SelfID, item.Message.GroupID, item.Message.UserID, item.Message.Time, qqPlainText(item.Message))
+			}
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, item)
+			}
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		left, right := result[i], result[j]
+		if left.Message.Time > 0 && right.Message.Time > 0 && left.Message.Time != right.Message.Time {
+			return left.Message.Time < right.Message.Time
+		}
+		return left.ReceivedAt.Before(right.ReceivedAt)
 	})
+	return result
 }

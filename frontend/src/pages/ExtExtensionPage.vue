@@ -19,6 +19,11 @@ const busy = computed(() => ext.pending.includes('extension:' + id.value))
 const editing = ref<ExtensionOption>()
 const chatConfigOpen = ref(false)
 const contextsOpen = ref(false)
+const usage = computed(() => option.value?.usage)
+const cacheRate = computed(() => usage.value?.cachePromptTokens
+  ? (100 * usage.value.cachedPromptTokens / usage.value.cachePromptTokens).toFixed(2) + '%'
+  : '未提供')
+function tokens(value: number) { return value.toLocaleString('zh-CN') }
 
 watch([clientId, id], () => { editing.value = undefined; chatConfigOpen.value = false; contextsOpen.value = false })
 function edit() {
@@ -48,7 +53,14 @@ function deleted(extensionId: string) {
           <div><dt>所属客户端</dt><dd>{{ client?.name ?? option.clientName ?? clientId }}</dd></div>
           <div><dt>启用状态</dt><dd><span class="extension-enabled" :class="{ on: option.enabled }">{{ option.enabled ? '已启用' : '已停用' }}</span></dd></div>
           <div v-for="field in descriptor?.information" :key="field.key"><dt>{{ field.label }}</dt><dd>{{ option.values[field.key] || '—' }}</dd></div>
+          <template v-if="option.type === 'onebot11qq'">
+            <div><dt>累计 token 用量</dt><dd>{{ usage && (usage.usageRequests || !usage.requests) ? tokens(usage.totalTokens) : '未提供' }}<span v-if="usage && usage.usageRequests > 0 && usage.usageRequests < usage.requests">（已上报部分）</span></dd></div>
+            <div><dt>缓存命中率</dt><dd>{{ cacheRate }}<small v-if="usage?.cachePromptTokens">命中 {{ tokens(usage.cachedPromptTokens) }} / {{ tokens(usage.cachePromptTokens) }} 输入 tokens</small></dd></div>
+            <div><dt>累计输入 / 输出 tokens</dt><dd>{{ usage && (usage.usageRequests || !usage.requests) ? tokens(usage.promptTokens) + ' / ' + tokens(usage.completionTokens) : '未提供' }}</dd></div>
+            <div><dt>模型请求</dt><dd>{{ tokens(usage?.requests ?? 0) }} 次<small>其中 {{ tokens(usage?.usageRequests ?? 0) }} 次提供用量统计</small></dd></div>
+          </template>
         </dl>
+        <p v-if="option.type === 'onebot11qq'" class="usage-hint">用量包含主动判断、回复及工具调用后的每轮请求，清除或删除上下文后仍保留。缓存命中率仅按提供缓存统计的输入 token 计算。</p>
         <p v-if="option.lastError" class="extension-page-error" role="alert">{{ option.lastError }}</p>
         <div class="chat-actions"><button v-if="descriptor?.needsModel" type="button" class="btn" :disabled="busy" @click="chatConfigOpen = true"><Settings2 :size="15" />对话配置</button><button v-if="option.type === 'onebot11qq'" type="button" class="btn" :disabled="busy" @click="contextsOpen = true"><MessagesSquare :size="15" />上下文管理</button></div>
       </div>
@@ -67,6 +79,8 @@ function deleted(extensionId: string) {
 .extension-information div { display: grid; align-content: start; gap: 7px; min-width: 0; }
 .extension-information dt { color: var(--muted); font-size: 12px; }
 .extension-information dd { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.extension-information dd small { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.usage-hint { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .extension-enabled { display: inline-flex; padding: 2px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 12px; }
 .extension-enabled.on { background: var(--success-soft); color: var(--success); }
 .chat-actions { display: flex; flex-wrap: wrap; gap: 10px; }

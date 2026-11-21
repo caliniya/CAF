@@ -17,8 +17,10 @@ type chatExecutionOptions struct {
 	memoryScope   func(context.Context, string) (bool, error)
 	createMemory  func(*agenttool.ToolContext, string, string, []string) (string, error)
 	save          func(*chat.ChatTask) error
-	askUser       func(context.Context, string, string, string, agenttool.UserQuestion) (string, error)
-	approve       func(context.Context, string, string, string, *api.ToolApproval, func(string) (*agenttool.ChatToolConfig, error)) (string, error)
+	// 每次模型请求完成后调用一次；nil 表示该请求没有上报用量。
+	recordUsage func(*api.TokenUsage)
+	askUser     func(context.Context, string, string, string, agenttool.UserQuestion) (string, error)
+	approve     func(context.Context, string, string, string, *api.ToolApproval, func(string) (*agenttool.ChatToolConfig, error)) (string, error)
 }
 
 func (c *Core) saveExecutionChatLocked(directory string, session *chat.ChatTask, options *chatExecutionOptions) error {
