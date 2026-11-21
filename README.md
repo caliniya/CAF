@@ -6,7 +6,7 @@
 
 CAF 是 Go/Wails 制作的 Agent 框架软件。
 
-目前支持 OneBot 11 反向 WebSocket集成
+目前支持 OneBot 11 反向 WebSocket基本集成
 未来计划实现内置编辑器
 计划实现插件等扩展功能
 
