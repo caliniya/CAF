@@ -20,6 +20,8 @@ type ClientExtension struct {
 	Name      string `json:"name"`
 	Enabled   bool   `json:"enabled"`
 	AdapterID string `json:"adapterId,omitempty"`
+	Chat      *ExtensionChatConfig `json:"chat,omitempty"`
+	QQ        *QQChatOptions `json:"qq,omitempty"`
 }
 
 // ExtensionClient 是应用管理的数据容器，不引用外部工作区。

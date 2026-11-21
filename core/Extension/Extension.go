@@ -38,6 +38,7 @@ type Descriptor struct {
 	Implementation string             `json:"implementation"`
 	Name           string             `json:"name"`
 	Description    string             `json:"description,omitempty"`
+	NeedsModel     bool               `json:"needsModel"`
 	Capabilities   []Capability       `json:"capabilities"`
 	Parameters     []ParameterField   `json:"parameters"`
 	Information    []InformationField `json:"information"`
@@ -47,7 +48,7 @@ type Descriptor struct {
 type ParameterField struct {
 	Key                  string `json:"key"`
 	Label                string `json:"label"`
-	Kind                 string `json:"kind"` // text、secret、integer
+	Kind                 string `json:"kind"` // text、secret、integer、boolean
 	Required             bool   `json:"required"`
 	Default              string `json:"default,omitempty"`
 	Placeholder          string `json:"placeholder,omitempty"`
@@ -56,6 +57,7 @@ type ParameterField struct {
 	Minimum              int    `json:"minimum,omitempty"`
 	Maximum              int    `json:"maximum,omitempty"`
 	EditableWhileRunning bool   `json:"editableWhileRunning"`
+	EnabledWhen          string `json:"enabledWhen,omitempty"`
 }
 
 // InformationField 总是在信息窗口展示，InList 额外在列表行显示纯文本。
