@@ -1,7 +1,10 @@
 package Tests
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -100,6 +103,67 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	adapters, err = reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 1 || adapters[0].Name != "Renamed" {
 		t.Fatalf("edits/deletion did not persist: %+v / %v", adapters, err)
+	}
+}
+
+func TestQQAdaptersLoadMissingProactiveContextLength(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		value   string
+		want    [2]int
+		invalid bool
+	}{
+		{"missing", "", [2]int{10, 10}, false},
+		{"null", "null", [2]int{10, 10}, false},
+		{"zero", "[0,0]", [2]int{0, 0}, false},
+		{"custom", "[7,21]", [2]int{7, 21}, false},
+		{"negative", "[-1,10]", [2]int{}, true},
+		{"too-large", "[10,101]", [2]int{}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			instance := useQQAdapterCore(t)
+			options := map[string]any{"groupContext": false, "groupContextLength": 7, "contextIsolation": false, "proactiveCooldown": 17}
+			if test.value != "" {
+				options["proactiveContextLength"] = json.RawMessage(test.value)
+			}
+			stored := map[string]any{"version": 1, "adapters": []any{map[string]any{
+				"id": "qq-options-test", "name": "Bot", "token": "test-token", "selfId": "10001", "port": 6701, "chatOptions": options,
+			}}}
+			data, err := json.Marshal(stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			directory := filepath.Join(instance.Paths.Data, "qq")
+			if err := os.MkdirAll(directory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(directory, "adapters.json"), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			service := testServer[*backend.QQServer](t, instance, backend.QQServerName)
+			if err := service.Init(context.Background()); test.invalid {
+				if err == nil {
+					t.Fatal("startup accepted out-of-range proactive context lengths")
+				}
+				return
+			} else if err != nil {
+				t.Fatalf("startup failed to load saved chat options: %v", err)
+			}
+			adapter, err := instance.GetQQAdapter("qq-options-test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if adapter.Options == nil || adapter.Options.ProactiveContextLength == nil || *adapter.Options.ProactiveContextLength != test.want {
+				t.Fatalf("wrong restored proactive context lengths: %+v", adapter.Options)
+			}
+			if adapter.Options.GroupContext || adapter.Options.ContextIsolation || adapter.Options.GroupContextLength != 7 || adapter.Options.ProactiveCooldown != 17 {
+				t.Fatalf("defaults replaced existing chat options: %+v", adapter.Options)
+			}
+			parameters, err := instance.GetExtensionParameters(adapter.ID)
+			if err != nil || parameters["proactiveContextLength"] != fmt.Sprintf("%d,%d", test.want[0], test.want[1]) {
+				t.Fatalf("editor did not restore proactive context lengths: %v / %v", parameters, err)
+			}
+		})
 	}
 }
 

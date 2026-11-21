@@ -38,7 +38,7 @@ watch(
   <Teleport to="body">
     <dialog ref="dialog" class="confirmation-dialog" role="alertdialog"
       :aria-labelledby="titleId" :aria-describedby="messageId" :aria-busy="busy"
-      @click.self="cancel" @cancel.prevent="cancel" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="cancel" @keydown.stop>
       <h2 :id="titleId">{{ title }}</h2>
       <p :id="messageId" class="confirmation-message">{{ message }}</p>
       <p v-if="error" class="confirmation-error" role="alert">{{ error }}</p>

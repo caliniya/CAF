@@ -1399,7 +1399,7 @@ watch(
 
   <!-- 当前对话的工具设置 -->
   <Teleport to="body">
-    <div v-if="toolsOpen" class="overlay" @click.self="closeTools">
+    <div v-if="toolsOpen" class="overlay">
       <div class="tools-dialog" role="dialog" aria-modal="true" aria-label="工具配置">
         <header class="tools-head">
           <div>

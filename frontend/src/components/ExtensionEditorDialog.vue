@@ -25,6 +25,10 @@ const valid = computed(() => !!descriptor.value && descriptor.value.parameters.e
   const value = values.value[field.key] ?? ''
   if (field.kind === 'boolean') return value === 'true' || value === 'false'
   if (!value.trim()) return !field.required
+  if (field.kind === 'integer-pair') {
+    const values = value.split(/[,，\s]+/)
+    return values.length === 2 && values.every(item => item.trim() !== '' && Number.isInteger(Number(item)) && Number(item) >= (field.minimum ?? 0) && Number(item) <= (field.maximum ?? Infinity))
+  }
   if (field.kind === 'integer' && (!Number.isInteger(Number(value)) || Number(value) < (field.minimum ?? -Infinity) || Number(value) > (field.maximum ?? Infinity))) return false
   if (field.pattern) { try { if (!new RegExp(field.pattern, 'u').test(value)) return false } catch { /* native backend validates unsupported patterns */ } }
   return true
@@ -71,7 +75,7 @@ async function remove() {
 }
 </script>
 <template>
-  <ExtensionWindow :open="open" :title="option ? '编辑扩展 · ' + option.name : descriptor ? '创建扩展 · ' + descriptor.name : '新建扩展'" :busy="busy" @close="emit('close')">
+  <ExtensionWindow :open="open" :title="option ? '编辑扩展 · ' + option.name : descriptor ? '创建扩展 · ' + descriptor.name : '新建扩展'" :busy="busy" wide @close="emit('close')">
     <p v-if="loading" class="muted" role="status">正在加载参数…</p>
     <ExtensionTypeCatalog v-else-if="!option && !selectedType" :types="ext.types" selectable :busy="busy" @select="selectedType = $event" />
     <form v-else :id="formId" @submit.prevent="save">

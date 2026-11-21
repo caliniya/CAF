@@ -34,7 +34,7 @@ func PathsFromExecutable(executable, dataOverride string) (platform.Paths, error
 	log.Print(root, "root", data, "data")
 	return platform.Paths{
 		Root: root, Data: data, Logs: filepath.Join(data, "logs"),
-		InternalWorkspaces: filepath.Join(root, "InternalWorkspaces"),
+		InternalWorkspaces: filepath.Join(data, "InternalWorkspaces"),
 		ConfigFile:         filepath.Join(data, "config", "MainConfig.json"),
 	}, nil
 }

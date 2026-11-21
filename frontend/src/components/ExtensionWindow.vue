@@ -16,7 +16,7 @@ watch(() => props.open, async (open) => {
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="extension-window" :class="{ wide }" :aria-labelledby="titleId" :aria-busy="busy"
-      @cancel.prevent="close" @click.self="close" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="close" @keydown.stop>
       <header class="window-head"><h2 :id="titleId">{{ title }}</h2><button type="button" class="btn btn-ghost window-close" :disabled="busy" aria-label="关闭窗口" @click="close"><X :size="17" aria-hidden="true" /></button></header>
       <div class="window-content"><slot /></div>
       <footer v-if="$slots.footer" class="window-footer"><slot name="footer" /></footer>

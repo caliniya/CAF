@@ -16,7 +16,9 @@ type chatExecutionOptions struct {
 	memoryContext string
 	memoryScope   func(context.Context, string) (bool, error)
 	createMemory  func(*agenttool.ToolContext, string, string, []string) (string, error)
-	save          func(*chat.ChatTask) error
+	// 声明保持稳定，宿主可以按当前入口另外限制工具执行。
+	checkTool func(string) error
+	save      func(*chat.ChatTask) error
 	// 每次模型请求完成后调用一次；nil 表示该请求没有上报用量。
 	recordUsage func(*api.TokenUsage)
 	askUser     func(context.Context, string, string, string, agenttool.UserQuestion) (string, error)

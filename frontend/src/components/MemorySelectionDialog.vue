@@ -79,7 +79,7 @@ function onEscape(event: KeyboardEvent) {
 </script>
 
 <template>
-  <dialog ref="dialog" class="picker" aria-labelledby="memory-picker-title" @click.self="cancel" @cancel.prevent="cancel"
+  <dialog ref="dialog" class="picker" aria-labelledby="memory-picker-title" closedby="closerequest" @cancel.prevent="cancel"
     @pointerdown="closeMenuOnOutside" @keydown.stop="onEscape">
     <form class="picker-body" @submit.prevent="confirm">
       <header class="picker-head">

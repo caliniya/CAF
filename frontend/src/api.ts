@@ -103,7 +103,8 @@ export interface ClientExtension {
 export interface ExtensionParameter {
   key: string
   label: string
-  kind: 'text' | 'secret' | 'integer' | 'boolean'
+  kind: 'text' | 'secret' | 'integer' | 'integer-pair' | 'boolean'
+  inputLabels?: string[]
   required: boolean
   default?: string
   placeholder?: string

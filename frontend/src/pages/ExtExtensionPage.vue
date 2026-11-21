@@ -83,6 +83,6 @@ function deleted(extensionId: string) {
 .usage-hint { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .extension-enabled { display: inline-flex; padding: 2px 8px; border-radius: 5px; background: var(--page); color: var(--muted); font-size: 12px; }
 .extension-enabled.on { background: var(--success-soft); color: var(--success); }
-.chat-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.chat-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }.chat-actions .btn { width: 100%; }
 @media(max-width: 640px) { .extension-information { grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 20px; } }
 </style>

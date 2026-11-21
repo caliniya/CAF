@@ -75,7 +75,7 @@ async function save() {
       <div v-if="tab === 'main'" class="config-menu">
         <button type="button" class="config-row" @click="tab = 'model'"><Bot :size="18" /><span>模型配置<small>{{ selectedProvider?.Name || selectedProvider?.ServerAddress || '未选择供应商' }} · {{ config.model || '未选择模型' }}</small></span><ChevronRight :size="16" /></button>
         <button type="button" class="config-row" @click="tab = 'persona'"><UserRound :size="18" /><span>人设配置<small>{{ selectedPersona?.name ?? '未选择人设' }}</small></span><ChevronRight :size="16" /></button>
-        <button type="button" class="config-row" @click="tab = 'tools'"><Wrench :size="18" /><span>工具配置<small>使用自动编辑权限，在对应的内部工作区执行</small></span><ChevronRight :size="16" /></button>
+        <button type="button" class="config-row" @click="tab = 'tools'"><Wrench :size="18" /><span>工具配置<small>普通消息只使用记忆工具；直接 @ 后可使用这里启用的工具</small></span><ChevronRight :size="16" /></button>
         <button type="button" class="config-row" role="switch" :aria-checked="config.toolConfig?.strictMode ?? false" @click="strict"><ShieldCheck :size="18" /><span>严格模式<small>权限不足时要求模型主动申请执行</small></span><Check v-if="config.toolConfig?.strictMode" :size="16" /></button>
       </div>
       <div v-else-if="tab === 'model'" class="choices">

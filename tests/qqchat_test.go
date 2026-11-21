@@ -304,7 +304,7 @@ func TestQQChatContextRoutingAndAgentSeparation(t *testing.T) {
 	if strings.Contains(qqRequestText(request), "separate-private-first") {
 		t.Fatal("private senders shared a context")
 	}
-	f.message(t, "group", 30003, 23456, "mention-with-agent-disabled", true)
+	f.exchange(t, "group", 30003, 23456, "mention-with-agent-disabled", true)
 	request = f.exchange(t, "group", 30003, 34567, "助手 other-group-first", false)
 	if strings.Contains(qqRequestText(request), "shared-first") {
 		t.Fatal("groups reused shared history")
@@ -322,8 +322,8 @@ func TestQQChatContextRoutingAndAgentSeparation(t *testing.T) {
 
 func TestQQChatProactiveDecisionAndWhitelist(t *testing.T) {
 	var decisions atomic.Int32
-	f := useQQChat(t, map[string]string{"groupContext": "false", "whitelistEnabled": "true", "whitelist": "30003 40004", "proactiveEnabled": "true", "proactiveWidth": "2", "proactiveCooldown": "0"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
-		if len(request.Tools) == 0 && strings.Contains(qqRequestText(request), "仅输出 JSON") {
+	f := useQQChat(t, map[string]string{"groupContext": "false", "whitelistEnabled": "true", "whitelist": "30003 40004", "proactiveEnabled": "true", "proactiveContextLength": "0,0", "proactiveCooldown": "0"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
+		if len(request.Tools) == 0 && strings.Contains(qqRequestText(request), "判断是否有必要主动参与") {
 			count := decisions.Add(1)
 			qqSSE(w, fmt.Sprintf(`{"reply":%t}`, count > 1))
 			return
@@ -332,7 +332,6 @@ func TestQQChatProactiveDecisionAndWhitelist(t *testing.T) {
 	})
 	f.message(t, "group", 50005, 23456, "excluded-proactive-person", false)
 	f.message(t, "group", 30003, 23456, "first-batch-one", false)
-	f.message(t, "group", 40004, 23456, "first-batch-two", false)
 	request := f.request(t)
 	if len(request.Tools) != 0 || strings.Contains(qqRequestText(request), "excluded-proactive-person") {
 		t.Fatal("proactive decision used tools or unlisted member")
@@ -346,11 +345,10 @@ func TestQQChatProactiveDecisionAndWhitelist(t *testing.T) {
 		t.Fatal("negative proactive batch was saved into a chat")
 	}
 	f.message(t, "group", 30003, 23456, "second-batch-one", false)
-	f.message(t, "group", 40004, 23456, "second-batch-two", false)
 	f.request(t)
 	request = f.request(t)
 	text := qqRequestText(request)
-	if !strings.Contains(text, "second-batch-one") || !strings.Contains(text, "second-batch-two") || strings.Contains(text, "first-batch-one") {
+	if !strings.Contains(text, "second-batch-one") || strings.Contains(text, "first-batch-one") {
 		t.Fatal("proactive chat content wrong")
 	}
 	if reply := f.reply(t); reply.Type != qq.QQMessageGroup || reply.GroupID != "23456" {
@@ -435,7 +433,7 @@ func TestQQChatPersonalMemoryAndFileTools(t *testing.T) {
 		}
 		qqSSE(w, "完成")
 	})
-	f.message(t, "private", 30003, 0, "store-memory", false)
+	f.message(t, "group", 30003, 23456, "store-memory", true)
 	f.request(t)
 	request := f.request(t)
 	f.reply(t)
@@ -488,7 +486,7 @@ func TestQQChatOptionsValidationAndConfigPersistence(t *testing.T) {
 	if values["whitelist"] != "30003, 40004" {
 		t.Fatalf("QQ whitelist was not normalized: %s", values["whitelist"])
 	}
-	for key, value := range map[string]string{"whitelist": "-1", "groupWhitelist": "..", "proactiveWidth": "0", "groupContextLength": "101", "agentEnabled": "yes"} {
+	for key, value := range map[string]string{"whitelist": "-1", "groupWhitelist": "..", "proactiveContextLength": "-1,101", "groupContextLength": "101", "agentEnabled": "yes"} {
 		bad := map[string]string{}
 		for k, v := range values {
 			bad[k] = v
@@ -598,7 +596,7 @@ func TestQQChatStrictApprovalAndQuestions(t *testing.T) {
 			if _, err := f.core.UpdateClientExtensionChatConfig(f.clientID, f.extensionID, *config); err != nil {
 				t.Fatal(err)
 			}
-			f.message(t, "group", 30003, 23456, "助手 probe-first", false)
+			f.message(t, "group", 30003, 23456, "助手 probe-first", true)
 			request := f.request(t)
 			declared := false
 			for _, tool := range request.Tools {
@@ -630,7 +628,7 @@ func TestQQChatStrictApprovalAndQuestions(t *testing.T) {
 			if probe.executions.Load() != 1 {
 				t.Fatal("approved original call not executed once")
 			}
-			f.message(t, "group", 30003, 23456, "助手 probe-again", false)
+			f.message(t, "group", 30003, 23456, "助手 probe-again", true)
 			f.request(t)
 			request = f.request(t)
 			if !strings.Contains(qqRequestText(request), "workspace-probe-executed") {
@@ -639,7 +637,7 @@ func TestQQChatStrictApprovalAndQuestions(t *testing.T) {
 			if reply := f.reply(t); qqPlainReply(reply) != "完成" || probe.executions.Load() != 2 {
 				t.Fatal("workspace grant requested approval again")
 			}
-			f.message(t, "group", 30003, 23456, "助手 ask-question", false)
+			f.message(t, "group", 30003, 23456, "助手 ask-question", true)
 			f.request(t)
 			question := qqPlainReply(f.reply(t))
 			id = regexp.MustCompile(`request-[0-9a-f]{32}`).FindString(question)
@@ -671,7 +669,7 @@ func TestQQChatRejectsWritesOutsideInternalWorkspace(t *testing.T) {
 		}
 		qqSSE(w, "完成")
 	})
-	f.message(t, "private", 30003, 0, "write-outside", false)
+	f.message(t, "private", 30003, 0, "write-outside", true)
 	f.request(t)
 	request := f.request(t)
 	if !strings.Contains(qqRequestText(request), "QQ 对话只允许") {
@@ -808,8 +806,8 @@ func TestQQChatDeletingClientArchivesInFlightContext(t *testing.T) {
 
 func TestQQChatProactiveDoesNotQueueDuplicateBatches(t *testing.T) {
 	var decisions atomic.Int32
-	f := useQQChat(t, map[string]string{"groupContext": "false", "proactiveEnabled": "true", "proactiveWidth": "1", "proactiveCooldown": "60"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
-		if len(request.Tools) == 0 && strings.Contains(qqRequestText(request), "仅输出 JSON") {
+	f := useQQChat(t, map[string]string{"groupContext": "false", "proactiveEnabled": "true", "proactiveCooldown": "60"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
+		if len(request.Tools) == 0 && strings.Contains(qqRequestText(request), "判断是否有必要主动参与") {
 			decisions.Add(1)
 			qqSSE(w, `{"reply":true}`)
 			return

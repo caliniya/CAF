@@ -36,7 +36,7 @@ async function toggle(option: ExtensionOption, event: Event) {
   </ul>
 </template>
 <style scoped>
-.options-list { padding: 0; margin: 0; list-style: none; border: 1px solid var(--outline); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.options-list { width: 100%; padding: 0; margin: 0; list-style: none; border: 1px solid var(--outline); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .option-row { display: flex; align-items: center; padding-right: 16px; }
 .option-row + .option-row { border-top: 1px solid var(--outline); }
 .option-row:hover { background: var(--page); }

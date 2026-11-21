@@ -34,7 +34,7 @@ watch(
 <template>
   <Teleport to="body">
     <dialog :id="id" ref="dialog" class="toolkit-details" :aria-labelledby="titleId"
-      @click.self="emit('close')" @cancel.prevent="emit('close')" @close="emit('close')" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="emit('close')" @close="emit('close')" @keydown.stop>
       <div v-if="kit" class="toolkit-dialog-body">
         <header class="details-head">
           <div>

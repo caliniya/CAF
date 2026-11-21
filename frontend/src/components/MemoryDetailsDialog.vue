@@ -75,7 +75,7 @@ function entryAction(kind: 'edit' | 'delete') {
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="memory-details-dialog" :aria-labelledby="titleId" :aria-busy="loading"
-      @click.self="close" @cancel.prevent="close" @keydown.stop="onEscape" @pointerdown="closeMenuOnOutside">
+      closedby="closerequest" @cancel.prevent="close" @keydown.stop="onEscape" @pointerdown="closeMenuOnOutside">
       <div v-if="library" class="memory-details-body">
         <header class="memory-details-head">
           <div class="memory-title-row">

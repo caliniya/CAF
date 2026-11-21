@@ -54,7 +54,7 @@ function confirmSelection() {
 </script>
 
 <template>
-  <dialog ref="dialog" class="picker" @click.self="emit('cancel')" @cancel.prevent="emit('cancel')">
+  <dialog ref="dialog" class="picker" closedby="closerequest" @cancel.prevent="emit('cancel')">
     <form class="picker-body" @submit.prevent="confirmSelection">
       <header class="picker-head">
         <div>

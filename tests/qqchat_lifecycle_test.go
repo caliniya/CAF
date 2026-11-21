@@ -95,8 +95,8 @@ func TestQQChatDefaultProactiveJudgesEveryQueuedMessage(t *testing.T) {
 		qqSSE(w, `{"reply":false}`)
 	})
 	parameters, err := f.core.GetClientExtensionParameters(f.clientID, f.extensionID)
-	if err != nil || parameters["proactiveWidth"] != "1" {
-		t.Fatalf("wrong default proactive width: %v / %v", parameters, err)
+	if err != nil || parameters["proactiveContextLength"] != "10,10" || parameters["proactiveWidth"] != "" {
+		t.Fatalf("wrong default proactive context lengths: %v / %v", parameters, err)
 	}
 	f.message(t, "group", 50005, 23456, "nearby-unlisted-visible", false)
 	f.message(t, "group", 30003, 23456, "judge-first", false)
@@ -114,14 +114,24 @@ func TestQQChatDefaultProactiveJudgesEveryQueuedMessage(t *testing.T) {
 	default:
 	}
 	close(gate)
+	expectedNearby := []string{"nearby-unlisted-visible", "judge-first"}
 	for _, marker := range []string{"judge-second", "judge-third"} {
 		request := f.request(t)
 		var input struct {
+			Nearby   []qq.QQMessage `json:"nearby"`
 			Messages []qq.QQMessage `json:"messages"`
 		}
 		if err := json.Unmarshal([]byte(fmt.Sprint(request.Messages[1].Content)), &input); err != nil || len(input.Messages) != 1 || qqPlainReply(input.Messages[0]) != marker {
 			t.Fatalf("queued message was dropped or batched: %+v / %v", input, err)
 		}
+		var nearby []string
+		for _, message := range input.Nearby {
+			nearby = append(nearby, qqPlainReply(message))
+		}
+		if strings.Join(nearby, "\n") != strings.Join(expectedNearby, "\n") {
+			t.Fatalf("queued judgment included future messages or lost its context snapshot: %v / %v", nearby, expectedNearby)
+		}
+		expectedNearby = append(expectedNearby, marker)
 	}
 	if decisions.Load() != 3 {
 		t.Fatalf("expected one judgment per message, got %d", decisions.Load())
@@ -135,7 +145,7 @@ func TestQQChatDefaultProactiveJudgesEveryQueuedMessage(t *testing.T) {
 
 func TestQQChatProactiveReplySeesAllMembersAndReferences(t *testing.T) {
 	f := useQQChat(t, map[string]string{"proactiveEnabled": "true", "proactiveCooldown": "0", "whitelistEnabled": "true", "whitelist": "30003"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
-		if strings.Contains(qqRequestText(request), "仅输出 JSON") {
+		if strings.Contains(qqRequestText(request), "判断是否有必要主动参与") {
 			qqSSE(w, `{"reply":true}`)
 		} else {
 			qqSSE(w, "参与讨论")

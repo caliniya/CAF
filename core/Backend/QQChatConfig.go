@@ -23,18 +23,18 @@ type ExtensionChatConfig struct {
 }
 
 type QQChatOptions struct {
-	TriggerKeywords    []string `json:"triggerKeywords"`
-	GroupContext       bool     `json:"groupContext"`
-	GroupContextLength int      `json:"groupContextLength"`
-	WhitelistEnabled   bool     `json:"whitelistEnabled"`
-	Whitelist          []string `json:"whitelist"`
-	ContextIsolation   bool     `json:"contextIsolation"`
-	ProactiveEnabled   bool     `json:"proactiveEnabled"`
-	ProactiveContextLength *[2]int `json:"proactiveContextLength"`
-	ProactiveCooldown  int      `json:"proactiveCooldown"`
-	LongTermMemory     bool     `json:"longTermMemory"`
-	AgentEnabled       bool     `json:"agentEnabled"`
-	GroupWhitelist     []string `json:"groupWhitelist"`
+	TriggerKeywords        []string `json:"triggerKeywords"`
+	GroupContext           bool     `json:"groupContext"`
+	GroupContextLength     int      `json:"groupContextLength"`
+	WhitelistEnabled       bool     `json:"whitelistEnabled"`
+	Whitelist              []string `json:"whitelist"`
+	ContextIsolation       bool     `json:"contextIsolation"`
+	ProactiveEnabled       bool     `json:"proactiveEnabled"`
+	ProactiveContextLength *[2]int  `json:"proactiveContextLength"`
+	ProactiveCooldown      int      `json:"proactiveCooldown"`
+	LongTermMemory         bool     `json:"longTermMemory"`
+	AgentEnabled           bool     `json:"agentEnabled"`
+	GroupWhitelist         []string `json:"groupWhitelist"`
 }
 
 func defaultQQChatOptions() QQChatOptions {
@@ -158,6 +158,8 @@ func parseQQChatOptions(parameters map[string]string, previous *QQChatOptions) (
 }
 
 func (o QQChatOptions) parameters() map[string]string {
+	// 已保存的配置可能缺少新增字段；导出前补默认值，保留显式设置的 0,0。
+	o = copyQQChatOptions(&o)
 	return map[string]string{
 		"triggerKeywords": strings.Join(o.TriggerKeywords, ", "), "groupContext": strconv.FormatBool(o.GroupContext),
 		"groupContextLength": strconv.Itoa(o.GroupContextLength), "whitelistEnabled": strconv.FormatBool(o.WhitelistEnabled),

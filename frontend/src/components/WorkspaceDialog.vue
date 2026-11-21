@@ -69,7 +69,7 @@ watch(
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="workspace-dialog" :aria-labelledby="titleId"
-      @click.self="cancel" @cancel.prevent="cancel" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="cancel" @keydown.stop>
       <form @submit.prevent="confirm">
         <header class="workspace-dialog-head">
           <h2 :id="titleId">新建工作区</h2>

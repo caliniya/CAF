@@ -5,6 +5,8 @@ import (
 	create "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/CreateMemory"
 )
 
+const SetName = "长期记忆工具"
+
 type MainTools struct {
 	*agenttool.ToolSetMeta
 }
@@ -32,7 +34,7 @@ func InitMemoryTool() *MainTools {
 
 	return &MainTools{
 		ToolSetMeta: &agenttool.ToolSetMeta{
-			Name:        "长期记忆工具",
+			Name:        SetName,
 			Description: "内置的记忆相关工具",
 			Enabled:     true,
 			ToolKits:    map[string]agenttool.ToolKit{"创建记忆": create.InitCreateMemory()},

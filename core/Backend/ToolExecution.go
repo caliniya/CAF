@@ -140,7 +140,7 @@ func (r *toolExecutionRun) execute(call *api.ToolCall) (string, error) {
 		return "", errors.New("工具调用 ID 为空或重复")
 	}
 	r.seen[call.ID] = true
-	prepared, err := prepareToolCall(*call, r.context, r.enabled)
+	prepared, err := r.prepare(*call)
 	if err != nil {
 		return "", err
 	}
@@ -168,6 +168,15 @@ func (r *toolExecutionRun) execute(call *api.ToolCall) (string, error) {
 	return invokeTool(prepared, ctx)
 }
 
+func (r *toolExecutionRun) prepare(call api.ToolCall) (*preparedToolCall, error) {
+	if r.options != nil && r.options.checkTool != nil {
+		if err := r.options.checkTool(call.Name); err != nil {
+			return nil, err
+		}
+	}
+	return prepareToolCall(call, r.context, r.enabled)
+}
+
 func (r *toolExecutionRun) bindQuestion(ctx *agenttool.ToolContext, callID string) {
 	ctx.AskUser = func(parent context.Context, question agenttool.UserQuestion) (string, error) {
 		if r.options != nil && r.options.askUser != nil {
@@ -183,7 +192,7 @@ func (r *toolExecutionRun) requestBlocked(display *api.ToolCall, id string) (str
 		return "", errors.New("调用不存在、未被权限拦截，或已经申请处理")
 	}
 	delete(r.blocked, id)
-	prepared, err := prepareToolCall(original, r.context, r.enabled)
+	prepared, err := r.prepare(original)
 	if err != nil {
 		return "", err
 	}

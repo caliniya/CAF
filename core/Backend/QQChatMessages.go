@@ -113,8 +113,15 @@ func qqProactiveContext(nearby, sender []qqRecentMessage, lengths [2]int) []qqRe
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		left, right := result[i], result[j]
-		if left.Message.Time > 0 && right.Message.Time > 0 && left.Message.Time != right.Message.Time {
-			return left.Message.Time < right.Message.Time
+		leftTime, rightTime := left.ReceivedAt, right.ReceivedAt
+		if left.Message.Time > 0 {
+			leftTime = time.Unix(left.Message.Time, 0)
+		}
+		if right.Message.Time > 0 {
+			rightTime = time.Unix(right.Message.Time, 0)
+		}
+		if !leftTime.Equal(rightTime) {
+			return leftTime.Before(rightTime)
 		}
 		return left.ReceivedAt.Before(right.ReceivedAt)
 	})

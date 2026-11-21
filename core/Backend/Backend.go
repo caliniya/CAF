@@ -981,6 +981,8 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 			enabled = append(enabled, request)
 		}
 	}
+	// 注册表用 map 保存；声明排序固定，避免相同配置的请求前缀随机变化。
+	slices.SortFunc(enabled, func(left, right apiImpl.Tool) int { return strings.Compare(left.Name, right.Name) })
 	return enabled
 }
 

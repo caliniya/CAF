@@ -259,7 +259,7 @@ function contextLabel(model: Model) {
 
   <!-- 新建 / 编辑：同一个弹窗 -->
   <Teleport to="body">
-    <div v-if="dialogOpen" class="overlay" @click.self="closeDialog">
+    <div v-if="dialogOpen" class="overlay">
       <div class="dialog" role="dialog" aria-modal="true">
         <header class="dialog-head">
           <h2>{{ editing ? '编辑模型供应商' : '添加模型供应商' }}</h2>
@@ -313,7 +313,7 @@ function contextLabel(model: Model) {
     </div>
 
     <!-- 删除确认 -->
-    <div v-if="confirmDelete" class="overlay overlay-top" @click.self="confirmDelete = false">
+    <div v-if="confirmDelete" class="overlay overlay-top">
       <div class="confirm" role="alertdialog" aria-modal="true">
         <h2>删除这个配置？</h2>
         <p class="sub">

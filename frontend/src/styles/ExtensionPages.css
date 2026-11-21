@@ -6,7 +6,7 @@
 .extension-page-heading p { margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .extension-page-header > .btn:last-child { flex-shrink: 0; }
 .extension-page-content { flex: 1; min-height: 0; padding: 24px 28px; overflow-y: auto; }
-.extension-page-body { max-width: 1000px; }
+.extension-page-body { width: 100%; min-width: 0; }
 .extension-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .extension-page-toolbar h2 { font-size: 15px; font-weight: 500; }
 .extension-page-hint { color: var(--muted); font-size: 13px; }

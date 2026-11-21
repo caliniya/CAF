@@ -38,7 +38,7 @@ watch(() => props.open, async (open) => {
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="memory-library-dialog" :aria-labelledby="titleId" :aria-busy="busy"
-      @click.self="cancel" @cancel.prevent="cancel" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="cancel" @keydown.stop>
       <form @submit.prevent="confirm">
         <h2 :id="titleId">{{ mode === 'create' ? '创建记忆' : '重命名记忆' }}</h2>
         <label class="field">

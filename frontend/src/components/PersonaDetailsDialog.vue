@@ -24,7 +24,7 @@ watch(
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="persona-dialog" aria-labelledby="persona-details-title"
-      @click.self="emit('close')" @cancel.prevent="emit('close')" @close="emit('close')">
+      closedby="closerequest" @cancel.prevent="emit('close')" @close="emit('close')">
       <div v-if="persona" class="persona-dialog-body">
         <header class="persona-details-head">
           <div>

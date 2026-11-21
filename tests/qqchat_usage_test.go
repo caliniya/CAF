@@ -69,7 +69,7 @@ func (f *qqChatFixture) restartQQ(t *testing.T) {
 func TestQQChatUsageIncludesJudgmentsAndEveryToolRound(t *testing.T) {
 	var judgments, rounds atomic.Int32
 	f := useQQChat(t, map[string]string{"groupContext": "false", "proactiveEnabled": "true", "proactiveCooldown": "0"}, func(w http.ResponseWriter, r *http.Request, request api.ChatCompletionsRequest) {
-		if strings.Contains(qqRequestText(request), "仅输出 JSON") {
+		if strings.Contains(qqRequestText(request), "判断是否有必要主动参与") {
 			if judgments.Add(1) == 1 {
 				qqSSEUsage(w, `{"reply":false}`, &api.TokenUsage{PromptTokens: 1000, CompletionTokens: 10, TotalTokens: 1010,
 					PromptCacheHitTokens: intPointer(500), PromptCacheMissTokens: intPointer(500)}, 2)
@@ -114,8 +114,8 @@ func TestQQChatUsageIncludesJudgmentsAndEveryToolRound(t *testing.T) {
 	if record.ContextTokens == nil || *record.ContextTokens != 4150 {
 		t.Fatalf("context length accumulated lifetime input or reasoning twice: %+v", record)
 	}
-	if data, err := os.ReadFile(filepath.Join(record.Workspace.Path, "usage.txt")); err != nil || string(data) != "written" {
-		t.Fatalf("tool round did not execute: %s / %v", data, err)
+	if _, err := os.Stat(filepath.Join(record.Workspace.Path, "usage.txt")); !os.IsNotExist(err) {
+		t.Fatalf("ordinary proactive reply executed a non-memory tool: %v", err)
 	}
 	clientOptions, err := f.core.ListClientExtensions(f.clientID)
 	if err != nil || len(clientOptions) != 1 || clientOptions[0].Usage == nil || *clientOptions[0].Usage != stats {

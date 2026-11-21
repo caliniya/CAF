@@ -20,7 +20,7 @@ watch(() => props.open, async (open) => {
 <template>
   <Teleport to="body">
     <dialog ref="dialog" class="client-dialog" :aria-labelledby="titleId" :aria-busy="busy"
-      @click.self="cancel" @cancel.prevent="cancel" @keydown.stop>
+      closedby="closerequest" @cancel.prevent="cancel" @keydown.stop>
       <form @submit.prevent="valid && !busy && emit('confirm', name.trim(), id)">
         <header><h2 :id="titleId">新建客户端</h2><button type="button" class="btn btn-ghost" aria-label="关闭窗口" :disabled="busy" @click="cancel"><X :size="16" /></button></header>
         <div class="client-dialog-content">
