@@ -12,6 +12,7 @@ import (
 	filetool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/FileTool"
 	backend "github.com/caliniya/caf/core/Backend"
 	desktopBackend "github.com/caliniya/caf/platform/backend/desktop"
+	identity "github.com/caliniya/caf/utils/id"
 )
 
 func useFileToolKit(t *testing.T) *filetool.FileTool {
@@ -29,6 +30,15 @@ func writeFileToolFixture(t *testing.T, path, content string) {
 	}
 }
 
+func fileToolContext(t *testing.T, workspace string, permission agenttool.PermissionLevel) *agenttool.ToolContext {
+	t.Helper()
+	ctx := agenttool.CreateContext(workspace, permission)
+	ctx.CallID = "test-file-call"
+	ctx.WorkspaceID = identity.MustNew(identity.Workspace)
+	ctx.RecoveryFile = filepath.Join(t.TempDir(), identity.MustNew(identity.Recovery)+".json")
+	return ctx
+}
+
 func TestFileToolRegistration(t *testing.T) {
 	kit := filetool.InitFileTool()
 	want := map[string]agenttool.PermissionLevel{
@@ -36,6 +46,7 @@ func TestFileToolRegistration(t *testing.T) {
 		"ListDirectory": agenttool.PermissionReadOnly,
 		"SearchFiles":   agenttool.PermissionReadOnly,
 		"WriteFile":     agenttool.PermissionAutoEdit,
+		"DeleteFile":    agenttool.PermissionAutoEdit,
 	}
 	if len(kit.List()) != len(want) || len(kit.ListName()) != len(want) {
 		t.Fatalf("文件工具没有全部注册：%v", kit.ListName())
@@ -209,7 +220,7 @@ func TestFileToolWriteFile(t *testing.T) {
 	workspace := t.TempDir()
 	target := filepath.Join(workspace, "target.txt")
 	writeFileToolFixture(t, target, "很长的原始文件内容，覆盖后不应留下末尾")
-	ctx := agenttool.CreateContext(workspace, agenttool.PermissionAutoEdit)
+	ctx := fileToolContext(t, workspace, agenttool.PermissionAutoEdit)
 	for _, content := range []string{"新内容\n", "", "再次写入"} {
 		output, err := kit.Tools["WriteFile"].Fun(ctx, map[string]any{"path": []any{"target.txt"}, "content": content})
 		if err != nil {
@@ -307,7 +318,7 @@ func TestFileToolWritePermissions(t *testing.T) {
 		t.Fatalf("不应在工作区外创建文件：%v", err)
 	}
 	for _, permission := range []agenttool.PermissionLevel{agenttool.PermissionAutoApprove, agenttool.PermissionFullAccess} {
-		ctx := agenttool.CreateContext("", permission)
+		ctx := fileToolContext(t, "", permission)
 		if _, err := kit.Tools["WriteFile"].Fun(ctx, map[string]any{"path": []string{external}, "content": "允许写入"}); err != nil {
 			t.Fatalf("权限 %d 应允许绝对路径写入：%v", permission, err)
 		}
@@ -354,7 +365,7 @@ func TestFileToolSymlinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join("..", "outside", "keep.txt"), filepath.Join(workspace, "linked.txt")); err != nil {
 		t.Fatal(err)
 	}
-	ctx := agenttool.CreateContext(workspace, agenttool.PermissionAutoEdit)
+	ctx := fileToolContext(t, workspace, agenttool.PermissionAutoEdit)
 	for _, path := range [][]string{{"linked", "keep.txt"}, {"linked", "new.txt"}, {"linked.txt"}} {
 		for _, byLine := range []bool{false, true} {
 			arguments := map[string]any{"path": path, "content": "禁止越界"}

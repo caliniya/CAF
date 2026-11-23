@@ -18,7 +18,7 @@ func TestPortableDefaults(t *testing.T) {
 	if p.ConfigFile != filepath.Join(p.Data, "config", "MainConfig.json") {
 		t.Fatalf("unexpected configuration path: %s", p.ConfigFile)
 	}
-	if p.InternalWorkspaces != filepath.Join(root, "InternalWorkspaces") {
+	if p.InternalWorkspaces != filepath.Join(p.Data, "InternalWorkspaces") {
 		t.Fatalf("unexpected internal workspace path: %s", p.InternalWorkspaces)
 	}
 	if _, err := os.Stat(p.Data); !os.IsNotExist(err) {
@@ -36,6 +36,9 @@ func TestOverridesAreRelativeToExecutableNotWorkingDirectory(t *testing.T) {
 		}
 		if err != nil || p.Data != want || p.ConfigFile != filepath.Join(want, "config", "MainConfig.json") {
 			t.Fatalf("unexpected override: %+v, %v", p, err)
+		}
+		if p.InternalWorkspaces != filepath.Join(want, "InternalWorkspaces") {
+			t.Fatalf("internal workspaces did not follow data override: %s", p.InternalWorkspaces)
 		}
 	}
 }

@@ -71,7 +71,7 @@ func approvalModel(t *testing.T, core *backend.Core, rounds ...func(api.ChatComp
 		}
 		index := int(requests.Add(1)) - 1
 		w.Header().Set("Content-Type", "text/event-stream")
-		if index >= len(rounds) {
+		if index >= len(rounds) || rounds[index] == nil {
 			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"完成\"}}]}\n\ndata: [DONE]\n\n")
 			return
 		}

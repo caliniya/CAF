@@ -274,12 +274,12 @@ func (m *MemoryServer) Search(ctx context.Context, enabledIDs []string, queries 
 				if query == "" {
 					continue
 				}
-				if strings.Contains(strings.ToLower(memory.Data), strings.ToLower(query)) {
+				if strings.Contains(strings.ToLower(memory.Data), strings.ToLower(query)) || strings.Contains(strings.ToLower(memory.Name), strings.ToLower(query)) {
 					match = true
 				}
 				if memory.Tag != nil {
 					for _, tag := range *memory.Tag {
-						if strings.EqualFold(tag, query) {
+						if strings.Contains(strings.ToLower(tag), strings.ToLower(query)) {
 							match = true
 						}
 					}

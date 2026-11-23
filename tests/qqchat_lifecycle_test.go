@@ -183,9 +183,17 @@ func TestQQChatDeleteRemovesWorkspaceHistoryAndCancelsQueue(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(item.Workspace.Path, "keep-or-delete.txt"), []byte("workspace-data"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		cache := filepath.Join(f.core.Paths.InternalWorkspaces, "WorkspaceCache", item.Workspace.ID)
+		if err := os.MkdirAll(cache, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeFileToolFixture(t, filepath.Join(cache, "recovery-marker.json"), "workspace-recovery-data")
 	}
 	if err := f.core.ClearQQContext(f.clientID, f.extensionID, deleted.ID); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(f.core.Paths.InternalWorkspaces, "WorkspaceCache", deleted.Workspace.ID, "recovery-marker.json")); err != nil {
+		t.Fatal("clearing a context should retain its archived recovery data", err)
 	}
 	file := filepath.Join(deleted.Workspace.Path, "nested", "deep", "file.txt")
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
@@ -210,7 +218,7 @@ func TestQQChatDeleteRemovesWorkspaceHistoryAndCancelsQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory := filepath.Join(f.core.Paths.Data, "ext", "clients", f.clientID, "qq", f.extensionID)
-	for _, path := range []string{deleted.Workspace.Path, filepath.Join(directory, "sessions", deleted.ID+".json"), filepath.Join(directory, "history", deleted.ID)} {
+	for _, path := range []string{deleted.Workspace.Path, filepath.Join(directory, "sessions", deleted.ID+".json"), filepath.Join(directory, "history", deleted.ID), filepath.Join(f.core.Paths.InternalWorkspaces, "WorkspaceCache", deleted.Workspace.ID)} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("deleted context data still exists: %s / %v", path, err)
 		}
@@ -220,6 +228,9 @@ func TestQQChatDeleteRemovesWorkspaceHistoryAndCancelsQueue(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(preserved.Workspace.Path, "keep-or-delete.txt")); err != nil {
 		t.Fatal("deletion affected another workspace", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.core.Paths.InternalWorkspaces, "WorkspaceCache", preserved.Workspace.ID, "recovery-marker.json")); err != nil {
+		t.Fatal("deletion affected another workspace's recovery data", err)
 	}
 	if _, err := os.Stat(memoryDirectory); err != nil {
 		t.Fatal("deletion removed shared personal memory", err)

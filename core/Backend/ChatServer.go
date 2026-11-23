@@ -15,7 +15,9 @@ const ChatServerName = "chatServer"
 type ChatServer struct {
 	ChatList map[string]chat.ChatTask
 
-	mu      sync.Mutex
+	mu sync.Mutex
+	// toolMu 串行执行文件变更及分支恢复，避免两个对话同时回写同一工作区。
+	toolMu  sync.Mutex
 	sending map[string]*chatSend
 
 	interactionMu       sync.Mutex

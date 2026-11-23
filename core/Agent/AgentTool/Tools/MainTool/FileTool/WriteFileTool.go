@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
+	"time"
 
 	"github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
@@ -14,6 +14,8 @@ import (
 type WriteFile struct {
 	agenttool.ToolMeta
 }
+
+var _ agenttool.ReversibleTool = (*WriteFile)(nil)
 
 func (t *WriteFile) Load() {
 	t.ToolMeta = agenttool.ToolMeta{
@@ -93,60 +95,68 @@ func (t *WriteFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string,
 		return "", err
 	}
 
-	var workspace, relativePath string
-	if ctx.PermissionLevel == agenttool.PermissionAutoEdit || ctx.WorkspaceOnly {
-		workspace, err = filepath.Abs(ctx.WorkSpace)
-		if err != nil {
-			return "", fmt.Errorf("解析工作区路径失败：%w", err)
-		}
-		path, err = filepath.Abs(path)
-		if err != nil {
-			return "", fmt.Errorf("解析文件路径失败：%w", err)
-		}
-		relativePath, err = filepath.Rel(workspace, path)
-		if err != nil || !filepath.IsLocal(relativePath) {
-			return "", errors.New("自动编辑权限下只能写入当前工作区内的文件")
-		}
-	}
-	fsys, err := fileSystem()
+	target, err := editingTarget(ctx, path)
 	if err != nil {
 		return "", err
 	}
-	info, err := fsys.Stat(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("检查目标文件失败：%w", err)
+	fsys, err := editFileSystem(ctx)
+	if err != nil {
+		return "", err
 	}
-	if err == nil && !info.Mode().IsRegular() {
-		return "", errors.New("目标路径必须是普通文件")
+	unlock := lockFileEdit(target.path)
+	defer unlock()
+	before, err := target.snapshot(fsys)
+	if err != nil {
+		return "", err
 	}
 	data := []byte(content)
 	if lineRange.specified {
-		original, err := fsys.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("读取待替换文件失败：%w", err)
+		if !before.Exists {
+			return "", errors.New("按行写入的目标文件不存在")
 		}
-		data, err = lineRange.replace(original, content)
+		data, err = lineRange.replace(before.Data, content)
 		if err != nil {
 			return "", err
 		}
 	}
+	mode := before.Mode
+	if !before.Exists {
+		mode = 0o600
+	}
+	after := fileSnapshot{Exists: true, Data: data, Mode: mode, Modified: time.Now().UTC()}
+	if err := saveFileRecovery(ctx, fsys, t.ID, target, before, after); err != nil {
+		return "", err
+	}
 	if ctx.Context != nil && ctx.Context.Err() != nil {
 		return "", ctx.Context.Err()
 	}
-	if workspace != "" {
-		// 在实际写入时约束路径，防止符号链接或目录替换绕过工作区边界。
-		err = fsys.WriteFileInRoot(workspace, relativePath, data, 0o600)
-	} else {
-		err = fsys.WriteFile(path, data, 0o600)
+	if err := target.write(fsys, data, mode); err != nil {
+		return "", rollbackFileEdit(target, fsys, before, fmt.Errorf("写入文件失败：%w", err))
 	}
+	// 重放使用实际写回的内容和文件属性，避免修改时间与磁盘精度不一致。
+	after, err = target.snapshot(fsys)
 	if err != nil {
-		return "", fmt.Errorf("写入文件失败：%w", err)
+		return "", rollbackFileEdit(target, fsys, before, err)
+	}
+	if err := saveFileRecovery(ctx, fsys, t.ID, target, before, after); err != nil {
+		return "", rollbackFileEdit(target, fsys, before, err)
+	}
+	if ctx.Context != nil && ctx.Context.Err() != nil {
+		return "", rollbackFileEdit(target, fsys, before, ctx.Context.Err())
 	}
 	result, err := json.Marshal(struct {
 		Path         string `json:"path"`
 		BytesWritten int    `json:"bytes_written"`
-	}{Path: path, BytesWritten: len(data)})
+	}{Path: target.path, BytesWritten: len(data)})
 	return string(result), err
+}
+
+func (t *WriteFile) Restore(ctx *agenttool.ToolContext, recoveryPath string) error {
+	return restoreFileRecovery(ctx, t.ID, recoveryPath, false)
+}
+
+func (t *WriteFile) Reapply(ctx *agenttool.ToolContext, recoveryPath string) error {
+	return restoreFileRecovery(ctx, t.ID, recoveryPath, true)
 }
 
 func (t WriteFile) ToType() *APIImpl.Tool {

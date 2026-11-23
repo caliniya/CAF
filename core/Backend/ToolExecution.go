@@ -79,6 +79,14 @@ func invokeTool(prepared *preparedToolCall, ctx *agenttool.ToolContext) (string,
 	defer cancel()
 	callContext := *ctx
 	callContext.Context = executionContext
+	if _, reversible := prepared.tool.(agenttool.ReversibleTool); reversible {
+		// 可撤回变更必须等工具真正结束，超时不能留下仍在写文件的后台协程。
+		output, err := prepared.tool.Fun(&callContext, prepared.args)
+		if executionContext.Err() != nil {
+			return "", executionContext.Err()
+		}
+		return output, err
+	}
 	type result struct {
 		output string
 		err    error
@@ -165,7 +173,7 @@ func (r *toolExecutionRun) execute(call *api.ToolCall) (string, error) {
 		}
 	}
 	r.bindQuestion(ctx, call.ID)
-	return invokeTool(prepared, ctx)
+	return r.invoke(prepared, ctx, *call)
 }
 
 func (r *toolExecutionRun) prepare(call api.ToolCall) (*preparedToolCall, error) {
@@ -204,7 +212,7 @@ func (r *toolExecutionRun) requestBlocked(display *api.ToolCall, id string) (str
 		}
 	}
 	r.bindQuestion(ctx, display.ID)
-	return invokeTool(prepared, ctx)
+	return r.invoke(prepared, ctx, original)
 }
 
 func (r *toolExecutionRun) approve(display *api.ToolCall, original api.ToolCall, prepared *preparedToolCall) (*agenttool.ToolContext, error) {

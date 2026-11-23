@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	apiImpl "github.com/caliniya/caf/NetClient/APIImpl"
+	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	"github.com/caliniya/caf/utils/id"
 )
 
@@ -17,6 +18,8 @@ type ChatNode struct {
 	Usage *apiImpl.TokenUsage `json:"usage,omitempty"`
 	// 记录生成该回复时的设置，后续更改会话设置不影响历史回复。
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// 只保存已执行的可撤回工具；分支切换时按逆序撤回、正序重放。
+	ToolOperations []agenttool.ToolOperation `json:"toolOperations,omitempty"`
 }
 
 func CreateChatNode(messages ...apiImpl.ChatMessage) *ChatNode {

@@ -404,6 +404,9 @@ func (r *qqChatRuntime) deleteContextsLocked(keys []string) error {
 			if err := r.core.FS.RemoveAllInRoot(r.core.Paths.InternalWorkspaces, filepath.Join(r.adapterID, record.Workspace.ID)); err != nil {
 				return fmt.Errorf("删除 QQ 内部工作区失败：%w", err)
 			}
+			if err := r.core.FS.RemoveAllInRoot(r.core.Paths.InternalWorkspaces, filepath.Join("WorkspaceCache", record.Workspace.ID)); err != nil {
+				return fmt.Errorf("删除 QQ 工作区恢复缓存失败：%w", err)
+			}
 			deleted[key] = true
 		}
 		items := make([]QQContextInfo, 0, len(r.records)-len(keys))

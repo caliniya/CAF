@@ -50,7 +50,7 @@ func TestFileToolWriteFileLines(t *testing.T) {
 	kit := useFileToolKit(t)
 	workspace := t.TempDir()
 	target := filepath.Join(workspace, "target.txt")
-	ctx := agenttool.CreateContext(workspace, agenttool.PermissionAutoEdit)
+	ctx := fileToolContext(t, workspace, agenttool.PermissionAutoEdit)
 	for _, tc := range []struct {
 		name, original, content, want string
 		options                       map[string]any

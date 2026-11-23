@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	platform "github.com/caliniya/caf/platform"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -35,12 +36,43 @@ func (fsys *DesktopFileSystem) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(name)
 }
 
+func (fsys *DesktopFileSystem) Lstat(name string) (fs.FileInfo, error) {
+	return os.Lstat(name)
+}
+
 func (fsys *DesktopFileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 	return os.ReadDir(name)
 }
 
 func (fsys *DesktopFileSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
+}
+
+func (fsys *DesktopFileSystem) StatInRoot(directory, name string) (fs.FileInfo, error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.Stat(name)
+}
+
+func (fsys *DesktopFileSystem) LstatInRoot(directory, name string) (fs.FileInfo, error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.Lstat(name)
+}
+
+func (fsys *DesktopFileSystem) ReadFileInRoot(directory, name string) ([]byte, error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(name)
 }
 
 func (fsys *DesktopFileSystem) WriteFile(name string, data []byte, perm fs.FileMode) error {
@@ -66,6 +98,43 @@ func (fsys *DesktopFileSystem) CreateDirectory(name string, perm fs.FileMode) er
 
 func (fsys *DesktopFileSystem) DeleteFile(name string) error {
 	return os.Remove(name)
+}
+
+func (fsys *DesktopFileSystem) DeleteFileInRoot(directory, name string) error {
+	if !filepath.IsLocal(name) || filepath.Clean(name) == "." {
+		return errors.New("删除目标必须是根目录内的相对路径，且不能为根目录本身")
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Remove(name)
+}
+
+func (fsys *DesktopFileSystem) RestoreFile(name string, data []byte, perm fs.FileMode, modified time.Time) error {
+	if err := os.WriteFile(name, data, perm); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, perm); err != nil {
+		return err
+	}
+	return os.Chtimes(name, modified, modified)
+}
+
+func (fsys *DesktopFileSystem) RestoreFileInRoot(directory, name string, data []byte, perm fs.FileMode, modified time.Time) error {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.WriteFile(name, data, perm); err != nil {
+		return err
+	}
+	if err := root.Chmod(name, perm); err != nil {
+		return err
+	}
+	return root.Chtimes(name, modified, modified)
 }
 
 func (fsys *DesktopFileSystem) RemoveAllInRoot(directory, name string) error {

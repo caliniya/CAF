@@ -4,11 +4,18 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+
+	platform "github.com/caliniya/caf/platform"
 )
 
 // 用于工具的一个简单上下文
 type ToolContext struct {
-	WorkSpace string
+	WorkSpace   string
+	WorkspaceID string
+	// CallID 来自模型；RecoveryFile 是宿主生成的独立恢复文件路径。
+	CallID       string
+	RecoveryFile string
+	FileSystem   platform.FilePlatform
 	PermissionLevel
 	// WorkspaceOnly 在单工具工作区授权下仍保留实际写入的目录约束。
 	WorkspaceOnly bool
@@ -21,6 +28,10 @@ type ToolContext struct {
 	MemoryScope func(context.Context, string) (bool, error)
 	// CreateMemory 由宿主检查对话启用库和库作用域后持久化，返回记忆 ID。
 	CreateMemory func(*ToolContext, string, string, []string) (string, error)
+	// 只读记忆回调返回 JSON，避免工具基础包依赖宿主的记忆服务。
+	ReadMemory   func(context.Context, string, string) (string, error)
+	SearchMemory func(context.Context, string, []string) (string, error)
+	ListMemories func(context.Context, string) (string, error)
 }
 
 type PermissionLevel int

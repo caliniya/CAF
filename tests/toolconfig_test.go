@@ -130,7 +130,7 @@ func TestToolSetDetailsIncludeParameterSchemas(t *testing.T) {
 			kit = item
 		}
 	}
-	wantIDs := []string{"ListDirectory", "ReadFile", "SearchFiles", "WriteFile"}
+	wantIDs := []string{"DeleteFile", "ListDirectory", "ReadFile", "SearchFiles", "WriteFile"}
 	if len(kit.Tools) != len(wantIDs) || !kit.DefaultEnabled {
 		t.Fatalf("工具详情或模块启用状态错误：%+v", kit)
 	}
@@ -172,7 +172,7 @@ func TestToolSetDetailsIncludeParameterSchemas(t *testing.T) {
 	if err := json.Unmarshal(data, &payload); err != nil || len(payload.Tools) != len(wantIDs) {
 		t.Fatalf("工具详情 JSON 结构错误：%s，错误=%v", data, err)
 	}
-	if payload.Tools[0].ID != "ListDirectory" || payload.Tools[0].Description == "" || payload.Tools[0].Parameters["properties"] == nil {
+	if payload.Tools[0].ID != "DeleteFile" || payload.Tools[0].Description == "" || payload.Tools[0].Parameters["properties"] == nil {
 		t.Fatalf("前端 JSON 缺少工具说明或参数：%s", data)
 	}
 }

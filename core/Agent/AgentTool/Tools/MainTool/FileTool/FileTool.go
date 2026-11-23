@@ -31,6 +31,7 @@ func InitFileTool() *FileTool {
 		&ListDirectory{},
 		&SearchFiles{},
 		&WriteFile{},
+		&DeleteFile{},
 	}
 	registered := make(map[string]AgentTool.Tool, len(tools))
 	for _, tool := range tools {

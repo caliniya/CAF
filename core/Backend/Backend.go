@@ -730,6 +730,8 @@ func (c *Core) SetChatBranch(id, parentID string, choice int) (*chat.ChatTask, e
 		return nil, serviceErr
 	}
 
+	chatServer.toolMu.Lock()
+	defer chatServer.toolMu.Unlock()
 	chatServer.mu.Lock()
 	defer chatServer.mu.Unlock()
 	if chatServer.sending[id] != nil {
@@ -743,12 +745,32 @@ func (c *Core) SetChatBranch(id, parentID string, choice int) (*chat.ChatTask, e
 	if err != nil {
 		return nil, err
 	}
+	before, err := session.Tree.CurrentPath()
+	if err != nil {
+		return nil, err
+	}
+	previousChoice := session.Tree.Root.Choice
+	previousUpdatedAt := session.UpdatedAt
+	parent := session.Tree.FindNode(parentID)
+	if parentID != "" && parent != nil {
+		previousChoice = parent.Choice
+	}
 	if err := session.Tree.SelectBranch(parentID, choice); err != nil {
+		return nil, err
+	}
+	after, err := session.Tree.CurrentPath()
+	if err == nil {
+		err = c.transitionToolPaths(before, after)
+	}
+	if err != nil {
+		_ = session.Tree.SelectBranch(parentID, previousChoice)
 		return nil, err
 	}
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(directory, session); err != nil {
-		return nil, err
+		_ = session.Tree.SelectBranch(parentID, previousChoice)
+		session.UpdatedAt = previousUpdatedAt
+		return nil, errors.Join(err, c.transitionToolPaths(after, before), c.saveChatLocked(directory, session))
 	}
 	return session, nil
 }
@@ -1190,7 +1212,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if serviceErr != nil {
 		return serviceErr
 	}
-
 	chatServer.mu.Lock()
 	run := chatServer.sending[id]
 	chatServer.mu.Unlock()
@@ -1222,6 +1243,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return err
 	}
 	toolContext.Context = ctx
+	toolContext.WorkspaceID, toolContext.FileSystem = session.WorkspaceID, c.FS
 	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
 	toolContext.MemoryScope = func(callCtx context.Context, libraryID string) (bool, error) {
 		return c.chatMemoryScope(callCtx, session.WorkspaceID, enabledMemoryIDs, libraryID)
@@ -1229,10 +1251,12 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	toolContext.CreateMemory = func(callCtx *agenttool.ToolContext, libraryID, data string, tags []string) (string, error) {
 		return c.createChatMemory(callCtx.Context, session.WorkspaceID, enabledMemoryIDs, callCtx.PermissionLevel, libraryID, data, tags, callCtx.WorkspaceOnly)
 	}
+	c.bindChatMemoryRead(toolContext, session)
 	memoryContext := ""
 	if options != nil {
 		toolContext.MemoryScope = options.memoryScope
 		toolContext.CreateMemory = options.createMemory
+		toolContext.ReadMemory, toolContext.SearchMemory, toolContext.ListMemories = options.readMemory, options.searchMemory, options.listMemories
 		memoryContext = options.memoryContext
 	} else {
 		memoryContext, err = c.chatMemoryContext(ctx, session)
@@ -1240,13 +1264,22 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if err != nil {
 		return err
 	}
+	approvals, err := c.Servers.Get[*ToolApprovalServer](ToolApprovalServerName)
+	if err != nil {
+		return err
+	}
 	// 每次生成都把本次使用的思考强度写进会话，随后 saveChatLocked 会一并落盘。
 	session.ReasoningEffort = normalizeReasoningEffort(reasoningEffort)
 	reply.ReasoningEffort = session.ReasoningEffort
 	session.UpdatedAt = time.Now().UTC()
-	chatServer.mu.Lock()
-	err = c.saveExecutionChatLocked(directory, session, options)
-	chatServer.mu.Unlock()
+	if options == nil {
+		// 校验完成后才切换文件状态，并将 Choice 和新分支一起保存。
+		err = c.saveChatWithToolTransition(directory, session)
+	} else {
+		chatServer.mu.Lock()
+		err = c.saveExecutionChatLocked(directory, session, options)
+		chatServer.mu.Unlock()
+	}
 	if err != nil {
 		return err
 	}
@@ -1274,10 +1307,6 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	tools := c.enabledTools(session)
 	request.Thinking = session.ReasoningEffort
 	request.Tools = tools
-	approvals, err := c.Servers.Get[*ToolApprovalServer](ToolApprovalServerName)
-	if err != nil {
-		return err
-	}
 	toolRun := &toolExecutionRun{
 		core: c, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,

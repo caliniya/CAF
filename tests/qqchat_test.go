@@ -447,6 +447,19 @@ func TestQQChatPersonalMemoryAndFileTools(t *testing.T) {
 	if data, err := os.ReadFile(filepath.Join(items[0].Workspace.Path, "note.txt")); err != nil || string(data) != "internal-workspace" {
 		t.Fatalf("file tool not confined to internal workspace: %s / %v", data, err)
 	}
+	var saved chat.ChatTask
+	sessionPath := filepath.Join(f.core.Paths.Data, "ext", "clients", f.clientID, "qq", f.extensionID, "sessions", items[0].ID+".json")
+	memoryReadJSON(t, sessionPath, &saved)
+	path, err := saved.Tree.CurrentPath()
+	if err != nil || len(path[len(path)-1].ToolOperations) != 1 {
+		t.Fatalf("QQ file changes must persist their recovery association: %+v / %v", path, err)
+	}
+	operation := path[len(path)-1].ToolOperations[0]
+	if operation.CallID != "write" || operation.WorkspaceID != items[0].Workspace.ID || operation.Pending {
+		t.Fatalf("wrong QQ file recovery association: %+v", operation)
+	}
+	var recovery map[string]any
+	memoryReadJSON(t, recoveryCachePath(f.core, operation), &recovery)
 	if err := f.core.ClearQQContext(f.clientID, f.extensionID, items[0].ID); err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package MemoryTool
 import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
 	create "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/CreateMemory"
+	read "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/ReadMemory"
 )
 
 const SetName = "长期记忆工具"
@@ -37,7 +38,7 @@ func InitMemoryTool() *MainTools {
 			Name:        SetName,
 			Description: "内置的记忆相关工具",
 			Enabled:     true,
-			ToolKits:    map[string]agenttool.ToolKit{"创建记忆": create.InitCreateMemory()},
+			ToolKits:    map[string]agenttool.ToolKit{"创建记忆": create.InitCreateMemory(), "查询记忆": read.InitReadMemory()},
 		},
 	}
 }

@@ -110,5 +110,35 @@ func (r *qqChatRuntime) bindPersonalMemory(ctx context.Context, session *chat.Ch
 		}
 		return value.server.AddMemory(callCtx.Context, libraryID, data, tags...)
 	}
+	options.readMemory = func(parent context.Context, libraryID, memoryID string) (string, error) {
+		if libraryID != value.libraryID {
+			return "", errors.New("当前只能访问发送者的个人记忆")
+		}
+		entry, err := value.server.GetMemory(parent, libraryID, memoryID)
+		if err != nil {
+			return "", err
+		}
+		return memoryReadJSON(libraryID, memoryID, entry)
+	}
+	options.searchMemory = func(parent context.Context, libraryID string, queries []string) (string, error) {
+		if libraryID != "" && libraryID != value.libraryID {
+			return "", errors.New("当前只能访问发送者的个人记忆")
+		}
+		entries, err := value.server.Search(parent, []string{value.libraryID}, queries...)
+		if err != nil {
+			return "", err
+		}
+		return memoryToolJSON(entries)
+	}
+	options.listMemories = func(parent context.Context, libraryID string) (string, error) {
+		if libraryID != value.libraryID {
+			return "", errors.New("当前只能访问发送者的个人记忆")
+		}
+		entries, err := value.server.GetRecollection(parent, libraryID)
+		if err != nil {
+			return "", err
+		}
+		return memoryToolJSON(entries)
+	}
 	return nil
 }
