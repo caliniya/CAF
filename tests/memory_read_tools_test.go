@@ -15,7 +15,8 @@ import (
 	memory "github.com/caliniya/caf/Memory"
 	api "github.com/caliniya/caf/NetClient/APIImpl"
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
-	readtools "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool/ReadMemory"
+	memorytools "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool"
+	backend "github.com/caliniya/caf/core/Backend"
 	identity "github.com/caliniya/caf/utils/id"
 )
 
@@ -83,8 +84,22 @@ func TestMemoryGetAndSearchCurrentIndependentCopies(t *testing.T) {
 }
 
 func TestMemoryReadToolsRegistrationArgumentsAndCancellation(t *testing.T) {
-	kit := readtools.InitReadMemory()
-	for _, tool := range kit.List() {
+	useToolRegistry(t)
+	if err := agenttool.Add(memorytools.InitMemoryTool()); err != nil {
+		t.Fatal(err)
+	}
+	sets := (&backend.Core{}).ListToolSets()
+	if len(sets) != 1 || len(sets[0].Kits) != 4 {
+		t.Fatalf("memory tools should expose four independent modules: %+v", sets)
+	}
+	wantModules := map[string]string{"创建记忆": "CreateMemory", "读取记忆": "ReadMemory", "搜索记忆": "SearchMemory", "列出记忆": "ListMemories"}
+	for _, kit := range sets[0].Kits {
+		if kit.Name != kit.ID || !kit.DefaultEnabled || len(kit.Tools) != 1 || kit.Tools[0].ID != wantModules[kit.ID] {
+			t.Fatalf("each memory module should contain its own enabled tool: %+v", kit)
+		}
+	}
+	for _, id := range []string{"ReadMemory", "SearchMemory", "ListMemories"} {
+		tool := agenttool.Tools[id]
 		if tool.Meta().Permission != agenttool.PermissionReadOnly || tool.Meta().DisplayContent != "result" {
 			t.Fatalf("memory query must be read-only: %+v", tool.Meta())
 		}
@@ -120,7 +135,7 @@ func TestMemoryReadToolsRegistrationArgumentsAndCancellation(t *testing.T) {
 		"SearchMemory": {"query": " keyword "},
 		"ListMemories": {"recollection_id": " library "},
 	} {
-		tool := kit.Tools[id]
+		tool := agenttool.Tools[id]
 		if output, err := tool.Fun(ctx, args); err != nil || !json.Valid([]byte(output)) {
 			t.Fatalf("valid read-only call failed: %s / %v", output, err)
 		}
@@ -144,6 +159,116 @@ func TestMemoryReadToolsRegistrationArgumentsAndCancellation(t *testing.T) {
 		}
 		if invoked != before {
 			t.Fatal("invalid or canceled query reached the host")
+		}
+	}
+}
+
+func TestChatMemoryToolsCanBeControlledIndependently(t *testing.T) {
+	for _, module := range []struct{ kit, id string }{
+		{"创建记忆", "CreateMemory"}, {"读取记忆", "ReadMemory"}, {"搜索记忆", "SearchMemory"}, {"列出记忆", "ListMemories"},
+	} {
+		for _, scope := range []string{"chat", "global", "chat-override"} {
+			t.Run(module.id+"/"+scope, func(t *testing.T) {
+				core, _ := approvalCore(t)
+				ctx := context.Background()
+				if _, err := core.GetChatMemorySettings(""); err != nil {
+					t.Fatal(err)
+				}
+				server := testServer[*memory.MemoryServer](t, core, memory.MemoryServerName)
+				library := mainMemoryID(t, server)
+				key, err := server.AddMemory(ctx, library, "independent-memory-marker")
+				if err != nil {
+					t.Fatal(err)
+				}
+				task, err := core.CreateChat("", "", "", "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := core.SetChatMemoryLibraries(task.ID, []string{library}); err != nil {
+					t.Fatal(err)
+				}
+				config := &agenttool.ChatToolConfig{Permission: agenttool.PermissionFullAccess}
+				if scope != "chat" {
+					core.Configs.ToolNormalConfig = &agenttool.ChatToolConfig{}
+					core.Configs.ToolNormalConfig.SetKit(memorytools.SetName, module.kit, boolPtr(false))
+				}
+				if scope == "chat" {
+					config.SetKit(memorytools.SetName, module.kit, boolPtr(false))
+				} else if scope == "chat-override" {
+					config.SetKit(memorytools.SetName, module.kit, boolPtr(true))
+				}
+				data, err := json.Marshal(config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := core.SetChatToolConfig(task.ID, string(data)); err != nil {
+					t.Fatal(err)
+				}
+				arguments := map[string]map[string]any{
+					"CreateMemory": {"recollection_id": library, "data": "new-memory"},
+					"ReadMemory":   {"recollection_id": library, "memory_id": key},
+					"SearchMemory": {"query": "independent-memory-marker"},
+					"ListMemories": {"recollection_id": library},
+				}
+				requests := approvalModel(t, core,
+					func(request api.ChatCompletionsRequest) []api.ToolCall {
+						declared := map[string]bool{}
+						for _, tool := range request.Tools {
+							declared[tool.Function.Name] = true
+						}
+						calls := []api.ToolCall{}
+						for id, args := range arguments {
+							want := id != module.id || scope == "chat-override"
+							if declared[id] != want {
+								t.Errorf("switch affected the wrong tool declaration: %s / declared=%v / want=%v", id, declared[id], want)
+							}
+							// 模拟模型仍尝试调用禁用工具，执行端也必须拒绝。
+							calls = append(calls, approvalCall(id, id, args))
+						}
+						return calls
+					},
+					func(request api.ChatCompletionsRequest) []api.ToolCall {
+						results := map[string]string{}
+						for _, message := range request.Messages {
+							if message.Role == "tool" {
+								results[message.ToolCallID] = fmt.Sprint(message.Content)
+							}
+						}
+						for id := range arguments {
+							output := results[id]
+							if id == module.id && scope != "chat-override" {
+								if output != "此工具被禁用" {
+									t.Errorf("disabled memory tool was not rejected: %s / %s", id, output)
+								}
+							} else if id == "CreateMemory" {
+								if !strings.HasPrefix(output, "已创建记忆：") {
+									t.Error("enabled creation failed", output)
+								}
+							} else if !json.Valid([]byte(output)) || !strings.Contains(output, "independent-memory-marker") {
+								t.Errorf("enabled memory query was affected by another module's switch: %s / %s", id, output)
+							}
+						}
+						return nil
+					},
+				)
+				if err := core.SendChatMessage(task.ID, "test independent memory tools", ""); err != nil {
+					t.Fatal(err)
+				}
+				if requests.Load() != 2 {
+					t.Fatalf("expected tool round and final response, got %d requests", requests.Load())
+				}
+				current, err := server.GetRecollection(ctx, library)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 2
+				if module.id == "CreateMemory" && scope != "chat-override" {
+					want = 1
+				}
+				if len(current.Data) != want {
+					t.Fatalf("creation switch did not protect persisted memory: got %d / want %d", len(current.Data), want)
+				}
+			})
 		}
 	}
 }
