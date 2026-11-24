@@ -83,6 +83,9 @@ func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.Too
 	if callErr == nil {
 		changes, callErr = prepared.tool.(agenttool.ReversibleTool).Changes(ctx, ctx.RecoveryFile)
 	}
+	if callErr == nil && ctx.Context != nil {
+		callErr = ctx.Context.Err()
+	}
 	if callErr == nil {
 		server.mu.Lock()
 		path, pathErr := r.session.Tree.CurrentPath()
@@ -134,11 +137,7 @@ func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.Too
 func pathToolOperations(path []*chatstruct.ChatNode) []agenttool.ToolOperation {
 	var result []agenttool.ToolOperation
 	for _, node := range path {
-		for _, operation := range node.ToolOperations {
-			if operation.State != agenttool.ToolOperationUndone && operation.State != agenttool.ToolOperationDiscarded {
-				result = append(result, operation)
-			}
-		}
+		result = append(result, node.ToolOperations...)
 	}
 	return result
 }
@@ -214,27 +213,45 @@ func (c *Core) transitionToolPaths(before, after []*chatstruct.ChatNode) error {
 
 func (c *Core) transitionToolOperations(old, next []agenttool.ToolOperation) error {
 	shared := 0
-	for shared < len(old) && shared < len(next) && old[shared].ID == next[shared].ID {
+	for shared < len(old) && shared < len(next) && old[shared].ID == next[shared].ID && old[shared].State == next[shared].State {
 		shared++
 	}
-	var undone, applied []agenttool.ToolOperation
+	if shared == len(old) && shared == len(next) {
+		return nil
+	}
+	// 后续分支的 Before 可能包含已撤销祖先的结果，必须回退到它之前的底稿。
+	// 只保留连续已应用的公共前缀，未应用的操作也参与逆序还原底稿。
+	for i := 0; i < shared; i++ {
+		if old[i].State != "" {
+			shared = i
+			break
+		}
+	}
+	var applied []agenttool.ToolOperation
 	rollback := func() error {
 		var errs []error
 		for i := len(applied) - 1; i >= 0; i-- {
 			errs = append(errs, c.restoreToolOperation(applied[i], false))
 		}
-		for i := len(undone) - 1; i >= 0; i-- {
-			errs = append(errs, c.restoreToolOperation(undone[i], true))
+		for i := len(old) - 1; i >= shared; i-- {
+			errs = append(errs, c.restoreToolOperation(old[i], false))
+		}
+		for _, operation := range old[shared:] {
+			if operation.State == "" {
+				errs = append(errs, c.restoreToolOperation(operation, true))
+			}
 		}
 		return errors.Join(errs...)
 	}
 	for i := len(old) - 1; i >= shared; i-- {
-		undone = append(undone, old[i])
 		if err := c.restoreToolOperation(old[i], false); err != nil {
 			return errors.Join(err, rollback())
 		}
 	}
 	for _, operation := range next[shared:] {
+		if operation.State == agenttool.ToolOperationUndone || operation.State == agenttool.ToolOperationDiscarded {
+			continue
+		}
 		applied = append(applied, operation)
 		if err := c.restoreToolOperation(operation, true); err != nil {
 			return errors.Join(err, rollback())

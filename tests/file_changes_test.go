@@ -16,8 +16,8 @@ func TestFileToolChangeSummariesUseSavedSnapshots(t *testing.T) {
 	for _, test := range []struct {
 		name, tool, before, after string
 		exists, byLine, binary    bool
-		action                   string
-		added, removed           int
+		action                    string
+		added, removed            int
 	}{
 		{name: "unchanged", tool: "WriteFile", exists: true, before: "same\n", after: "same\n", action: "modify"},
 		{name: "two_replacements_preserve_middle", tool: "WriteFile", exists: true, before: "one\nold\nkeep\nold-end\nlast\n", after: "one\nnew\nkeep\nnew-end\nlast\n", action: "modify", added: 2, removed: 2},
