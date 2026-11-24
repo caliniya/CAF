@@ -151,6 +151,10 @@ func (t *WriteFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string,
 	return string(result), err
 }
 
+func (t *WriteFile) Changes(ctx *agenttool.ToolContext, recoveryPath string) ([]agenttool.ToolChange, error) {
+	return fileRecoveryChanges(ctx, t.ID, recoveryPath)
+}
+
 func (t *WriteFile) Restore(ctx *agenttool.ToolContext, recoveryPath string) error {
 	return restoreFileRecovery(ctx, t.ID, recoveryPath, false)
 }

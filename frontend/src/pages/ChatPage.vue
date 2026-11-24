@@ -15,6 +15,7 @@ import MemoryEntryDialog from '../components/MemoryEntryDialog.vue'
 import type { MemoryEntry, MemoryEntryInput, MemoryLibrary, MemoryLibraryAction, MemoryLibraryDetails } from '../api'
 import ToolKitDetailsDialog from '../components/ToolKitDetailsDialog.vue'
 import ToolCallDetails from '../components/ToolCallDetails.vue'
+import ToolChangesFooter from '../components/ToolChangesFooter.vue'
 import { renderDone, renderStreaming, resetStreaming } from '../markdown'
 
 const chat = useChatStore()
@@ -89,7 +90,7 @@ async function toggleWorkspaceList(event: MouseEvent) {
 }
 
 async function selectWorkspace(id: string) {
-  if (chat.sending || chat.workspaceChanging) return
+  if (chat.sending || chat.workspaceChanging || chat.toolChangesChanging) return
   closeMenus()
   if (id === chat.currentWorkspaceId) return
   if (chat.session && chat.messages.length) {
@@ -109,7 +110,7 @@ async function selectWorkspace(id: string) {
 
 async function confirmWorkspaceChange() {
   const change = workspaceChange.value
-  if (!change || chat.sending || chat.workspaceChanging) return
+  if (!change || chat.sending || chat.workspaceChanging || chat.toolChangesChanging) return
   if (chat.session?.id !== change.chatId || chat.currentWorkspaceId !== change.fromId) {
     workspaceChange.value = null
     return
@@ -901,7 +902,7 @@ const editingNodeId = ref('')
 const editDraft = ref('')
 
 async function startEdit(message: (typeof chat.messages)[number]) {
-  if (!message.nodeId || chat.sending) return
+  if (!message.nodeId || chat.sending || chat.toolChangesChanging) return
   editingNodeId.value = message.nodeId
   editDraft.value = message.content
   // 等 DOM 换成 textarea 后立刻聚焦，否则要点第二次才能输入
@@ -1035,9 +1036,14 @@ watch(
           <div v-else class="msg-body markdown-body" v-html="bodyHtml(m, i)"></div>
         </template>
 
+        <ToolChangesFooter v-if="m.role === 'assistant' && m.toolOperations?.length" :operations="m.toolOperations"
+          :can-undo="m.canUndoToolChanges" :can-redo="m.canRedoToolChanges"
+          :busy="chat.sending || chat.workspaceChanging || chat.toolChangesChanging"
+          @change="chat.setToolChangesUndone(m, $event)" />
+
         <!-- 操作栏：编辑 / 复制 / 重新生成 / 分支切换统一一行，鼠标靠近才显示 -->
         <div v-if="m.role !== 'system' && editingNodeId !== m.nodeId" class="msg-actions">
-          <button v-if="m.role === 'user' && m.nodeId && !chat.sending" type="button"
+          <button v-if="m.role === 'user' && m.nodeId && !chat.sending" type="button" :disabled="chat.toolChangesChanging"
             class="msg-action hover-only" title="编辑" aria-label="编辑" @click="startEdit(m)">
             <Pencil :size="17" :stroke-width="2" />
           </button>
@@ -1045,14 +1051,14 @@ watch(
             aria-label="复制" @click="copyMessage(m, $event)">
             <Copy :size="17" :stroke-width="2" />
           </button>
-          <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button"
+          <button v-if="m.role === 'assistant' && m.nodeId && !chat.sending" type="button" :disabled="chat.toolChangesChanging"
             class="regen hover-only" title="重新生成" aria-label="重新生成" @click="regenerateMessage(m)">
             <RotateCw :size="17" :stroke-width="2" />
           </button>
           <div v-if="m.branchCount && m.branchCount > 1" class="branch hover-only">
-            <button type="button" aria-label="上一个分支" @click="selectBranch(m, -1)">‹</button>
+            <button type="button" aria-label="上一个分支" :disabled="chat.sending || chat.toolChangesChanging" @click="selectBranch(m, -1)">‹</button>
             <span>{{ (m.branchIndex ?? 0) + 1 }} / {{ m.branchCount }}</span>
-            <button type="button" aria-label="下一个分支" @click="selectBranch(m, 1)">›</button>
+            <button type="button" aria-label="下一个分支" :disabled="chat.sending || chat.toolChangesChanging" @click="selectBranch(m, 1)">›</button>
           </div>
         </div>
       </div>
@@ -1067,7 +1073,7 @@ watch(
           <div ref="workspaceMenuAnchor" class="workspace-anchor">
             <button ref="workspaceMenuButton" type="button" class="ctx-pill workspace-trigger"
               :title="chat.currentWorkspace?.path || '选择工作区'" :aria-expanded="workspaceMenuOpen"
-              aria-haspopup="menu" aria-controls="workspace-menu" :disabled="chat.sending || chat.workspaceChanging"
+              aria-haspopup="menu" aria-controls="workspace-menu" :disabled="chat.sending || chat.workspaceChanging || chat.toolChangesChanging"
               @click="toggleWorkspaceMenu">
               <Folder :size="14" :stroke-width="2" />
               <span class="workspace-trigger-name">{{ workspaceName }}</span>
@@ -1337,7 +1343,7 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
+            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>

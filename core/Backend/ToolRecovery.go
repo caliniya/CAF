@@ -74,14 +74,34 @@ func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.Too
 	}
 
 	output, callErr := invokeTool(prepared, ctx)
+	var changes []agenttool.ToolChange
+	var discarded []*agenttool.ToolOperation
 	_, cacheErr := r.core.FS.Stat(ctx.RecoveryFile)
 	if callErr == nil && cacheErr != nil {
 		callErr = fmt.Errorf("工具执行后未找到有效恢复文件：%w", cacheErr)
 	}
 	if callErr == nil {
+		changes, callErr = prepared.tool.(agenttool.ReversibleTool).Changes(ctx, ctx.RecoveryFile)
+	}
+	if callErr == nil {
 		server.mu.Lock()
-		reply.ToolOperations[position].Pending = false
-		callErr = r.core.saveExecutionChatLocked(r.directory, r.session, r.options)
+		path, pathErr := r.session.Tree.CurrentPath()
+		callErr = pathErr
+		if callErr == nil {
+			// 撤销后产生新的修改时，原有重做记录保留展示，但不能覆盖新修改。
+			for _, node := range path {
+				for i := range node.ToolOperations {
+					item := &node.ToolOperations[i]
+					if item.State == agenttool.ToolOperationUndone {
+						discarded = append(discarded, item)
+						item.State = agenttool.ToolOperationDiscarded
+					}
+				}
+			}
+			reply.ToolOperations[position].Pending = false
+			reply.ToolOperations[position].Changes = changes
+			callErr = r.core.saveExecutionChatLocked(r.directory, r.session, r.options)
+		}
 		server.mu.Unlock()
 		if callErr == nil {
 			return output, nil
@@ -99,6 +119,9 @@ func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.Too
 		return output, errors.Join(callErr, cacheErr)
 	}
 	server.mu.Lock()
+	for _, item := range discarded {
+		item.State = agenttool.ToolOperationUndone
+	}
 	reply.ToolOperations = reply.ToolOperations[:position]
 	saveErr := r.core.saveExecutionChatLocked(r.directory, r.session, r.options)
 	server.mu.Unlock()
@@ -111,7 +134,11 @@ func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.Too
 func pathToolOperations(path []*chatstruct.ChatNode) []agenttool.ToolOperation {
 	var result []agenttool.ToolOperation
 	for _, node := range path {
-		result = append(result, node.ToolOperations...)
+		for _, operation := range node.ToolOperations {
+			if operation.State != agenttool.ToolOperationUndone && operation.State != agenttool.ToolOperationDiscarded {
+				result = append(result, operation)
+			}
+		}
 	}
 	return result
 }
@@ -182,7 +209,10 @@ func (c *Core) restoreToolOperation(operation agenttool.ToolOperation, reapply b
 // 公共操作保留，离开分支逆序撤回，进入分支正序重放。
 // 中途失败时尽量退回原分支，失败信息完整返回，不保存新的 Choice。
 func (c *Core) transitionToolPaths(before, after []*chatstruct.ChatNode) error {
-	old, next := pathToolOperations(before), pathToolOperations(after)
+	return c.transitionToolOperations(pathToolOperations(before), pathToolOperations(after))
+}
+
+func (c *Core) transitionToolOperations(old, next []agenttool.ToolOperation) error {
 	shared := 0
 	for shared < len(old) && shared < len(next) && old[shared].ID == next[shared].ID {
 		shared++

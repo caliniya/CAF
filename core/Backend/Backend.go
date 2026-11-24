@@ -1336,6 +1336,13 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	policyIndex := len(history)
 	history = append(history, apiImpl.ChatMessage{Role: "system"})
 	history = append(history, request.Messages...)
+	changesNotice, noticeErr := toolChangesNotice(session)
+	if noticeErr != nil {
+		return noticeErr
+	}
+	if changesNotice != "" {
+		history = append(history, apiImpl.ChatMessage{Role: "system", Content: changesNotice})
+	}
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
 

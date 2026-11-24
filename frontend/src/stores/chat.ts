@@ -21,6 +21,7 @@ import {
   RegenerateChatMessage,
   SendChatMessage,
   SetChatBranch,
+  SetChatToolChangesUndone,
   SetChatPersona,
   SetChatReasoningEffort,
   SetChatToolConfig,
@@ -40,6 +41,7 @@ import {
   type Workspace,
   type PermissionLevel,
   type ToolApproval,
+  type ToolOperation,
 } from '../api'
 import { useConfigsStore } from './configs'
 
@@ -85,6 +87,9 @@ export interface ChatMessage {
   parentId?: string
   branchIndex?: number
   branchCount?: number
+  toolOperations?: ToolOperation[]
+  canUndoToolChanges?: boolean
+  canRedoToolChanges?: boolean
 }
 
 export const useChatStore = defineStore('chat', {
@@ -108,6 +113,7 @@ export const useChatStore = defineStore('chat', {
     pendingWorkspaceId: '',
     workspaceChanging: false,
     toolConfigChanging: false,
+    toolChangesChanging: false,
     // 默认「中」，与后端 NewChatTask 的默认值一致
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
@@ -352,7 +358,7 @@ export const useChatStore = defineStore('chat', {
     },
     async send() {
       const text = this.draft.trim()
-      if (!text || this.sending || this.workspaceChanging) return
+      if (!text || this.sending || this.workspaceChanging || this.toolChangesChanging) return
       const effort = this.effort
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
@@ -436,6 +442,7 @@ export const useChatStore = defineStore('chat', {
             process: process.length ? process : undefined,
             reasoningEffort: node.reasoningEffort,
             reasoningTokens: node.usage?.completion_tokens_details?.reasoning_tokens,
+            toolOperations: node.toolOperations?.filter((operation) => !operation.pending),
             ...meta,
           })
         }
@@ -444,6 +451,18 @@ export const useChatStore = defineStore('chat', {
         const nextNodes = node.next ?? []
         if (!nextNodes.length || node.choice < 0 || node.choice >= nextNodes.length) break
         node = nextNodes[node.choice]
+      }
+      const replies = this.messages.filter((message) => message.role === 'assistant' && message.toolOperations?.length)
+      let lastApplied = -1
+      const firstUndone = replies.findIndex((message) => message.toolOperations!.some((operation) => operation.state === 'undone'))
+      for (let i = 0; i < replies.length; i++) {
+        if (replies[i].toolOperations!.some((operation) => !operation.state)) lastApplied = i
+      }
+      for (let i = 0; i < replies.length; i++) {
+        const message = replies[i]
+        message.canUndoToolChanges = i === lastApplied && message.toolOperations!.every((operation) => !operation.state)
+        message.canRedoToolChanges = i === firstUndone && i > lastApplied
+          && message.toolOperations!.every((operation) => operation.state === 'undone')
       }
     },
     findNode(id: string) {
@@ -471,7 +490,7 @@ export const useChatStore = defineStore('chat', {
       this.pendingToolConfig = config
     },
     async updateToolConfig(config: ChatToolConfig | null) {
-      if (this.sending || this.workspaceChanging || this.toolConfigChanging) return
+      if (this.sending || this.workspaceChanging || this.toolConfigChanging || this.toolChangesChanging) return
       const id = this.session?.id
       if (!id) {
         this.pendingToolConfig = config
@@ -512,7 +531,7 @@ export const useChatStore = defineStore('chat', {
       this.workspacesLoaded = true
     },
     async selectWorkspace(workspaceId: string) {
-      if (this.sending || this.workspaceChanging || workspaceId === this.currentWorkspaceId) return
+      if (this.sending || this.workspaceChanging || this.toolChangesChanging || workspaceId === this.currentWorkspaceId) return
       const id = this.session?.id
       this.workspaceChanging = true
       try {
@@ -645,10 +664,32 @@ export const useChatStore = defineStore('chat', {
       await this.loadChats()
     },
     async selectBranch(parentId: string, choice: number) {
-      if (!this.session) return
+      if (!this.session || this.sending || this.workspaceChanging || this.toolChangesChanging) return
       this.session = await SetChatBranch(this.session.id, parentId, choice)
       this.syncEffort()
       this.rebuildMessages()
+    },
+    async setToolChangesUndone(message: ChatMessage, undone: boolean) {
+      if (!this.session || !message.nodeId || this.sending || this.workspaceChanging || this.toolChangesChanging) return
+      if (undone ? !message.canUndoToolChanges : !message.canRedoToolChanges) return
+      const id = this.session.id
+      this.toolChangesChanging = true
+      this.error = ''
+      try {
+        await effortUpdates
+        await toolConfigUpdates
+        await memorySettingsUpdates
+        const session = await SetChatToolChangesUndone(id, message.nodeId, undone)
+        if (this.session?.id === id) {
+          this.session = session
+          this.rebuildMessages()
+        }
+        await this.loadChats()
+      } catch (err) {
+        if (this.session?.id === id) this.error = String(err)
+      } finally {
+        this.toolChangesChanging = false
+      }
     },
     async updateModel(configId: string, model: string) {
       if (!this.session) return
@@ -659,7 +700,7 @@ export const useChatStore = defineStore('chat', {
     },
     // 编辑用户消息：后端在该节点的父节点下挂新分支并重新生成，原分支保留
     async editMessage(message: ChatMessage, text: string) {
-      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending) return
+      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending || this.toolChangesChanging) return
       text = text.trim()
       if (!text || text === message.content) return
       const index = this.messages.indexOf(message)
@@ -685,7 +726,7 @@ export const useChatStore = defineStore('chat', {
       }
     },
     async regenerate(message: ChatMessage) {
-      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending) return
+      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending || this.toolChangesChanging) return
       const index = this.messages.indexOf(message)
       this.messages = this.messages.slice(0, index + 1)
       const pending = this.messages[index]
@@ -693,6 +734,9 @@ export const useChatStore = defineStore('chat', {
       pending.process = []
       pending.reasoningEffort = this.effort
       pending.reasoningTokens = undefined
+      pending.toolOperations = undefined
+      pending.canUndoToolChanges = undefined
+      pending.canRedoToolChanges = undefined
       this.error = ''
       this.sending = true
       try {

@@ -94,6 +94,10 @@ func (t *DeleteFile) Fun(ctx *agenttool.ToolContext, args map[string]any) (strin
 	return string(body), err
 }
 
+func (t *DeleteFile) Changes(ctx *agenttool.ToolContext, recoveryPath string) ([]agenttool.ToolChange, error) {
+	return fileRecoveryChanges(ctx, t.ID, recoveryPath)
+}
+
 func (t *DeleteFile) Restore(ctx *agenttool.ToolContext, recoveryPath string) error {
 	return restoreFileRecovery(ctx, t.ID, recoveryPath, false)
 }

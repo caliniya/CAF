@@ -186,33 +186,50 @@ func saveFileRecovery(ctx *agenttool.ToolContext, fsys platform.FilePlatform, to
 	return nil
 }
 
+func readFileRecovery(ctx *agenttool.ToolContext, toolID, recoveryPath string) (*fileRecovery, platform.FilePlatform, error) {
+	if ctx == nil || !ctx.Check(agenttool.PermissionReadOnly) {
+		return nil, nil, errors.New("没有读取文件恢复数据所需的权限")
+	}
+	if !filepath.IsAbs(recoveryPath) {
+		return nil, nil, errors.New("恢复文件路径必须为绝对路径")
+	}
+	if ctx.Context != nil && ctx.Context.Err() != nil {
+		return nil, nil, ctx.Context.Err()
+	}
+	fsys, err := editFileSystem(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := fsys.ReadFileInRoot(filepath.Dir(recoveryPath), filepath.Base(recoveryPath))
+	if err != nil {
+		return nil, nil, fmt.Errorf("读取文件恢复数据失败：%w", err)
+	}
+	var record fileRecovery
+	if err := json.Unmarshal(data, &record); err != nil {
+		return nil, nil, fmt.Errorf("文件恢复数据损坏：%w", err)
+	}
+	if record.ToolID != toolID || record.CallID != ctx.CallID || record.WorkspaceID != ctx.WorkspaceID || record.Workspace != ctx.WorkSpace || !filepath.IsAbs(record.Path) {
+		return nil, nil, errors.New("恢复文件与当前工具调用或工作区不一致")
+	}
+	if toolID == "WriteFile" && !record.After.Exists || toolID == "DeleteFile" && (!record.Before.Exists || record.After.Exists) {
+		return nil, nil, errors.New("文件恢复数据中的操作状态无效")
+	}
+	for _, saved := range []fileSnapshot{record.Before, record.After} {
+		if saved.Exists && (saved.Mode != saved.Mode.Perm() || saved.Modified.IsZero()) ||
+			!saved.Exists && (len(saved.Data) != 0 || saved.Mode != 0 || !saved.Modified.IsZero()) {
+			return nil, nil, errors.New("文件恢复数据中的属性无效")
+		}
+	}
+	return &record, fsys, nil
+}
+
 func restoreFileRecovery(ctx *agenttool.ToolContext, toolID, recoveryPath string, reapply bool) error {
 	if ctx == nil || !ctx.Check(agenttool.PermissionAutoEdit) {
 		return errors.New("没有恢复文件所需的编辑权限")
 	}
-	if !filepath.IsAbs(recoveryPath) {
-		return errors.New("恢复文件路径必须为绝对路径")
-	}
-	if ctx.Context != nil && ctx.Context.Err() != nil {
-		return ctx.Context.Err()
-	}
-	fsys, err := editFileSystem(ctx)
+	record, fsys, err := readFileRecovery(ctx, toolID, recoveryPath)
 	if err != nil {
 		return err
-	}
-	data, err := fsys.ReadFileInRoot(filepath.Dir(recoveryPath), filepath.Base(recoveryPath))
-	if err != nil {
-		return fmt.Errorf("读取文件恢复数据失败：%w", err)
-	}
-	var record fileRecovery
-	if err := json.Unmarshal(data, &record); err != nil {
-		return fmt.Errorf("文件恢复数据损坏：%w", err)
-	}
-	if record.ToolID != toolID || record.CallID != ctx.CallID || record.WorkspaceID != ctx.WorkspaceID || record.Workspace != ctx.WorkSpace || !filepath.IsAbs(record.Path) {
-		return errors.New("恢复文件与当前工具调用或工作区不一致")
-	}
-	if toolID == "WriteFile" && !record.After.Exists || toolID == "DeleteFile" && (!record.Before.Exists || record.After.Exists) {
-		return errors.New("文件恢复数据中的操作状态无效")
 	}
 	restoreContext := *ctx
 	// 自动编辑和单工具工作区授权在恢复时仍使用原来的目录约束。
@@ -226,12 +243,6 @@ func restoreFileRecovery(ctx *agenttool.ToolContext, toolID, recoveryPath string
 	snapshot := record.Before
 	if reapply {
 		snapshot = record.After
-	}
-	for _, saved := range []fileSnapshot{record.Before, record.After} {
-		if saved.Exists && (saved.Mode != saved.Mode.Perm() || saved.Modified.IsZero()) ||
-			!saved.Exists && (len(saved.Data) != 0 || saved.Mode != 0 || !saved.Modified.IsZero()) {
-			return errors.New("文件恢复数据中的属性无效")
-		}
 	}
 	return target.restore(fsys, snapshot)
 }

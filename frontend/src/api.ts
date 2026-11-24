@@ -86,6 +86,7 @@ interface CoreBindings {
   ListToolSets(): Promise<ToolSetDescriptor[]>
   SetChatToolConfig(id: string, raw: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
+  SetChatToolChangesUndone(id: string, nodeId: string, undone: boolean): Promise<ChatTask>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
 	SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void>
 	SubmitToolApproval(chatId: string, requestId: string, choice: ToolApprovalChoice): Promise<ChatToolConfig | null>
@@ -214,6 +215,29 @@ export interface ChatTreeNode {
   child: StoredChatMessage[] | null
   usage?: TokenUsage
   reasoningEffort?: string
+  toolOperations?: ToolOperation[]
+}
+
+export interface ToolChange {
+  target: string
+  action: 'create' | 'modify' | 'delete'
+  addedLines?: number
+  removedLines?: number
+  beforeBytes: number
+  afterBytes: number
+  binary?: boolean
+  approximate?: boolean
+}
+
+export interface ToolOperation {
+  id: string
+  toolId: string
+  callId: string
+  workspaceId?: string
+  workspace?: string
+  pending?: boolean
+  changes?: ToolChange[]
+  state?: 'undone' | 'discarded'
 }
 
 export interface ChatTree {
@@ -528,6 +552,9 @@ export function SetChatToolConfig(id: string, raw: string): Promise<ChatTask> {
 }
 export function SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatBranch(id, parentId, choice))
+}
+export function SetChatToolChangesUndone(id: string, nodeId: string, undone: boolean): Promise<ChatTask> {
+  return bridge().then((c) => c.SetChatToolChangesUndone(id, nodeId, undone))
 }
 export function SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void> {
   return bridge().then((c) => c.SendChatMessage(id, text, reasoningEffort))
