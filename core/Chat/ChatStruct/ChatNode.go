@@ -20,16 +20,25 @@ type ChatNode struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 	// 只保存已执行的可撤回工具；分支切换时按逆序撤回、正序重放。
 	ToolOperations []agenttool.ToolOperation `json:"toolOperations,omitempty"`
+	// 非空表示这个节点执行了已通过检查的压缩；原消息和工具恢复记录继续保留。
+	Compaction *CompactionData `json:"compaction,omitempty"`
 }
 
 func CreateChatNode(messages ...apiImpl.ChatMessage) *ChatNode {
-	return &ChatNode{ID: id.MustNew(id.Node), Child: append([]apiImpl.ChatMessage(nil), messages...), Next: []*ChatNode{}}
+	node := &ChatNode{ID: id.MustNew(id.Node), Child: []apiImpl.ChatMessage{}, Next: []*ChatNode{}}
+	for _, message := range messages {
+		node.AddMessage(message)
+	}
+	return node
 }
 
 // AddMessage 将一条消息追加到当前节点。
 func (n *ChatNode) AddMessage(message apiImpl.ChatMessage) {
 	if n == nil {
 		return
+	}
+	if message.Tokens <= 0 {
+		message.Tokens = apiImpl.MessageTokens(message)
 	}
 	n.Child = append(n.Child, message)
 }

@@ -593,8 +593,9 @@ func (r *qqChatRuntime) generate(parent context.Context, record QQContextInfo, j
 		return err
 	}
 	options := &chatExecutionOptions{workspace: &record.Workspace, save: r.saveSession,
-		systemPrompt: fmt.Sprintf(texts.QQChatSystem, record.Kind),
-		recordUsage:  func(usage *api.TokenUsage) { r.recordTokenUsage(job, usage, true) }}
+		systemPrompt:          fmt.Sprintf(texts.QQChatSystem, record.Kind),
+		recordUsage:           func(usage *api.TokenUsage) { r.recordTokenUsage(job, usage, true) },
+		recordCompactionUsage: func(usage *api.TokenUsage) { r.recordTokenUsage(job, usage, false) }}
 	options.checkTool = qqToolCheck(job.mentioned)
 	options.askUser = func(callCtx context.Context, chatID, nodeID, callID string, question agenttool.UserQuestion) (string, error) {
 		return r.askUser(callCtx, job.commandName, job.message, question)

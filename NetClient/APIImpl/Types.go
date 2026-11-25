@@ -7,6 +7,9 @@ type ChatMessage struct {
 	Role string `json:"role"` // "system" | "user" | "assistant" | "tool"
 
 	Content string `json:"content,omitempty"`
+	// Tokens 只记录这条消息新增的用量，用于粗略划分压缩范围；协议不会发送此字段。
+	// 模型输出优先使用本次 completion_tokens，用户消息和工具结果使用文本估算。
+	Tokens int `json:"tokens,omitempty"`
 
 	// 思考内容：支持思考的模型会分两路输出，
 	Reasoning string `json:"reasoning,omitempty"`

@@ -19,7 +19,6 @@ import (
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	persona "github.com/caliniya/caf/core/Persona"
 	identity "github.com/caliniya/caf/utils/id"
-	texts "github.com/caliniya/caf/utils/text"
 )
 
 // SelectDirectory 供前端调用平台文件夹选择器；取消时返回空字符串。
@@ -1226,41 +1225,8 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if modelIndex < 0 {
 		return fmt.Errorf("模型列表中未找到 %q", session.Model)
 	}
-	// 新回复是当前路径末尾的空节点，转换时只会包含它之前的消息。
-	request, err := session.Tree.ToChatRequest(config.Model[modelIndex])
-	if err != nil {
-		return err
-	}
-	var toolContext *agenttool.ToolContext
-	if options != nil && options.workspace != nil {
-		var path string
-		path, err = c.validateWorkspacePath(options.workspace.Path)
-		toolContext = agenttool.CreateContext(path, c.toolPermission(session.ToolConfig))
-	} else {
-		toolContext, err = c.toolContextFor(session)
-	}
-	if err != nil {
-		return err
-	}
-	toolContext.Context = ctx
-	toolContext.WorkspaceID, toolContext.FileSystem = session.WorkspaceID, c.FS
-	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
-	toolContext.MemoryScope = func(callCtx context.Context, libraryID string) (bool, error) {
-		return c.chatMemoryScope(callCtx, session.WorkspaceID, enabledMemoryIDs, libraryID)
-	}
-	toolContext.CreateMemory = func(callCtx *agenttool.ToolContext, libraryID, data string, tags []string) (string, error) {
-		return c.createChatMemory(callCtx.Context, session.WorkspaceID, enabledMemoryIDs, callCtx.PermissionLevel, libraryID, data, tags, callCtx.WorkspaceOnly)
-	}
-	c.bindChatMemoryRead(toolContext, session)
-	memoryContext := ""
-	if options != nil {
-		toolContext.MemoryScope = options.memoryScope
-		toolContext.CreateMemory = options.createMemory
-		toolContext.ReadMemory, toolContext.SearchMemory, toolContext.ListMemories = options.readMemory, options.searchMemory, options.listMemories
-		memoryContext = options.memoryContext
-	} else {
-		memoryContext, err = c.chatMemoryContext(ctx, session)
-	}
+	model := config.Model[modelIndex]
+	toolContext, memoryContext, err := c.chatExecutionContext(ctx, session, options)
 	if err != nil {
 		return err
 	}
@@ -1284,67 +1250,29 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return err
 	}
 
-	chatServer.mu.Lock()
-	if chatServer.ChatList == nil {
-		chatServer.ChatList = make(map[string]chat.ChatTask)
+	if err := c.chatExecutionClient(session, config); err != nil {
+		return err
 	}
-	entry := chatServer.ChatList[id]
-	if entry.Client == nil || entry.ConfigID != session.ConfigID || entry.Model != session.Model {
-		entry = chat.ChatTask{
-			ConfigID: session.ConfigID,
-			Model:    session.Model,
-			Client: netclient.NewAPIClient(netclient.Options{
-				ServerAddress: config.ServerAddress,
-				APIKey:        config.APIKey,
-				Model:         session.Model,
-			}),
-		}
-		chatServer.ChatList[id] = entry
-	}
-	session.Client = entry.Client
-	chatServer.mu.Unlock()
-
 	tools := c.enabledTools(session)
-	request.Thinking = session.ReasoningEffort
-	request.Tools = tools
+	request := &apiImpl.ChatRequest{Model: model.ID, Thinking: session.ReasoningEffort, Tools: tools}
 	toolRun := &toolExecutionRun{
 		core: c, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
 		strict: c.strictToolMode(session), blocked: make(map[string]apiImpl.ToolCall), seen: make(map[string]bool),
 		options: options,
 	}
-	// history 是本次请求的历史，produced 是本节点新产出的消息（assistant / tool 交替）
-	// 人设作为第一条 system，每次请求都带上——模型服务端不保存上一轮状态
-	history := make([]apiImpl.ChatMessage, 0, len(request.Messages)+2)
-	if session.Tree != nil && session.Tree.Root != nil {
-		active := persona.Resolve(session.Tree.Root.PersonaID)
-		if prompt, promptErr := active.Prompt(); promptErr == nil {
-			history = append(history, apiImpl.ChatMessage{Role: "system", Content: prompt})
-		}
-	}
-	if toolContext.WorkSpace != "" {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: fmt.Sprintf(texts.ChatWorkspace, toolContext.WorkSpace)})
-	} else {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: texts.ChatWithoutWorkspace})
-	}
-	if memoryContext != "" {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: memoryContext})
-	}
-	if options != nil && options.systemPrompt != "" {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: options.systemPrompt})
-	}
-	policyIndex := len(history)
-	history = append(history, apiImpl.ChatMessage{Role: "system"})
-	history = append(history, request.Messages...)
-	changesNotice, noticeErr := toolChangesNotice(session)
-	if noticeErr != nil {
-		return noticeErr
-	}
-	if changesNotice != "" {
-		history = append(history, apiImpl.ChatMessage{Role: "system", Content: changesNotice})
-	}
+	// 压缩只影响请求历史；produced 始终完整保存本节点实际产出的消息。
+	prefix := chatExecutionPrefix(session, toolContext, memoryContext, options, toolRun.strict)
+	policyIndex := len(prefix) - 1
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
+	if err := c.restoreCompactionReads(toolRun, model); err != nil {
+		return err
+	}
+	history, err := chatExecutionHistory(session, model, prefix)
+	if err != nil {
+		return err
+	}
 
 	for round := 0; round <= maxToolRounds; round++ {
 		if err := ctx.Err(); err != nil {
@@ -1352,8 +1280,23 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			return err
 		}
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
-		history[policyIndex].Content = toolPolicyPrompt(toolRun.strict, toolContext, session.ToolConfig)
+		prefix[policyIndex].Content = toolPolicyPrompt(toolRun.strict, toolContext, session.ToolConfig)
+		history[policyIndex] = prefix[policyIndex]
 		request.Messages = history
+		// 只在完整工具轮之后检查预算，避免拆散调用和结果或重放已执行工具。
+		if shouldCompactChat(*request, model) {
+			if err := c.compactChatSnapshot(toolRun, reply, model, prefix); err != nil {
+				return errors.Join(err, c.saveReplyLocked(directory, session, options))
+			}
+			history, err = chatExecutionHistory(session, model, prefix)
+			if err != nil {
+				return err
+			}
+			request.Messages = history
+		}
+		if model.MaxContext > 0 && apiImpl.RequestTokens(*request)+compactionOutputReserve(model) > model.MaxContext {
+			return errors.New("保留的近期消息和输出预留仍超过模型上下文窗口，原始对话已保留；请缩短过大的单条消息或选择更大的上下文窗口")
+		}
 		var requestUsage *apiImpl.TokenUsage
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
 			if delta.Content != "" {
@@ -1387,6 +1330,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		// 流可能多次上报用量快照，只记录最后一份；不持有 ChatServer.mu。
 		if options != nil && options.recordUsage != nil {
 			options.recordUsage(requestUsage)
+		}
+		assistant.Tokens = apiImpl.MessageTokens(assistant)
+		if requestUsage != nil && requestUsage.CompletionTokens > 0 {
+			assistant.Tokens = requestUsage.CompletionTokens + 4
 		}
 		produced = append(produced, assistant)
 		reply.Child = produced
@@ -1443,6 +1390,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			}
 			EmitJSON(EventChatTool, payload)
 			toolMsg := apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: output, ToolError: toolError}
+			toolMsg.Tokens = apiImpl.MessageTokens(toolMsg)
 			history = append(history, toolMsg)
 			produced = append(produced, toolMsg)
 			reply.Child = produced

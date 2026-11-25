@@ -27,11 +27,7 @@ func (tree *ChatTree) ToChatRequest(model apiImpl.Model) (*apiImpl.ChatRequest, 
 	if tree == nil || tree.Root == nil {
 		return nil, errors.New("对话树尚未初始化")
 	}
-	messages := make([]apiImpl.ChatMessage, 0)
-	err := tree.Each(func(message *apiImpl.ChatMessage) {
-		messages = append(messages, *message)
-	})
-
+	messages, err := tree.ContextMessages()
 	if err != nil {
 		return nil, err
 	}
