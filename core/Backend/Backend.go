@@ -31,7 +31,12 @@ func (c *Core) SelectDirectory(defaultDirectory string) (string, error) {
 
 // LoadConfigs 读取配置；首次启动时创建空配置和所需目录。
 func (c *Core) LoadConfigs() (*Configs, error) {
-	if c == nil || c.Paths == nil || c.Paths.ConfigFile == "" {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
+	if c.Paths == nil || c.Paths.ConfigFile == "" {
 		return nil, errors.New("配置路径尚未初始化")
 	}
 	if c.FS == nil {
@@ -63,6 +68,11 @@ func (c *Core) configAt(index int) (*Config, error) {
 // SelectConfig 供前端调用：启用第 index 个配置（提供商，从 0 开始）并写回配置文件。
 // 启用模型随配置走：切换提供商后沿用该配置自己记住的 EnabledModel。
 func (c *Core) SelectConfig(index int) (*Configs, error) {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
 	selected, err := c.configAt(index)
 	if err != nil {
 		return nil, err
@@ -82,7 +92,12 @@ func (c *Core) SelectConfig(index int) (*Configs, error) {
 // SelectModel 供前端调用：在当前启用的配置里选定要使用的模型，
 // 记录到该配置的 EnabledModel 字段并写回配置文件。
 func (c *Core) SelectModel(model string) (*Configs, error) {
-	if c == nil || c.Paths == nil {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
+	if c.Paths == nil {
 		return nil, errors.New("路径尚未初始化")
 	}
 	if c.Configs == nil || c.Configs.ALLConfig == nil {
@@ -138,7 +153,12 @@ func (c *Core) ProbeModels(serverAddress, apiKey string) (*ModelProbeResult, err
 
 // AddModelConfig 保存新的 API 配置和模型列表，并将其设为当前启用配置。
 func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, models []apiImpl.Model) (*Configs, error) {
-	if c == nil || c.Paths == nil {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
+	if c.Paths == nil {
 		return nil, errors.New("路径尚未初始化")
 	}
 	if c.Configs == nil {
@@ -204,6 +224,11 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 
 // RefreshModelConfig 更新已有配置探测到的聊天地址和模型列表。
 func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiImpl.Model) (*Configs, error) {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
 	entry, err := c.configAt(index)
 	if err != nil {
 		return nil, err
@@ -254,6 +279,11 @@ func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiI
 // RenameConfig 供前端调用：修改第 index 个配置的名称并写回配置文件。
 // 名称首尾空白会被去掉；留空表示不命名，前端展示时回退为服务地址。
 func (c *Core) RenameConfig(index int, name string) (*Configs, error) {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
 	entry, err := c.configAt(index)
 	if err != nil {
 		return nil, err
@@ -273,7 +303,12 @@ func (c *Core) RenameConfig(index int, name string) (*Configs, error) {
 // DeleteConfig 供前端调用：删除第 index 个配置并写回配置文件。
 // 若删除的是当前启用的配置，启用状态一并清空。
 func (c *Core) DeleteConfig(index int) (*Configs, error) {
-	if c == nil || c.Paths == nil {
+	if c == nil {
+		return nil, errors.New("宿主尚未初始化")
+	}
+	c.configMu.Lock()
+	defer c.configMu.Unlock()
+	if c.Paths == nil {
 		return nil, errors.New("路径尚未初始化")
 	}
 	if c.Configs == nil || c.Configs.ALLConfig == nil {
@@ -554,6 +589,10 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 		return nil, err
 	}
 	session := chat.NewChatTask(chatID, title, configID, model, tree)
+	session.MemoryLibraryIDs, err = c.newChatMemoryIDs()
+	if err != nil {
+		return nil, err
+	}
 	session.CreatedAt = now
 	session.UpdatedAt = now
 	directory, err := c.chatDirectory()
@@ -969,13 +1008,14 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 	if session == nil {
 		return nil
 	}
+	defaults := c.defaultTools()
 	var enabled []apiImpl.Tool
 	for setID, set := range agenttool.ToolSets {
 		meta := set.Meta()
 		for kitID, kit := range meta.ToolKits {
 			on, explicit := session.ToolConfig.Kit(setID, kitID)
-			if !explicit && c.Configs != nil {
-				on, explicit = c.Configs.ToolNormalConfig.Kit(setID, kitID)
+			if !explicit {
+				on, explicit = defaults.Kit(setID, kitID)
 			}
 			if !explicit {
 				on = meta.Enabled && kit.Meta().Enabled
@@ -1274,6 +1314,11 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return err
 	}
 
+	keep := compactionKeepBudget(model, prefix, request.Tools)
+	policy := c.chatDefaults().Compaction
+	if session.CompactionMode != nil {
+		policy.CompactionMode = *session.CompactionMode
+	}
 	for round := 0; round <= maxToolRounds; round++ {
 		if err := ctx.Err(); err != nil {
 			c.saveReplyLocked(directory, session, options)
@@ -1284,18 +1329,21 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		history[policyIndex] = prefix[policyIndex]
 		request.Messages = history
 		// 只在完整工具轮之后检查预算，避免拆散调用和结果或重放已执行工具。
-		if shouldCompactChat(*request, model) {
-			if err := c.compactChatSnapshot(toolRun, reply, model, prefix); err != nil {
-				return errors.Join(err, c.saveReplyLocked(directory, session, options))
-			}
+		used := apiImpl.RequestTokens(*request)
+		compressed, err := c.maybeCompactChat(toolRun, reply, model, policy, keep, used)
+		if err != nil {
+			return errors.Join(err, c.saveReplyLocked(directory, session, options))
+		}
+		if compressed {
 			history, err = chatExecutionHistory(session, model, prefix)
 			if err != nil {
 				return err
 			}
 			request.Messages = history
+			used = apiImpl.RequestTokens(*request)
 		}
-		if model.MaxContext > 0 && apiImpl.RequestTokens(*request)+compactionOutputReserve(model) > model.MaxContext {
-			return errors.New("保留的近期消息和输出预留仍超过模型上下文窗口，原始对话已保留；请缩短过大的单条消息或选择更大的上下文窗口")
+		if model.MaxContext > 0 && used+compactionOutputReserve(model) > model.MaxContext {
+			return errors.New("当前上下文及输出预留超过模型窗口，原始对话已保留；请立即压缩上下文、缩短过大的单条消息或选择更大的窗口")
 		}
 		var requestUsage *apiImpl.TokenUsage
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {

@@ -176,6 +176,7 @@ function toggleSettings() {
       <nav v-if="inSettings" class="nav" aria-label="设置">
         <RouterLink to="/settings/models" class="nav-item">模型配置</RouterLink>
         <RouterLink to="/settings/general" class="nav-item">通用设置</RouterLink>
+        <RouterLink to="/settings/chat" class="nav-item">对话设置</RouterLink>
       </nav>
 
       <!-- Agent：新建对话 + 会话列表 -->

@@ -22,6 +22,8 @@ type ChatNode struct {
 	ToolOperations []agenttool.ToolOperation `json:"toolOperations,omitempty"`
 	// 非空表示这个节点执行了已通过检查的压缩；原消息和工具恢复记录继续保留。
 	Compaction *CompactionData `json:"compaction,omitempty"`
+	// 当前分支已略过的最大提醒阈值。成功压缩后重新开始。
+	SkippedCompactionAt int `json:"skippedCompactionAt,omitempty"`
 }
 
 func CreateChatNode(messages ...apiImpl.ChatMessage) *ChatNode {

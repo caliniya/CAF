@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import {
-  CreateChat,
+  CreateChat, CompactChat, SetChatCompactionMode, SubmitCompactionDecision, GetPendingCompaction,
+  builtInCompaction, type CompactionMode, type CompactionPrompt, type ChatTreeNode,
   CreateMemoryLibrary,
   CreateWorkspace,
   DeleteChat,
@@ -45,12 +46,14 @@ import {
 } from '../api'
 import { useConfigsStore } from './configs'
 
+let openChatRequest = 0
 let contextWindowRequestId = 0
+let compactionUpdates: Promise<void> = Promise.resolve()
 let effortUpdates: Promise<void> = Promise.resolve()
 let toolConfigUpdates: Promise<void> = Promise.resolve()
 let memorySettingsUpdates: Promise<void> = Promise.resolve()
 
-// 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约一 token。
+// 没有历史 token 记录时粗略估算：ASCII 约四个字符一 token，其余字符约两个 token，与后端估算相近。
 function estimateTextTokens(text: string): number {
   let ascii = 0
   let nonAscii = 0
@@ -58,7 +61,7 @@ function estimateTextTokens(text: string): number {
     if (char.codePointAt(0)! <= 0x7f) ascii++
     else nonAscii++
   }
-  return Math.ceil(ascii / 4) + nonAscii
+  return Math.ceil(ascii / 4) + nonAscii * 2
 }
 
 // 一次回复里的「工作过程」：思考、模型中间说的话、工具调用
@@ -104,7 +107,12 @@ export const useChatStore = defineStore('chat', {
     contextWindow: null as number | null,
     // 对话还没创建时先攒着，createChat 成功后写进新会话（一次性）
     pendingToolConfig: null as ChatToolConfig | null,
-    pendingMemoryLibraryIds: [] as string[],
+    pendingMemoryLibraryIds: null as string[] | null,
+    pendingCompactionMode: null as CompactionMode | null,
+    compactionChanging: false,
+    compactionPrompts: {} as Record<string, CompactionPrompt>,
+    answeringCompaction: false,
+    compactionStatus: '',
     // pendingPersonaId 用于新建对话；已有对话的人设单独保存。
     personas: [] as Persona[],
     pendingPersonaId: '',
@@ -119,7 +127,13 @@ export const useChatStore = defineStore('chat', {
   }),
   getters: {
     enabledMemoryLibraryIds(state): string[] {
-      return state.session ? state.session.memoryLibraryIds ?? [] : state.pendingMemoryLibraryIds
+      return state.session ? state.session.memoryLibraryIds ?? [] : state.pendingMemoryLibraryIds ?? useConfigsStore().defaultMemoryIds ?? []
+    },
+    compactionMode(state): CompactionMode {
+      return (state.session ? state.session.compactionMode : state.pendingCompactionMode) ?? useConfigsStore().defaultCompaction ?? builtInCompaction
+    },
+    compactionPrompt(state): CompactionPrompt | undefined {
+      return state.session ? state.compactionPrompts[state.session.id] : undefined
     },
     currentWorkspaceId(state): string {
       return state.session ? state.session.workspaceId ?? '' : state.pendingWorkspaceId
@@ -158,15 +172,18 @@ export const useChatStore = defineStore('chat', {
 
       let node = root?.next?.[root.choice ?? 0]
       const seen = new Set<string>()
-      while (node && !seen.has(node.id)) {
-        seen.add(node.id)
-        for (const message of node.child ?? []) {
+      const path: ChatTreeNode[] = []
+      while (node && !seen.has(node.id)) { seen.add(node.id); path.push(node); node = node.next?.[node.choice] }
+      const checkpoint = [...path].reverse().find(n => n.compaction)?.compaction
+      const start = checkpoint ? path.findIndex(n => n.id === checkpoint.start.nodeId) : 0
+      if (checkpoint) tokens += estimateTextTokens(checkpoint.summary + JSON.stringify(checkpoint.results ?? []))
+      for (const item of path.slice(Math.max(start, 0))) {
+        const offset = checkpoint?.start.nodeId === item.id ? checkpoint.start.index : 0
+        for (const message of (item.child ?? []).slice(offset)) {
+          if (message.tokens) { tokens += message.tokens; continue }
           tokens += 4 + estimateTextTokens(message.content ?? '') + estimateTextTokens(message.reasoning ?? '')
-          for (const call of message.tool_calls ?? []) {
-            tokens += estimateTextTokens(call.name) + estimateTextTokens(call.arguments)
-          }
+          for (const call of message.tool_calls ?? []) tokens += estimateTextTokens(call.name) + estimateTextTokens(call.arguments)
         }
-        node = node.next?.[node.choice]
       }
       // 新发送的消息尚未写进树，临时消息也计入估算。
       for (const message of state.messages) {
@@ -199,10 +216,10 @@ export const useChatStore = defineStore('chat', {
       if ((this.session?.id ?? '') !== chatId || this.currentWorkspaceId !== workspaceId) return settings
       if (this.session) {
         this.session.memoryLibraryIds = settings.enabledIds
+      } else if (this.pendingMemoryLibraryIds !== null) {
+        this.pendingMemoryLibraryIds = this.pendingMemoryLibraryIds.filter(key => settings.libraries.some(library => library.id === key))
       } else {
-        this.pendingMemoryLibraryIds = this.pendingMemoryLibraryIds.filter(
-          (key) => settings.libraries.some((library) => library.id === key),
-        )
+        useConfigsStore().defaultMemoryIds = settings.enabledIds
       }
       return { ...settings, enabledIds: [...this.enabledMemoryLibraryIds] }
     },
@@ -244,6 +261,7 @@ export const useChatStore = defineStore('chat', {
       await update
     },
     reset() {
+      ++openChatRequest
       ++contextWindowRequestId
       this.session = null
       this.messages = []
@@ -254,7 +272,9 @@ export const useChatStore = defineStore('chat', {
       this.contextWindow = null
       // 新建对话回到默认档位，不再沿用上一个对话的设置
       this.effort = 'high'
-      this.pendingMemoryLibraryIds = []
+      this.pendingCompactionMode = null
+      this.compactionStatus = ''
+      this.pendingMemoryLibraryIds = null
     },
     // 从会话数据同步思考强度：切换对话、重新生成、改模型后都会走这里
     syncEffort() {
@@ -264,7 +284,47 @@ export const useChatStore = defineStore('chat', {
         ? saved
         : 'high'
     },
-    // 用户在菜单里改档位：立即写回当前对话，切走再回来还能读回
+    async setCompactionMode(mode: CompactionMode | null) {
+      if (this.sending || this.compactionChanging) return
+      const id = this.session?.id
+      if (!id) { this.pendingCompactionMode = mode; return }
+      this.compactionChanging = true
+      const update = compactionUpdates.then(async () => {
+        const session = await SetChatCompactionMode(id, mode)
+        if (this.session?.id === id) this.session.compactionMode = session.compactionMode
+      })
+      compactionUpdates = update.catch(() => undefined)
+      try { await update } finally { this.compactionChanging = false }
+    },
+    applyCompactionPrompt(prompt: CompactionPrompt) {
+      if (!prompt.chatId || !prompt.requestId) return
+      if (!prompt.closed) this.compactionPrompts[prompt.chatId] = prompt
+      else if (this.compactionPrompts[prompt.chatId]?.requestId === prompt.requestId) delete this.compactionPrompts[prompt.chatId]
+    },
+    async answerCompaction(compact: boolean) {
+      const prompt = this.compactionPrompt
+      if (!prompt || this.answeringCompaction) return
+      this.answeringCompaction = true
+      try {
+        await SubmitCompactionDecision(prompt.chatId, prompt.requestId, compact)
+        this.applyCompactionPrompt({ ...prompt, closed: true })
+      } catch (err) { this.error = String(err) }
+      finally { this.answeringCompaction = false }
+    },
+    async compactNow() {
+      const id = this.session?.id
+      if (!id || this.sending || this.compactionChanging || this.toolChangesChanging || this.workspaceChanging || this.compactionPrompt) return
+      this.sending = true; this.error = ''; this.compactionStatus = '正在压缩上下文…'
+      try {
+        await Promise.all([compactionUpdates, effortUpdates, toolConfigUpdates, memorySettingsUpdates])
+        const session = await CompactChat(id)
+        if (this.session?.id !== id) return
+        this.session = session; this.rebuildMessages(); this.usage = null; this.compactionStatus = '上下文已压缩，原始消息仍然保留。'
+        await this.loadChats()
+      } catch (err) { if (this.session?.id === id) { this.error = String(err); this.compactionStatus = '' } }
+      finally { this.sending = false }
+    },
+    // 用户在菜单里改档位：立即写回当前对话，切走再回来还能读回。
     async setEffort(effort: 'none' | 'low' | 'high' | 'max') {
       if (this.sending) return
       this.effort = effort
@@ -357,14 +417,16 @@ export const useChatStore = defineStore('chat', {
       }
     },
     async send() {
+      this.compactionStatus = ''
       const text = this.draft.trim()
-      if (!text || this.sending || this.workspaceChanging || this.toolChangesChanging) return
+      if (!text || this.compactionPrompt || this.sending || this.workspaceChanging || this.toolChangesChanging) return
       const effort = this.effort
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
       this.error = ''
 
       try {
+        await compactionUpdates
         await effortUpdates
         await toolConfigUpdates
         await memorySettingsUpdates
@@ -535,6 +597,7 @@ export const useChatStore = defineStore('chat', {
       const id = this.session?.id
       this.workspaceChanging = true
       try {
+        await compactionUpdates
         await effortUpdates
         await toolConfigUpdates
         await memorySettingsUpdates
@@ -617,10 +680,14 @@ export const useChatStore = defineStore('chat', {
       if (this.pendingWorkspaceId) {
         this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
       }
-      if (this.pendingMemoryLibraryIds.length) {
+      if (this.pendingMemoryLibraryIds !== null) {
         this.session = await SetChatMemoryLibraries(session.id, this.pendingMemoryLibraryIds)
       }
-      this.pendingMemoryLibraryIds = []
+      this.pendingMemoryLibraryIds = null
+      if (this.pendingCompactionMode) {
+        this.session = await SetChatCompactionMode(session.id, this.pendingCompactionMode)
+        this.pendingCompactionMode = null
+      }
       // 后端新会话默认就是 high，只有用户改过档位才需要写回
       if (effort !== 'high') {
         this.session = await SetChatReasoningEffort(session.id, effort)
@@ -635,10 +702,14 @@ export const useChatStore = defineStore('chat', {
       return this.session
     },
     async openChat(id: string) {
+      const request = ++openChatRequest
+      this.compactionStatus = ''
       this.error = ''
-      await toolConfigUpdates
-      await memorySettingsUpdates
-      this.session = await GetChat(id)
+      await Promise.all([compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
+      const [session, prompt] = await Promise.all([GetChat(id), GetPendingCompaction(id)])
+      if (request !== openChatRequest) return
+      this.session = session
+      if (prompt) this.applyCompactionPrompt(prompt)
       this.pendingWorkspaceId = this.session.workspaceId ?? ''
       this.syncEffort()
       this.rebuildMessages()
@@ -676,6 +747,7 @@ export const useChatStore = defineStore('chat', {
       this.toolChangesChanging = true
       this.error = ''
       try {
+        await compactionUpdates
         await effortUpdates
         await toolConfigUpdates
         await memorySettingsUpdates

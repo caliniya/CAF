@@ -573,5 +573,67 @@ await chat.setPermission(1)
 await flush()
 assert.equal(toolConfigCalls.at(-1)[1].allowedTools, undefined, 'lowering permissions must revoke previous grants')
 
+// Compression controls call the active chat only and preserve the settings for a one-off run.
+const coreApi = window.go.Backend.Core
+const compressionCalls = []
+coreApi.SetChatCompactionMode = async (id, mode) => { compressionCalls.push([id,mode]); return { ...chat.session, compactionMode: mode ?? undefined } }
+coreApi.CompactChat = async id => { compressionCalls.push([id,'compact']); return { ...chat.session } }
+const settingButton = find(root, node => node.props['aria-controls'] === 'chat-settings-menu')
+await settingButton.props.onClick(); await flush()
+const submenuButton = find(root, node => node.props['aria-controls'] === 'chat-compaction-menu')
+await submenuButton.props.onClick({ currentTarget: submenuButton }); await flush()
+const submenu = () => find(root, node => node.props.id === 'chat-compaction-menu')
+const compressionAction = label => find(submenu(), node => node.type === 'button' && nodeText(node) === label)
+assert.equal(compressionAction('自动压缩上下文').props['aria-checked'], false)
+await compressionAction('自动压缩上下文').props.onClick(); await flush()
+assert.deepEqual(compressionCalls.at(-1), [chat.session.id, { enabled:true, automatic:true }])
+await compressionAction('启用上下文压缩').props.onClick(); await flush()
+assert.equal(compressionAction('自动压缩上下文').props.disabled,true)
+await compressionAction('立即压缩上下文').props.onClick(); await flush()
+assert.deepEqual(compressionCalls.at(-1), [chat.session.id,'compact'])
+assert.equal(chat.session.compactionMode.enabled,false)
+let decision
+coreApi.SubmitCompactionDecision = async (...args) => { decision = args }
+const activeId = chat.session.id
+emit('chat:compaction', {chatId:activeId, requestId:'first', used:35500,threshold:30000,nextThreshold:60000})
+await flush()
+const card = find(root, node => node.props['aria-label'] === '上下文压缩提醒')
+assert.ok(card && nodeText(card).includes('60,000'))
+await find(card,node => node.type==='button' && nodeText(node)==='暂不压缩').props.onClick();await flush()
+assert.deepEqual(decision,[activeId,'first',false]);assert.equal(chat.compactionPrompt,undefined)
+emit('chat:compaction',{chatId:'another', requestId:'hidden', used:60000, threshold:60000});await flush()
+assert.equal(find(root,node=>node.props['aria-label']==='上下文压缩提醒'),undefined)
+
 app.unmount()
-console.log('Chat edit and settings checks passed: editing, streaming, IME, workspace/memory confirmations, lazy details, retries, and response isolation after close, context switches, and deactivation.')
+const actualConfigsURL = dataModule(rewrite((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/stores/configs.ts'), 'utf8'), 'configs.ts')).code))
+imports['../stores/configs'] = actualConfigsURL
+imports['../memory'] = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/memory.ts'), 'utf8'), 'memory.ts')).code)
+const settingsFile = path.join(frontend, 'src/pages/SettingsChatPage.vue')
+const settingsScript = compileScript(parse(fs.readFileSync(settingsFile,'utf8')).descriptor, { id: 'chat-defaults-check', inlineTemplate:true })
+const { default: SettingsChatPage } = await import(dataModule(rewrite((await transformWithOxc(settingsScript.content,'SettingsChatPage.ts')).code)))
+const savedDefaults = { tools:{ sets:{ demo:{kits:{read:false}} } }, memoryLibraryIds:['main'], compaction:{enabled:true,automatic:false,windowPercent:70,tokenThreshold:500000} }
+let globalPayload
+coreApi.GetChatDefaults = async () => structuredClone(savedDefaults)
+coreApi.SetChatDefaults = async value => { globalPayload=JSON.parse(JSON.stringify(value)); return JSON.parse(JSON.stringify(value)) }
+coreApi.ListToolSets = async () => [{id:'demo', name:'工具',kits:[{id:'read',name:'读取',defaultEnabled:true}]}]
+coreApi.GetChatMemorySettings = async () => ({ libraries:[{id:'main',name:'Main',scope:'global'}], enabledIds:['main'] })
+const prefsApp = renderer.createApp(SettingsChatPage)
+prefsApp.use(pinia);prefsApp.mount(root);await flush()
+const globalStore=(await import(actualConfigsURL)).useConfigsStore()
+const settingInput = label => find(find(root,node=>node.type==='label' && nodeText(node).startsWith(label)),node=>node.type==='input')
+const globalForm = find(root,node=>node.type==='form')
+settingInput('模型上下文窗口比例').props['onUpdate:modelValue'](55)
+settingInput('固定 token 阈值').props['onUpdate:modelValue'](300000)
+settingInput('全局主记忆').props['onUpdate:modelValue']([])
+settingInput('读取').props.onChange({ target:{ checked:true } })
+settingInput('自动压缩上下文').props['onUpdate:modelValue'](true)
+await flush()
+assert.equal(globalStore.defaultCompaction.windowPercent,70,'unsaved thresholds leaked into active chats')
+assert.equal(globalStore.toolNormalConfig.sets.demo.kits.read,false,'unsaved module selection leaked into active chats')
+await globalForm.props.onSubmit({ preventDefault(){} });await flush()
+assert.deepEqual(globalPayload.compaction,{enabled:true,automatic:true,windowPercent:55,tokenThreshold:300000})
+assert.deepEqual(globalStore.defaultMemoryIds,[])
+assert.equal(globalStore.toolNormalConfig.sets,undefined)
+assert.equal(globalStore.defaultCompaction.tokenThreshold,300000)
+prefsApp.unmount()
+console.log('Chat edit and settings checks passed, including global defaults, compression menus, in-chat decisions, and isolated drafts.')

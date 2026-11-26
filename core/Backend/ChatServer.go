@@ -31,9 +31,10 @@ type ChatServer struct {
 }
 
 type chatSend struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	done   chan struct{}
+	compaction *pendingCompaction // 由 ChatServer.mu 保护，仅在等待用户决定时存在。
+	ctx        context.Context
+	cancel     context.CancelFunc
+	done       chan struct{}
 }
 
 type pendingQuestion struct {

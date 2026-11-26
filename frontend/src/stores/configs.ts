@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import {
-  LoadConfigs,
+  LoadConfigs, builtInCompaction, SetChatDefaults, type ChatDefaults,
   SelectConfig,
   SelectModel,
   RenameConfig,
@@ -20,6 +20,8 @@ export const useConfigsStore = defineStore('configs', {
     configs: [] as Config[],
     enables: null as Config | null,
     toolNormalConfig: null as ChatToolConfig | null,
+    defaultMemoryIds: [] as string[],
+    defaultCompaction: { ...builtInCompaction },
     loaded: false,
     loading: false,
     status: '',
@@ -40,7 +42,19 @@ export const useConfigsStore = defineStore('configs', {
       this.configs = configs.config ?? []
       this.enables = configs.EnablesConfig
       this.toolNormalConfig = configs.toolNormalConfig ?? null
+      this.defaultMemoryIds = configs.defaultMemoryIds ?? []
+      this.defaultCompaction = configs.defaultCompaction ?? { ...builtInCompaction }
       this.loaded = true
+    },
+    applyChatDefaults(value: ChatDefaults) {
+      this.toolNormalConfig = value.tools ? structuredClone(value.tools) : null
+      this.defaultMemoryIds = [...(value.memoryLibraryIds ?? [])]
+      this.defaultCompaction = { ...value.compaction }
+    },
+    async saveChatDefaults(value: ChatDefaults) {
+      const saved = await SetChatDefaults(value)
+      this.applyChatDefaults(saved)
+      return saved
     },
     async load() {
       this.loading = true

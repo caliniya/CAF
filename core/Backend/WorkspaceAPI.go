@@ -374,8 +374,8 @@ func (c *Core) toolPermission(config *agenttool.ChatToolConfig) agenttool.Permis
 	if config != nil && config.Permission != 0 {
 		return config.Permission
 	}
-	if c.Configs != nil && c.Configs.ToolNormalConfig != nil && c.Configs.ToolNormalConfig.Permission != 0 {
-		return c.Configs.ToolNormalConfig.Permission
+	if defaults := c.defaultTools(); defaults != nil && defaults.Permission != 0 {
+		return defaults.Permission
 	}
 	return agenttool.PermissionAutoEdit
 }

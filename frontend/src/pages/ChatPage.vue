@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, ListToolSets, GetMemoryLibraryDetails, CreateMemoryEntry, UpdateMemoryEntry, DeleteMemoryEntry, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
+import { onChatDelta, onChatTool, onChatCompaction, ListToolSets, GetMemoryLibraryDetails, CreateMemoryEntry, UpdateMemoryEntry, DeleteMemoryEntry, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
 import { useChatStore } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
@@ -371,6 +371,29 @@ function confirmMemoryAction() {
   if (action.kind === 'delete') return applyMemoryAction({ kind: 'delete', id: action.library.id })
   if (action.kind === 'scope') return applyMemoryAction({ kind: 'scope', id: action.library.id, scope: action.library.scope === 'global' ? 'workspace' : 'global' })
 }
+const settingsCompactionOpen = ref(false)
+const settingsCompactionFlyout = ref<HTMLElement | null>(null)
+const settingsCompactionFlip = ref(false)
+const settingsCompactionTop = ref(0)
+const compactionBusy = computed(() => chat.sending || chat.compactionChanging || chat.workspaceChanging || chat.toolChangesChanging || !!chat.compactionPrompt)
+async function toggleSettingsCompaction(event: MouseEvent) {
+  settingsPersonaOpen.value = false
+  settingsCompactionOpen.value = !settingsCompactionOpen.value
+  if (!settingsCompactionOpen.value) return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  settingsCompactionFlip.value = bounds.right + 250 > window.innerWidth - 8
+  settingsCompactionTop.value = 0
+  await nextTick()
+  const bottom = settingsCompactionFlyout.value?.getBoundingClientRect().bottom ?? 0
+  settingsCompactionTop.value = -Math.max(0, bottom - window.innerHeight + 8)
+}
+async function setCompression(option: 'enabled' | 'automatic' | 'inherit') {
+  const { enabled, automatic } = chat.compactionMode
+  try { await chat.setCompactionMode(option === 'inherit' ? null : option === 'enabled'
+    ? { enabled: !enabled, automatic: false } : { enabled, automatic: !automatic }) }
+  catch (err) { chat.error = String(err) }
+}
+async function compactNow() { closeMenus(); await chat.compactNow() }
 const settingsPersonaOpen = ref(false)
 const settingsPersonaFlyout = ref<HTMLElement | null>(null)
 const settingsPersonaFlip = ref(false)
@@ -421,6 +444,7 @@ function closeMenus() {
   permMenuOpen.value = false
   permFlyoutOpen.value = false
   settingsMenuOpen.value = false
+  settingsCompactionOpen.value = false
   settingsPersonaOpen.value = false
 }
 
@@ -444,6 +468,7 @@ function toggleSettingsMenu() {
 }
 
 async function toggleSettingsPersona(event: MouseEvent) {
+  settingsCompactionOpen.value = false
   if (settingsPersonaOpen.value) {
     settingsPersonaOpen.value = false
     return
@@ -568,7 +593,7 @@ function toggleSet(setID: string) {
 
 function toolEnabled(setID: string, kitID: string, fallback: boolean) {
   const key = toolKey(setID, kitID)
-  return key in toolOverrides.value ? toolOverrides.value[key] : fallback
+  return toolOverrides.value[key] ?? configs.toolNormalConfig?.sets?.[setID]?.kits?.[kitID] ?? fallback
 }
 
 // 整个工具集的开关状态：全开 / 全关 / 混合
@@ -703,6 +728,7 @@ let pageUnmounted = false
 const streamReady = Promise.all([
   onChatDelta((delta) => chat.applyDelta(delta)),
   onChatTool((tool) => chat.applyTool(tool)),
+  onChatCompaction((prompt) => chat.applyCompactionPrompt(prompt)),
 ]).then((subscriptions) => {
   if (pageUnmounted) subscriptions.forEach((off) => off())
   else offs.push(...subscriptions)
@@ -982,7 +1008,7 @@ watch(
     const last = chat.messages[chat.messages.length - 1]
     const processLength = last?.process?.reduce((total, item) => total + (item.content?.length ?? 0)
       + (item.approval?.arguments.length ?? 0) + (item.requestId?.length ?? 0), 0) ?? 0
-    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${processLength}:${chat.error.length}`
+    return `${chat.messages.length}:${last?.content.length ?? 0}:${last?.process?.length ?? 0}:${processLength}:${chat.error.length}:${chat.compactionPrompt?.requestId ?? ''}:${chat.compactionStatus}`
   },
   async () => {
     await nextTick()
@@ -1062,6 +1088,15 @@ watch(
           </div>
         </div>
       </div>
+      <aside v-if="chat.compactionPrompt" class="compression-card" aria-label="上下文压缩提醒" aria-live="polite">
+        <strong>要压缩上下文吗？</strong>
+        <p>当前约 {{ chat.compactionPrompt.used.toLocaleString() }} token，已达到 {{ chat.compactionPrompt.threshold.toLocaleString() }} token 的阈值。</p>
+        <p v-if="chat.compactionPrompt.nextThreshold">暂不压缩将继续本轮对话，到 {{ chat.compactionPrompt.nextThreshold.toLocaleString() }} token 时再提醒。</p>
+        <p v-else>选择暂不压缩后，本轮阈值不再提醒。你仍可从对话设置手动压缩。</p>
+        <div><button type="button" class="btn btn-ghost btn-sm" :disabled="chat.answeringCompaction" @click="chat.answerCompaction(false)">暂不压缩</button>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="chat.answeringCompaction" @click="chat.answerCompaction(true)">立即压缩</button></div>
+      </aside>
+      <p v-if="chat.compactionStatus" class="compression-status" role="status">{{ chat.compactionStatus }}</p>
       <p v-if="chat.error" class="chat-error">{{ chat.error }}</p>
       </div>
     </div>
@@ -1221,6 +1256,19 @@ watch(
                   <span class="menu-value">{{ chat.enabledMemoryLibraryIds.length }} 个已启用</span>
                 </button>
                 <div class="menu-slot">
+                  <button type="button" class="menu-row" role="menuitem" aria-haspopup="menu" aria-controls="chat-compaction-menu" :aria-expanded="settingsCompactionOpen" @click="toggleSettingsCompaction">
+                    <Settings2 class="row-icon" :size="16" /><span class="menu-row-label">上下文压缩</span><span class="menu-spacer"></span>
+                    <span class="menu-value">{{ !chat.compactionMode.enabled ? '已关闭' : chat.compactionMode.automatic ? '自动' : '先询问' }}</span><ChevronRight class="chev" :size="12" />
+                  </button>
+                  <div v-if="settingsCompactionOpen" id="chat-compaction-menu" ref="settingsCompactionFlyout" class="flyout settings-persona-flyout" :class="{ 'flyout--flip': settingsCompactionFlip }" :style="{ top: `${settingsCompactionTop}px` }" role="menu" aria-label="上下文压缩">
+                    <button type="button" class="menu-row" role="menuitemcheckbox" :aria-checked="chat.compactionMode.enabled" :disabled="compactionBusy" @click="setCompression('enabled')"><span class="menu-row-name">启用上下文压缩</span><Check v-if="chat.compactionMode.enabled" :size="15" /></button>
+                    <button type="button" class="menu-row" role="menuitemcheckbox" :aria-checked="chat.compactionMode.automatic" :disabled="compactionBusy || !chat.compactionMode.enabled" @click="setCompression('automatic')"><span class="menu-row-name">自动压缩上下文</span><Check v-if="chat.compactionMode.automatic" :size="15" /></button>
+                    <button v-if="chat.session ? chat.session.compactionMode : chat.pendingCompactionMode" type="button" class="menu-row" role="menuitem" :disabled="compactionBusy" @click="setCompression('inherit')">恢复全局默认</button>
+                    <div class="menu-sep"></div>
+                    <button type="button" class="menu-row" role="menuitem" :disabled="compactionBusy || !chat.session || !chat.messages.length" @click="compactNow">立即压缩上下文</button>
+                  </div>
+                </div>
+                <div class="menu-slot">
                   <button type="button" class="menu-row" role="menuitem" :aria-expanded="settingsPersonaOpen"
                     aria-haspopup="menu" aria-controls="chat-persona-menu" @click="toggleSettingsPersona">
                     <UserRound class="row-icon" :size="16" :stroke-width="1.6" />
@@ -1343,7 +1391,7 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
+            <button type="button" class="send" :disabled="!chat.draft.trim() || !!chat.compactionPrompt || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -1892,6 +1940,9 @@ watch(
   position: relative;
 }
 
+.compression-card { margin: 14px 0; padding: 14px 18px; border: 1px solid var(--outline); border-radius: 12px; background: var(--surface); font-size: 13px; }
+.compression-card p, .compression-status { margin: 5px 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.compression-card > div { display: flex; gap: 8px; margin-top: 10px; }
 /* 对话设置 */
 .settings-anchor {
   position: relative;

@@ -14,9 +14,11 @@ import (
 )
 
 type Configs struct {
-	ALLConfig        *[]Config `json:"config"`
-	EnablesConfig    *Config
-	ToolNormalConfig *agenttool.ChatToolConfig `json:"toolNormalConfig,omitempty"`
+	ALLConfig         *[]Config `json:"config"`
+	EnablesConfig     *Config
+	ToolNormalConfig  *agenttool.ChatToolConfig `json:"toolNormalConfig,omitempty"`
+	DefaultMemoryIDs  []string                  `json:"defaultMemoryIds,omitempty"`
+	DefaultCompaction *CompactionDefaults       `json:"defaultCompaction,omitempty"`
 }
 
 type Config struct {

@@ -30,6 +30,7 @@ type chatExecutionOptions struct {
 	recordUsage func(*api.TokenUsage)
 	// 压缩和检查也计入累计用量，但不覆盖正常对话的上下文长度。
 	recordCompactionUsage func(*api.TokenUsage)
+	confirmCompaction     func(context.Context, CompactionPrompt) (bool, error)
 	askUser               func(context.Context, string, string, string, agenttool.UserQuestion) (string, error)
 	approve               func(context.Context, string, string, string, *api.ToolApproval, func(string) (*agenttool.ChatToolConfig, error)) (string, error)
 }

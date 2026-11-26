@@ -8,7 +8,14 @@ import (
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 )
 
+// nil 的对话配置表示继续使用全局开关。阈值统一从全局设置读取。
+type CompactionMode struct {
+	Enabled   bool `json:"enabled"`
+	Automatic bool `json:"automatic"`
+}
+
 type ChatTask struct {
+	CompactionMode   *CompactionMode           `json:"compactionMode,omitempty"`
 	ID               string                    `json:"id"`
 	Title            string                    `json:"title"`
 	ConfigID         string                    `json:"configId"`

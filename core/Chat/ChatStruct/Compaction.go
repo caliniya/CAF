@@ -12,6 +12,8 @@ import (
 
 const CompactionKeepTokens = 16 * 1024
 
+var ErrNoCompactionHistory = errors.New("近期上下文已覆盖全部历史，没有可压缩的较早消息")
+
 // MessagePosition 指向保留原文的起点；这个位置可以在压缩标记节点之前。
 type MessagePosition struct {
 	NodeID string `json:"nodeId"`
@@ -148,7 +150,7 @@ func (tree *ChatTree) NewCompactionPlan(keepTokens int) (*CompactionPlan, error)
 		}
 	}
 	if len(source) < 2 {
-		return nil, errors.New("没有足够的历史可供压缩")
+		return nil, ErrNoCompactionHistory
 	}
 	target, tokens := len(source), 0
 	for target > 0 && tokens < keepTokens {
@@ -200,7 +202,7 @@ func (tree *ChatTree) NewCompactionPlan(keepTokens int) (*CompactionPlan, error)
 		cut--
 	}
 	if cut == 0 {
-		return nil, errors.New("近期上下文已覆盖全部历史，没有可压缩的较早消息")
+		return nil, ErrNoCompactionHistory
 	}
 	plan := &CompactionPlan{Start: source[cut].position, History: []CompactionTurn{}, Recent: []api.ChatMessage{}}
 	if previous != nil {

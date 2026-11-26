@@ -390,6 +390,7 @@ func TestChatAutomaticallyCompactsBeforeModelRequest(t *testing.T) {
 	task.Tree = chatstruct.CreateTree("automatic")
 	task.Tree.Root.PersonaID = "assistant"
 	seedCompactionChat(t, core, task, 6, 5000)
+	core.Configs.DefaultCompaction = &backend.CompactionDefaults{CompactionMode: chat.CompactionMode{Enabled: true, Automatic: true}, WindowPercent: 70, TokenThreshold: 500000}
 	core.Configs.EnablesConfig.Model[0].MaxContext = 65536
 	core.Configs.EnablesConfig.Model[0].MaxOutputTokens = 4096
 	var requests atomic.Int32
@@ -432,6 +433,7 @@ func TestChatCompactionBetweenToolRoundsDoesNotReplayTools(t *testing.T) {
 	core, task, file, counter := useCompactionChat(t)
 	task.Tree = chatstruct.CreateTree("tool rounds")
 	seedCompactionChat(t, core, task, 4, 4000)
+	core.Configs.DefaultCompaction = &backend.CompactionDefaults{CompactionMode: chat.CompactionMode{Enabled: true, Automatic: true}, WindowPercent: 70, TokenThreshold: 500000}
 	core.Configs.EnablesConfig.Model[0].MaxContext = 65536
 	core.Configs.EnablesConfig.Model[0].MaxOutputTokens = 4096
 	content := strings.Repeat("tool-output ", 10000)
@@ -522,6 +524,7 @@ func TestChatCompactionInsideFirstToolTurn(t *testing.T) {
 	core, task, file, counter := useCompactionChat(t)
 	task.Tree = chatstruct.CreateTree("first tool turn")
 	persistCompactionChat(t, core, task)
+	core.Configs.DefaultCompaction = &backend.CompactionDefaults{CompactionMode: chat.CompactionMode{Enabled: true, Automatic: true}, WindowPercent: 70, TokenThreshold: 500000}
 	core.Configs.EnablesConfig.Model[0].MaxContext = 65536
 	core.Configs.EnablesConfig.Model[0].MaxOutputTokens = 4096
 	content := strings.Repeat("file-content ", 8300)
@@ -771,6 +774,7 @@ func TestQQAutomaticCompactionUsesMemoryOnlyToolsAndCountsUsage(t *testing.T) {
 	if err := q.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
+	f.core.Configs.DefaultCompaction = &backend.CompactionDefaults{CompactionMode: chat.CompactionMode{Enabled: true, Automatic: true}, WindowPercent: 70, TokenThreshold: 500000}
 	f.core.Configs.EnablesConfig.Model[0].MaxContext = 65536
 	f.core.Configs.EnablesConfig.Model[0].MaxOutputTokens = 4096
 	f.restartQQ(t)

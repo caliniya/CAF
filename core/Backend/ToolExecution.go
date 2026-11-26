@@ -306,7 +306,8 @@ func (c *Core) strictToolMode(session *chat.ChatTask) bool {
 	if session.ToolConfig != nil && session.ToolConfig.StrictMode != nil {
 		return *session.ToolConfig.StrictMode
 	}
-	return c.Configs != nil && c.Configs.ToolNormalConfig != nil && c.Configs.ToolNormalConfig.StrictMode != nil && *c.Configs.ToolNormalConfig.StrictMode
+	defaults := c.defaultTools()
+	return defaults != nil && defaults.StrictMode != nil && *defaults.StrictMode
 }
 
 func toolPolicyPrompt(strict bool, ctx *agenttool.ToolContext, config *agenttool.ChatToolConfig) string {

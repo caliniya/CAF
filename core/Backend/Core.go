@@ -14,7 +14,8 @@ type Core struct {
 	Configs *Configs
 	FS      platform.FilePlatform
 
-	extMu sync.Mutex
+	extMu    sync.Mutex
+	configMu sync.RWMutex // 序列化配置读写；发布后的默认工具配置不再原地修改。
 
 	APIClient *NetAPI.NetAPIClient
 

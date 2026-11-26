@@ -27,6 +27,7 @@ const router = createRouter({
       component: ConfigsPage,
       meta: { title: '模型配置', mode: 'settings' },
     },
+    { path: '/settings/chat', component: () => import('../pages/SettingsChatPage.vue'), meta: { title: '对话设置', mode: 'settings' } },
     {
       path: '/settings/general',
       component: SettingsGeneralPage,

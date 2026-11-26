@@ -13,7 +13,7 @@ const { createPinia, setActivePinia } = await import(pathToFileURL(require.resol
 const dataModule = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
 const memoryURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/memory.ts'), 'utf8'), 'memory.ts')).code)
-const configsURL = dataModule('export const useConfigsStore = () => ({ enables: { ID: "provider" }, enabledModel: "model" })')
+const configsURL = dataModule('const state = { enables: { ID: "provider" }, enabledModel: "model", defaultMemoryIds: [] }; export const useConfigsStore = () => state')
 function rewrite(code) {
   return code.replace(/from\s+(['"])([^'"]+)\1/g, (_whole, _quote, specifier) => {
     const url = specifier === '../api' ? apiURL : specifier === '../memory' ? memoryURL : specifier === './configs' ? configsURL : pathToFileURL(require.resolve(specifier)).href
@@ -76,7 +76,18 @@ window.go.Backend.Core.SetChatMemoryLibraries = async (id, ids) => {
 await chat.createChat()
 assert.deepEqual(savedIDs, ['local'])
 assert.deepEqual(chat.session.memoryLibraryIds, ['local'])
-assert.deepEqual(chat.pendingMemoryLibraryIds, [])
+assert.equal(chat.pendingMemoryLibraryIds, null)
+
+// Untouched drafts inherit defaults, whereas explicitly clearing every check overrides them.
+const { useConfigsStore } = await import(configsURL)
+useConfigsStore().defaultMemoryIds = ['global']
+chat.reset()
+assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'])
+await chat.setMemoryLibraries([])
+await chat.createChat()
+assert.deepEqual(savedIDs, [])
+assert.deepEqual(chat.enabledMemoryLibraryIds, [])
+useConfigsStore().defaultMemoryIds = []
 
 // Workspace binding must happen before saved draft memory IDs are checked by the backend.
 const creationOrder = []

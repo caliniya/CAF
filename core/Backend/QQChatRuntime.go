@@ -596,6 +596,21 @@ func (r *qqChatRuntime) generate(parent context.Context, record QQContextInfo, j
 		systemPrompt:          fmt.Sprintf(texts.QQChatSystem, record.Kind),
 		recordUsage:           func(usage *api.TokenUsage) { r.recordTokenUsage(job, usage, true) },
 		recordCompactionUsage: func(usage *api.TokenUsage) { r.recordTokenUsage(job, usage, false) }}
+	options.confirmCompaction = func(ctx context.Context, p CompactionPrompt) (bool, error) {
+		answer, err := r.askUser(ctx, job.commandName, job.message, agenttool.UserQuestion{Question: p.question(), Options: []string{"立即压缩", "暂不压缩"}})
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		switch strings.TrimSpace(answer) {
+		case "1", "立即压缩", "压缩", "是":
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
 	options.checkTool = qqToolCheck(job.mentioned)
 	options.askUser = func(callCtx context.Context, chatID, nodeID, callID string, question agenttool.UserQuestion) (string, error) {
 		return r.askUser(callCtx, job.commandName, job.message, question)

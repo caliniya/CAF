@@ -8,8 +8,9 @@ var Emit = func(event string, data ...any) {}
 
 // 事件名,与前端 api.ts 中的契约一致。
 const (
-	EventChatDelta = "chat:delta" // 载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
-	EventChatTool  = "chat:tool"  // 载荷为 JSON 字符串，toolId/callId 用于识别，name 用于展示。
+	EventChatCompaction = "chat:compaction"
+	EventChatDelta      = "chat:delta" // 载荷为 JSON 字符串 {"content"?: string, "reasoning"?: string}
+	EventChatTool       = "chat:tool"  // 载荷为 JSON 字符串，toolId/callId 用于识别，name 用于展示。
 )
 
 // EmitJSON 把结构体序列化成 JSON 字符串后推送——

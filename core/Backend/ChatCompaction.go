@@ -79,14 +79,6 @@ func compactionKeepBudget(model api.Model, prefix []api.ChatMessage, tools []api
 	return min(chatstruct.CompactionKeepTokens, max(1, available))
 }
 
-func shouldCompactChat(request api.ChatRequest, model api.Model) bool {
-	if model.MaxContext <= 0 {
-		return false // 未提供窗口时只支持显式压缩，不猜测模型容量。
-	}
-	tokens := api.RequestTokens(request)
-	return tokens >= model.MaxContext*4/5 || tokens+compactionOutputReserve(model) >= model.MaxContext
-}
-
 func compactionReadTool(name string) bool {
 	switch name {
 	case "ReadFile", "ListDirectory", "SearchFiles", "ReadMemory", "SearchMemory", "ListMemories":
@@ -321,11 +313,16 @@ func shortCompactionOutput(value string) string {
 }
 
 func (c *Core) compactChatSnapshot(run *toolExecutionRun, marker *chatstruct.ChatNode, model api.Model, prefix []api.ChatMessage) error {
-	keep := compactionKeepBudget(model, prefix, run.enabled)
+	low, _ := c.chatDefaults().Compaction.thresholds(model.MaxContext)
+	keep := min(compactionKeepBudget(model, prefix, run.enabled), max(1, low/2))
 	plan, err := run.session.Tree.NewCompactionPlan(keep)
 	if err != nil {
 		return err
 	}
+	return c.compactChatPlan(run, marker, model, keep, plan)
+}
+
+func (c *Core) compactChatPlan(run *toolExecutionRun, marker *chatstruct.ChatNode, model api.Model, keep int, plan *chatstruct.CompactionPlan) error {
 	allowed := compactionTools(run)
 	workspace := texts.ChatWithoutWorkspace
 	if run.context.WorkSpace != "" {
@@ -375,12 +372,13 @@ func (c *Core) compactChatSnapshot(run *toolExecutionRun, marker *chatstruct.Cha
 		server.mu.Unlock()
 		return errors.New("压缩标记节点不在当前分支中")
 	}
-	previous, updated := marker.Compaction, run.session.UpdatedAt
+	previous, skipped, updated := marker.Compaction, marker.SkippedCompactionAt, run.session.UpdatedAt
+	marker.SkippedCompactionAt = 0
 	marker.Compaction = &chatstruct.CompactionData{Start: plan.Start, Summary: candidate.Summary, Restore: candidate.Restore}
 	run.session.UpdatedAt = time.Now().UTC()
 	err = c.saveExecutionChatLocked(run.directory, run.session, run.options)
 	if err != nil {
-		marker.Compaction, run.session.UpdatedAt = previous, updated
+		marker.Compaction, marker.SkippedCompactionAt, run.session.UpdatedAt = previous, skipped, updated
 		err = errors.Join(err, c.saveExecutionChatLocked(run.directory, run.session, run.options))
 	}
 	server.mu.Unlock()

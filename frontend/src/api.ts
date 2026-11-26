@@ -25,9 +25,23 @@ export interface Configs {
   config: Config[] | null
   EnablesConfig: Config | null
   toolNormalConfig?: ChatToolConfig
+  defaultMemoryIds?: string[]
+  defaultCompaction?: CompactionDefaults
 }
 
+export interface CompactionMode { enabled: boolean; automatic: boolean }
+export interface CompactionDefaults extends CompactionMode { windowPercent: number; tokenThreshold: number }
+export interface ChatDefaults { tools: ChatToolConfig | null; memoryLibraryIds: string[]; compaction: CompactionDefaults }
+export const builtInCompaction: CompactionDefaults = { enabled: true, automatic: false, windowPercent: 70, tokenThreshold: 500000 }
+export interface CompactionPrompt { chatId: string; requestId: string; used: number; threshold: number; nextThreshold?: number; closed?: boolean }
+
 interface CoreBindings {
+  GetChatDefaults(): Promise<ChatDefaults>
+  SetChatDefaults(defaults: ChatDefaults): Promise<ChatDefaults>
+  SetChatCompactionMode(id: string, mode: CompactionMode | null): Promise<ChatTask>
+  CompactChat(id: string): Promise<ChatTask>
+  GetPendingCompaction(id: string): Promise<CompactionPrompt | null>
+  SubmitCompactionDecision(id: string, requestId: string, compact: boolean): Promise<void>
 	GetClientExtensionChatConfig(clientId: string, extensionId: string): Promise<ExtensionChatConfig>
 	UpdateClientExtensionChatConfig(clientId: string, extensionId: string, config: ExtensionChatConfig): Promise<ExtensionChatConfig>
 	ListQQContexts(clientId: string, extensionId: string): Promise<QQContextInfo[]>
@@ -215,6 +229,7 @@ export interface ChatTreeNode {
   child: StoredChatMessage[] | null
   usage?: TokenUsage
   reasoningEffort?: string
+  compaction?: { start: { nodeId: string; index: number }; summary: string; results?: StoredChatMessage[] }
   toolOperations?: ToolOperation[]
 }
 
@@ -256,6 +271,7 @@ export interface Persona {
 }
 
 export interface StoredChatMessage {
+  tokens?: number
   role: string
   content: string
   reasoning?: string
@@ -265,6 +281,7 @@ export interface StoredChatMessage {
 }
 
 export interface ChatTask extends ChatSummary {
+  compactionMode?: CompactionMode
   tree: ChatTree
   createdAt: string
   // 每个对话各自的思考强度，由后端持久化在会话文件里
@@ -498,6 +515,12 @@ export function ListPersonas(): Promise<Persona[]> {
   return bridge().then((c) => c.ListPersonas())
 }
 export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c) => c.GetChat(id)) }
+export const GetChatDefaults = () => bridge().then(c => c.GetChatDefaults())
+export const SetChatDefaults = (value: ChatDefaults) => bridge().then(c => c.SetChatDefaults(value))
+export const SetChatCompactionMode = (id: string, mode: CompactionMode | null) => bridge().then(c => c.SetChatCompactionMode(id, mode))
+export const CompactChat = (id: string) => bridge().then(c => c.CompactChat(id))
+export const GetPendingCompaction = (id: string) => bridge().then(c => c.GetPendingCompaction(id))
+export const SubmitCompactionDecision = (id: string, requestId: string, compact: boolean) => bridge().then(c => c.SubmitCompactionDecision(id, requestId, compact))
 export function GetChatMemorySettings(id = ''): Promise<ChatMemorySettings> {
   return bridge().then((c) => c.GetChatMemorySettings(id))
 }
@@ -623,47 +646,21 @@ function parseEvent<T>(data: unknown): T {
   return { content: text } as T
 }
 
-// 订阅流式增量事件 "chat:delta",返回取消订阅函数。
-// runtime 注入时机可能晚于组件挂载,短暂轮询等待。
-export async function onChatDelta(
-  handler: (delta: ChatDeltaEvent) => void,
-): Promise<() => void> {
+// 订阅宿主事件。runtime 可能在组件挂载后才完成注入。
+async function onChatEvent<T>(name: string, handler: (event: T) => void): Promise<() => void> {
   for (let i = 0; i < 50; i++) {
-    const rt = (
-      window as unknown as {
-        runtime?: {
-          EventsOn(name: string, cb: (data: unknown) => void): void
-          EventsOff(...names: string[]): void
-        }
-      }
-    ).runtime
+    const rt = (window as unknown as { runtime?: {
+      EventsOn(name: string, cb: (data: unknown) => void): (() => void) | void
+      EventsOff(name: string): void
+    } }).runtime
     if (rt) {
-      rt.EventsOn('chat:delta', (data) => handler(parseEvent<ChatDeltaEvent>(data)))
-      return () => rt.EventsOff('chat:delta')
+      const off = rt.EventsOn(name, data => handler(parseEvent<T>(data)))
+      return typeof off === 'function' ? off : () => rt.EventsOff(name)
     }
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, 100))
   }
   return () => {}
 }
-
-// 订阅工具调用事件 "chat:tool",返回取消订阅函数。
-export async function onChatTool(
-  handler: (tool: ChatToolEvent) => void,
-): Promise<() => void> {
-  for (let i = 0; i < 50; i++) {
-    const rt = (
-      window as unknown as {
-        runtime?: {
-          EventsOn(name: string, cb: (data: unknown) => void): void
-          EventsOff(...names: string[]): void
-        }
-      }
-    ).runtime
-    if (rt) {
-      rt.EventsOn('chat:tool', (data) => handler(parseEvent<ChatToolEvent>(data)))
-      return () => rt.EventsOff('chat:tool')
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  return () => {}
-}
+export const onChatDelta = (handler: (event: ChatDeltaEvent) => void) => onChatEvent('chat:delta', handler)
+export const onChatTool = (handler: (event: ChatToolEvent) => void) => onChatEvent('chat:tool', handler)
+export const onChatCompaction = (handler: (event: CompactionPrompt) => void) => onChatEvent('chat:compaction', handler)

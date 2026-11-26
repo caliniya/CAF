@@ -77,7 +77,7 @@ func sortedMemoryLibraries(libraries []memory.RecollectionMeta) []memory.Recolle
 	return ordered
 }
 
-// 列出全部记忆库；id 为空时不启用任何库。
+// 列出全部记忆库；未创建的对话预览全局默认选择。
 func (c *Core) GetChatMemorySettings(id string) (*ChatMemorySettings, error) {
 	chatServer, err := c.Servers.Get[*ChatServer](ChatServerName)
 	if err != nil {
@@ -105,6 +105,9 @@ func (c *Core) GetChatMemorySettings(id string) (*ChatMemorySettings, error) {
 	if err != nil {
 		return nil, err
 	}
+	if id == "" {
+		enabledIDs = validMemoryLibraryIDs(c.chatDefaults().MemoryLibraryIDs, libraries)
+	}
 	return &ChatMemorySettings{Libraries: sortedMemoryLibraries(libraries), EnabledIDs: enabledIDs}, nil
 }
 
@@ -126,7 +129,7 @@ func (c *Core) GetWorkspaceMemorySettings(workspaceID string) (*ChatMemorySettin
 	if err != nil {
 		return nil, err
 	}
-	return &ChatMemorySettings{Libraries: sortedMemoryLibraries(libraries), EnabledIDs: []string{}}, nil
+	return &ChatMemorySettings{Libraries: sortedMemoryLibraries(libraries), EnabledIDs: validMemoryLibraryIDs(c.chatDefaults().MemoryLibraryIDs, libraries)}, nil
 }
 
 func validMemoryLibraryIDs(ids []string, libraries []memory.RecollectionMeta) []string {
