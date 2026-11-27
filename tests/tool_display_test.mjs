@@ -149,6 +149,7 @@ globalThis.window = { innerWidth: 420, innerHeight: 550, addEventListener() {}, 
   SubmitToolApproval: (...args) => { approvalCalls.push(args); return new Promise((resolve, reject) => { finishApproval = resolve; failApproval = reject }) },
 } } } }
 await loginTestProfile(apiURL)
+const previews = []; window.go.Backend.Core.GetChatImage = async (chat, id) => {previews.push([chat,id]);return 'data:image/png;base64,dGVzdA=='}
 const state = reactive({ item: { kind: 'tool', callId: 'ui-call', status: 'run', requestId: 'ui-request', approval, displayType: 'info', displayContent: 'arguments.content', content: approval.arguments }, chatId: 'chat' })
 const accepted = []
 const app = renderer.createApp({ render: () => h(ToolCallDetails, { ...state, onApproved: value => accepted.push(value) }) })
@@ -200,6 +201,18 @@ state.chatId = 'different-chat'
 state.item = { ...state.item, callId: 'changed-call', requestId: undefined, status: 'fail', approval: { ...approval, decision: 'canceled' } }
 await flush()
 assert.equal(find(body, node => node.props.role === 'menu'), undefined, 'a previous approval menu must close after context changes')
+const img = {id:'attachment-1',name:'截图.png',mime:'image/png'}
+chat.messages = [{role:'assistant',content:''}]
+chat.applyTool({event:'image',chatId:'chat',name:'读取图片',image:img})
+chat.applyTool({event:'image',chatId:'chat',name:'读取图片',image:img})
+assert.equal(chat.messages[0].process.length,1,'one receipt for one direct image')
+state.chatId='chat';state.item=chat.messages[0].process[0];await flush()
+assert.match(nodeText(root),/已读取图片.*截图.png/);assert.equal(previews.length,0)
+const imageDetails=find(root,n=>n.type==='details');imageDetails.props.onToggle({target:{open:true}});await flush()
+assert.deepEqual(previews,[['chat',img.id]]);assert.equal(find(root,n=>n.type==='img').props.src,'data:image/png;base64,dGVzdA==')
+imageDetails.props.onToggle({target:{open:false}});await flush();assert.equal(find(root,n=>n.type==='img'),undefined)
+state.item={kind:'tool',displayType:'image',status:'done',image:img,imageSent:false};await flush();assert.doesNotMatch(nodeText(root),/已读取图片/)
+chat.session.tree.root.next[0].next[0].inputImages=[img];chat.rebuildMessages();assert.equal(chat.messages[1].process[0].imageSent,true)
 app.unmount()
 assert.equal(handlers.size, 0)
 

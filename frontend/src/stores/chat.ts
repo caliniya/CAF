@@ -20,7 +20,7 @@ import {
   RenameMemoryLibrary,
   RenameWorkspace,
   RegenerateChatMessage,
-  SendChatMessage,
+  SendChatMessage, StopChatGeneration, type ChatAttachment, type AttachmentUpload,
   SetChatBranch,
   SetChatToolChangesUndone,
   SetChatPersona,
@@ -64,6 +64,20 @@ function estimateTextTokens(text: string): number {
   return Math.ceil(ascii / 4) + nonAscii * 2
 }
 
+export const attachmentTypes = '.png,.jpg,.jpeg,.txt,.md,.log,.json,.csv,.go,.py,.js,.ts,.vue,.yaml,.yml,.toml,.xml,.html,.css,.rs,.c,.cpp,.h,.java,.sh,.ps1,.ini'
+async function uploadFile(file: File): Promise<AttachmentUpload> {
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('读取附件失败：' + file.name))
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+    reader.readAsDataURL(file)
+  })
+  return {name: file.name, data}
+}
+function directImage(image: ChatAttachment): ProcessItem {
+  return {kind: 'tool', name: '读取图片', displayType: 'image', image, imageSent: true, status: 'done'}
+}
+
 // 一次回复里的「工作过程」：思考、模型中间说的话、工具调用
 export interface ProcessItem {
   kind: 'reasoning' | 'text' | 'tool'
@@ -72,6 +86,8 @@ export interface ProcessItem {
   toolId?: string
   callId?: string
   status?: 'run' | 'done' | 'fail'
+  image?: ChatAttachment
+  imageSent?: boolean
   displayType?: string
   displayContent?: string
   requestId?: string
@@ -83,6 +99,8 @@ export interface ProcessItem {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
+  stopped?: boolean
+  attachments?: ChatAttachment[]
   process?: ProcessItem[]
   reasoningEffort?: string
   reasoningTokens?: number
@@ -101,7 +119,10 @@ export const useChatStore = defineStore('chat', {
     session: null as StoredChatTask | null,
     messages: [] as ChatMessage[],
     draft: '',
+    draftFiles: [] as File[],
     sending: false,
+    generation: null as {chatId: string; nodeId: string} | null,
+    stopping: false,
     error: '',
     usage: null as TokenUsage | null,
     contextWindow: null as number | null,
@@ -126,6 +147,9 @@ export const useChatStore = defineStore('chat', {
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
+    generationNode(state): string {
+      return state.generation && state.generation.chatId === state.session?.id ? state.generation.nodeId : ''
+    },
     enabledMemoryLibraryIds(state): string[] {
       return state.session ? state.session.memoryLibraryIds ?? [] : state.pendingMemoryLibraryIds ?? useConfigsStore().defaultMemoryIds ?? []
     },
@@ -266,8 +290,9 @@ export const useChatStore = defineStore('chat', {
       this.session = null
       this.messages = []
       this.draft = ''
+      this.draftFiles = []
       this.error = ''
-      this.sending = false
+      this.sending = false; this.generation = null; this.stopping = false
       this.usage = null
       this.contextWindow = null
       // 新建对话回到默认档位，不再沿用上一个对话的设置
@@ -322,7 +347,7 @@ export const useChatStore = defineStore('chat', {
         this.session = session; this.rebuildMessages(); this.usage = null; this.compactionStatus = '上下文已压缩，原始消息仍然保留。'
         await this.loadChats()
       } catch (err) { if (this.session?.id === id) { this.error = String(err); this.compactionStatus = '' } }
-      finally { this.sending = false }
+      finally { this.sending = false; this.generation = null; this.stopping = false }
     },
     // 用户在菜单里改档位：立即写回当前对话，切走再回来还能读回。
     async setEffort(effort: 'none' | 'low' | 'high' | 'max') {
@@ -358,6 +383,21 @@ export const useChatStore = defineStore('chat', {
         // Compatible providers may not expose DeepSeek's model metadata endpoint.
       }
     },
+    generationStarted(event: {chatId: string; nodeId: string}) {
+      if (this.sending && this.session?.id === event.chatId) this.generation = event
+    },
+    async stopGeneration() {
+      const node = this.generationNode, id = this.session?.id
+      if (!id || !node || this.stopping) return
+      this.stopping = true
+      try { await StopChatGeneration(id, node) }
+      catch (e) {
+        if (this.generation?.nodeId === node) {
+          this.stopping = false
+          if (this.session?.id === id) this.error = String(e)
+        }
+      }
+    },
     applyDelta(delta: ChatDeltaEvent) {
       if (delta.chatId && delta.chatId !== this.session?.id) return
       if (delta.usage) this.usage = delta.usage
@@ -383,6 +423,13 @@ export const useChatStore = defineStore('chat', {
       if (!last || last.role !== 'assistant') return
       last.process = last.process ?? []
 
+      if (tool.event === 'image' && tool.image) {
+        if (tool.callId) {
+          const item = last.process.find(p => p.kind === 'tool' && p.callId === tool.callId)
+          if (item) { item.image = tool.image; item.imageSent = true }
+        } else if (!last.process.some(p => !p.callId && p.image?.id === tool.image?.id)) last.process.push(directImage(tool.image))
+        return
+      }
       if (tool.event === 'start') {
         // 模型决定调工具时，它已经说出口的话属于「工作过程」，正文让给最终回复
         if (last.content.trim()) {
@@ -416,11 +463,26 @@ export const useChatStore = defineStore('chat', {
         }
       }
     },
+    addFiles(files: File[]) {
+      if (this.sending || !files.length) return
+      const next = [...this.draftFiles, ...files]
+      const extensions = attachmentTypes.split(',')
+      for (const file of files) {
+        const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ''
+        if (!extensions.includes(ext)) { this.error = '暂不支持此附件类型：' + file.name; return }
+        const image = ['.png', '.jpg', '.jpeg'].includes(ext)
+        if (file.size > (image ? 8 * 1024 * 1024 : 256 * 1024)) { this.error = image ? '单张图片不能超过 8 MiB' : '单份文本附件不能超过 256 KiB'; return }
+      }
+      if (next.length > 4 || next.reduce((n, f) => n + f.size, 0) > 12 * 1024 * 1024) { this.error = '每条消息最多 4 个附件，合计最多 12 MiB'; return }
+      this.error = ''; this.draftFiles = next
+    },
     async send() {
       this.compactionStatus = ''
       const text = this.draft.trim()
-      if (!text || this.compactionPrompt || this.sending || this.workspaceChanging || this.toolChangesChanging) return
+      const files = [...this.draftFiles], startingChat = this.session?.id
+      if ((!text && !files.length) || this.compactionPrompt || this.sending || this.workspaceChanging || this.toolChangesChanging) return
       const effort = this.effort
+      let sentTo = '', previousLastUser: string | undefined
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
       this.sending = true
       this.error = ''
@@ -430,6 +492,8 @@ export const useChatStore = defineStore('chat', {
         await effortUpdates
         await toolConfigUpdates
         await memorySettingsUpdates
+        const uploads = await Promise.all(files.map(uploadFile))
+        if (startingChat !== this.session?.id) return
         if (!this.session) {
           await this.createChat(effort)
         }
@@ -438,16 +502,21 @@ export const useChatStore = defineStore('chat', {
           return
         }
         this.usage = null
-        this.draft = ''
-        this.messages.push({ role: 'user', content: text })
+        sentTo = this.session.id; previousLastUser = this.messages.filter(m => m.role === 'user').at(-1)?.nodeId
+        this.draft = ''; this.draftFiles = []
+        this.messages.push({ role: 'user', content: text, attachments: files.map(f => ({id:'', name:f.name, mime:f.type})) })
         this.messages.push({ role: 'assistant', content: '', reasoningEffort: effort })
-        await SendChatMessage(this.session.id, text, effort)
+        await SendChatMessage(sentTo, text, effort, uploads)
         await this.reloadSession()
       } catch (err) {
         this.error = String(err)
         await this.reloadSession().catch(() => undefined)
+        if (sentTo && sentTo === this.session?.id && !this.draft && !this.draftFiles.length &&
+          this.messages.filter(m => m.role === 'user').at(-1)?.nodeId === previousLastUser) {
+          this.draft = text; this.draftFiles = files
+        }
       } finally {
-        this.sending = false
+        this.sending = false; this.generation = null; this.stopping = false
       }
     },
     rebuildMessages() {
@@ -468,17 +537,17 @@ export const useChatStore = defineStore('chat', {
 
         for (const message of children) {
           if (message.role === 'user' || message.role === 'system') {
-            this.messages.push({ role: message.role, content: message.content ?? '', ...meta })
+            this.messages.push({ role: message.role, content: message.content ?? '', attachments: message.attachments, ...meta })
           }
         }
 
         // 助手节点：child 里是 [assistant(可能带 tool_calls), tool, tool, assistant...]
         // 最后一条 assistant 是正式回复，之前的都归入「工作过程」
         const assistantChildren = children.filter((item) => item.role === 'assistant')
-        if (assistantChildren.length) {
-          const final = assistantChildren[assistantChildren.length - 1]
+        if (assistantChildren.length || node.inputImages?.length || node.stopped) {
+          const final = assistantChildren[assistantChildren.length - 1] ?? {role:'assistant', content:''}
           const finalIndex = children.lastIndexOf(final)
-          const process: ProcessItem[] = []
+          const process: ProcessItem[] = (node.inputImages ?? []).map(directImage)
 
           for (let ci = 0; ci <= finalIndex; ci++) {
             const item = children[ci]
@@ -493,7 +562,7 @@ export const useChatStore = defineStore('chat', {
                 displayType: call.display_type, displayContent: call.display_content,
                 content: call.display_content === 'arguments' || call.display_content?.startsWith('arguments.') ? call.arguments : result?.content,
                 answer: call.display_type === 'question' ? result?.content : undefined,
-                approval: call.approval,
+                approval: call.approval, image: call.image, imageSent: call.image_sent,
                 error: result?.tool_error ?? (!result ? '调用未完成' : undefined),
               })
             }
@@ -502,7 +571,7 @@ export const useChatStore = defineStore('chat', {
             role: 'assistant',
             content: final.content ?? '',
             process: process.length ? process : undefined,
-            reasoningEffort: node.reasoningEffort,
+            stopped: node.stopped, reasoningEffort: node.reasoningEffort,
             reasoningTokens: node.usage?.completion_tokens_details?.reasoning_tokens,
             toolOperations: node.toolOperations?.filter((operation) => !operation.pending),
             ...meta,
@@ -708,6 +777,7 @@ export const useChatStore = defineStore('chat', {
       await Promise.all([compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
       const [session, prompt] = await Promise.all([GetChat(id), GetPendingCompaction(id)])
       if (request !== openChatRequest) return
+      if (this.session?.id !== id) this.draftFiles = []
       this.session = session
       if (prompt) this.applyCompactionPrompt(prompt)
       this.pendingWorkspaceId = this.session.workspaceId ?? ''
@@ -794,7 +864,7 @@ export const useChatStore = defineStore('chat', {
         this.error = String(err)
         await this.reloadSession().catch(() => undefined)
       } finally {
-        this.sending = false
+        this.sending = false; this.generation = null; this.stopping = false
       }
     },
     async regenerate(message: ChatMessage) {
@@ -802,7 +872,7 @@ export const useChatStore = defineStore('chat', {
       const index = this.messages.indexOf(message)
       this.messages = this.messages.slice(0, index + 1)
       const pending = this.messages[index]
-      pending.content = ''
+      pending.content = ''; pending.stopped = false
       pending.process = []
       pending.reasoningEffort = this.effort
       pending.reasoningTokens = undefined
@@ -818,7 +888,7 @@ export const useChatStore = defineStore('chat', {
         this.error = String(err)
         await this.reloadSession().catch(() => undefined)
       } finally {
-        this.sending = false
+        this.sending = false; this.generation = null; this.stopping = false
       }
     },
   },

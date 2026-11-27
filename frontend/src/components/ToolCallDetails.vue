@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { ChevronDown } from '@lucide/vue'
-import { SubmitUserAnswer, SubmitToolApproval, type ChatToolConfig, type ToolApprovalChoice } from '../api'
+import { GetChatImage, SubmitUserAnswer, SubmitToolApproval, type ChatToolConfig, type ToolApprovalChoice } from '../api'
 import type { ProcessItem } from '../stores/chat'
 
 const props = defineProps<{ item: ProcessItem; chatId?: string }>()
@@ -140,8 +140,26 @@ async function submitAnswer() {
   finally { submitting.value = false }
 }
 
+const preview = ref(''), previewError = ref(''), loadingImage = ref(false)
+let previewVersion = 0
+watch(() => [props.chatId, props.item.image?.id], () => {
+  ++previewVersion; preview.value = previewError.value = ''; loadingImage.value = false
+  if (expanded.value) void loadImage()
+})
+async function loadImage() {
+  const image = props.item.image, chatId = props.chatId
+  if (!image || !chatId || preview.value || loadingImage.value) return
+  const version = ++previewVersion; loadingImage.value = true; previewError.value = ''
+  try {
+    const url = await GetChatImage(chatId, image.id)
+    if (version === previewVersion && /^data:image\/(png|jpeg);base64,/.test(url)) preview.value = url
+  } catch (e) { if (version === previewVersion) previewError.value = String(e) }
+  finally { if (version === previewVersion) loadingImage.value = false }
+}
 function onToggle(event: Event) {
   expanded.value = (event.target as HTMLDetailsElement).open
+  if (expanded.value) void loadImage()
+  else { ++previewVersion; preview.value = previewError.value = ''; loadingImage.value = false }
 }
 </script>
 
@@ -149,10 +167,16 @@ function onToggle(event: Event) {
   <details v-if="hasDetails" class="tool-details" :open="expanded" @toggle="onToggle">
     <summary class="tool-line">
       <span class="tool-dot" :class="item.status" aria-hidden="true"></span>
-      <span>{{ approvalWaiting ? '等待审批' : waiting ? '等待回答' : '执行' }} {{ item.approval?.name || item.name }}</span>
+      <span v-if="item.displayType === 'image'">{{ item.imageSent ? '已读取图片' : item.status === 'fail' ? '读取图片失败' : item.image && item.status ? '图片已载入' : item.name }}<template v-if="item.image"> · {{ item.image.name }}</template></span>
+      <span v-else>{{ approvalWaiting ? '等待审批' : waiting ? '等待回答' : '执行' }} {{ item.approval?.name || item.name }}</span>
     </summary>
     <div class="tool-content">
-      <template v-if="item.approval">
+      <template v-if="item.displayType === 'image' && item.image">
+        <img v-if="preview" class="image-preview" :src="preview" :alt="item.image.name" />
+        <span v-else-if="loadingImage" role="status">正在读取预览…</span>
+        <p v-if="previewError" class="tool-error" role="alert">{{ previewError }} <button type="button" @click="loadImage">重试</button></p>
+      </template>
+      <template v-else-if="item.approval">
         <p class="approval-reason">{{ item.approval.reason }}</p>
         <p v-if="item.approval.workspaceName" class="approval-scope">当前工作区：{{ item.approval.workspaceName }}</p>
         <pre class="tool-text approval-arguments">{{ approvalArguments }}</pre>
@@ -243,4 +267,5 @@ summary.tool-line::before { content: '▸'; }
 .approval-menu button:hover, .approval-menu button:focus-visible { background: var(--tonal); }
 .approval-level { color: var(--muted); font-size: 11px; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.image-preview { display:block; width:auto; height:auto; max-width:100%; max-height:55vh; object-fit:contain; }
 </style>

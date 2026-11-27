@@ -108,6 +108,9 @@ interface CoreBindings {
   SetChatToolConfig(id: string, raw: string): Promise<ChatTask>
   SetChatBranch(id: string, parentId: string, choice: number): Promise<ChatTask>
   SetChatToolChangesUndone(id: string, nodeId: string, undone: boolean): Promise<ChatTask>
+  StopChatGeneration(id: string, nodeId: string): Promise<void>
+  GetChatImage(id: string, attachmentId: string): Promise<string>
+  SendChatMessageWithAttachments(id: string, text: string, reasoningEffort: string, files: AttachmentUpload[]): Promise<void>
   SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void>
 	SubmitUserAnswer(chatId: string, requestId: string, answer: string): Promise<void>
 	SubmitToolApproval(chatId: string, requestId: string, choice: ToolApprovalChoice): Promise<ChatToolConfig | null>
@@ -233,6 +236,8 @@ export interface ChatTreeNode {
   id: string
   choice: number
   next: ChatTreeNode[] | null
+  stopped?: boolean
+  inputImages?: ChatAttachment[]
   child: StoredChatMessage[] | null
   usage?: TokenUsage
   reasoningEffort?: string
@@ -277,12 +282,15 @@ export interface Persona {
   scenario?: string
 }
 
+export interface ChatAttachment { id: string; name: string; mime: string; text?: string }
+export interface AttachmentUpload { name: string; data: string }
 export interface StoredChatMessage {
+  attachments?: ChatAttachment[]
   tokens?: number
   role: string
   content: string
   reasoning?: string
-  tool_calls?: { id: string; name: string; arguments: string; display_name?: string; display_type?: string; display_content?: string; approval?: ToolApproval }[]
+  tool_calls?: { id: string; name: string; arguments: string; image?: ChatAttachment; image_sent?: boolean; display_name?: string; display_type?: string; display_content?: string; approval?: ToolApproval }[]
   tool_call_id?: string
   tool_error?: string
 }
@@ -616,8 +624,10 @@ export function SetChatBranch(id: string, parentId: string, choice: number): Pro
 export function SetChatToolChangesUndone(id: string, nodeId: string, undone: boolean): Promise<ChatTask> {
   return bridge().then((c) => c.SetChatToolChangesUndone(id, nodeId, undone))
 }
-export function SendChatMessage(id: string, text: string, reasoningEffort: string): Promise<void> {
-  return bridge().then((c) => c.SendChatMessage(id, text, reasoningEffort))
+export const StopChatGeneration = (id: string, nodeId: string) => bridge().then(c => c.StopChatGeneration(id, nodeId))
+export const GetChatImage = (id: string, attachmentId: string) => bridge().then(c => c.GetChatImage(id, attachmentId))
+export function SendChatMessage(id: string, text: string, reasoningEffort: string, files: AttachmentUpload[] = []): Promise<void> {
+  return bridge().then(c => files.length ? c.SendChatMessageWithAttachments(id, text, reasoningEffort, files) : c.SendChatMessage(id, text, reasoningEffort))
 }
 export function EditChatMessage(id: string, nodeId: string, text: string, reasoningEffort: string): Promise<void> {
   return bridge().then((c) => c.EditChatMessage(id, nodeId, text, reasoningEffort))
@@ -652,7 +662,8 @@ export interface ChatToolEvent {
   toolId?: string
   callId?: string
   name: string
-  event: 'start' | 'update' | 'done' | 'fail'
+  event: 'start' | 'update' | 'done' | 'fail' | 'image'
+  image?: ChatAttachment
   error?: string
   displayType?: string
   displayContent?: string
@@ -698,6 +709,7 @@ async function onChatEvent<T>(name: string, handler: (event: T) => void): Promis
   }
   return () => {}
 }
+export const onChatGeneration = (handler: (event: {chatId: string; nodeId: string}) => void) => onChatEvent('chat:generation', handler)
 export const onChatDelta = (handler: (event: ChatDeltaEvent) => void) => onChatEvent('chat:delta', handler)
 export const onChatTool = (handler: (event: ChatToolEvent) => void) => onChatEvent('chat:tool', handler)
 export const onChatCompaction = (handler: (event: CompactionPrompt) => void) => onChatEvent('chat:compaction', handler)

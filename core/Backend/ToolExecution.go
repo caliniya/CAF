@@ -79,8 +79,8 @@ func invokeTool(prepared *preparedToolCall, ctx *agenttool.ToolContext) (string,
 	defer cancel()
 	callContext := *ctx
 	callContext.Context = executionContext
-	if _, reversible := prepared.tool.(agenttool.ReversibleTool); reversible {
-		// 可撤回变更必须等工具真正结束，超时不能留下仍在写文件的后台协程。
+	if _, reversible := prepared.tool.(agenttool.ReversibleTool); reversible || prepared.tool.Meta().ID == agenttool.ReadImageID {
+		// Wait for filesystem changes and image staging to finish before publishing or discarding their result.
 		output, err := prepared.tool.Fun(&callContext, prepared.args)
 		if executionContext.Err() != nil {
 			return "", executionContext.Err()
@@ -111,6 +111,7 @@ func invokeTool(prepared *preparedToolCall, ctx *agenttool.ToolContext) (string,
 }
 
 type toolExecutionRun struct {
+	vision     *chatVision
 	core       *Core
 	approvals  *ToolApprovalServer
 	session    *chat.ChatTask

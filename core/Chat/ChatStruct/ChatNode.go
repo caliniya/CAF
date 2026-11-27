@@ -10,10 +10,12 @@ import (
 
 // ChatNode 保存一段消息以及可选的后续对话分支。
 type ChatNode struct {
-	ID     string                `json:"id"`
-	Choice int                   `json:"choice"`
-	Next   []*ChatNode           `json:"next"`
-	Child  []apiImpl.ChatMessage `json:"child"`
+	Stopped     bool                  `json:"stopped,omitempty"`
+	InputImages []apiImpl.Attachment  `json:"inputImages,omitempty"` // direct images accepted during this reply
+	ID          string                `json:"id"`
+	Choice      int                   `json:"choice"`
+	Next        []*ChatNode           `json:"next"`
+	Child       []apiImpl.ChatMessage `json:"child"`
 	// Usage 保存该回复最后一次模型请求的用量，切换分支或重开时可恢复。
 	Usage *apiImpl.TokenUsage `json:"usage,omitempty"`
 	// 记录生成该回复时的设置，后续更改会话设置不影响历史回复。

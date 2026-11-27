@@ -395,7 +395,7 @@ func (r *qqChatRuntime) deleteContextsLocked(keys []string) error {
 		for _, key := range keys {
 			record := r.records[key]
 			for _, relative := range []string{
-				filepath.Join("sessions", record.ID+".json"), filepath.Join("sessions", record.ID+".json.tmp"), filepath.Join("history", record.ID),
+				filepath.Join("sessions", record.ID+".json"), filepath.Join("sessions", record.ID+".json.tmp"), filepath.Join("history", record.ID), filepath.Join("attachments", record.ID),
 			} {
 				if err := r.core.FS.RemoveAllInRoot(r.directory, relative); err != nil {
 					return fmt.Errorf("删除 QQ 对话文件失败：%w", err)

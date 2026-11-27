@@ -112,6 +112,9 @@ func (c *Core) exportUserFiles(z *zip.Writer, include bool) error {
 				return e
 			}
 			scope := conversationScope(c.Paths.Data, filepath.Join(c.Paths.Data, file))
+			if scope == "" {
+				scope = imageScope(name)
+			}
 			if scope != "" {
 				b, e := root.ReadFile(file)
 				if e != nil {

@@ -606,6 +606,53 @@ assert.deepEqual(decision,[activeId,'first',false]);assert.equal(chat.compaction
 emit('chat:compaction',{chatId:'another', requestId:'hidden', used:60000, threshold:60000});await flush()
 assert.equal(find(root,node=>node.props['aria-label']==='上下文压缩提醒'),undefined)
 
+// Paste an image without a prompt, send it through the real store/bridge, and stop before the first token.
+const samplePNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN0cAAAAASUVORK5CYII='
+const screenshot = new File([Buffer.from(samplePNG, 'base64')], '截图.png', {type: 'image/png'})
+globalThis.FileReader = class {
+  async readAsDataURL(file) { this.result = `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString('base64')}`; this.onload() }
+}
+let sentImage, finishImageSend, stopTarget
+coreApi.SendChatMessageWithAttachments = (...args) => {
+  sentImage = args
+  return new Promise(resolve => { finishImageSend = resolve })
+}
+coreApi.StopChatGeneration = async (...args) => {
+  stopTarget = args
+  const stopped = {id: 'image-reply', choice: -1, child: [], stopped: true}
+  const user = userNode('image-user', '', [stopped])
+  user.child[0].attachments = [{id: 'attachment-demo', name: '截图.png', mime: 'image/png'}]
+  savedSession = {...originalSession, id: activeId, tree: {root: {choice: 0, next: [user]}}}
+  finishImageSend()
+}
+const composer = find(root, node => node.props.class === 'composer')
+const composerAction = label => find(composer, node => node.type === 'button' && node.props['aria-label'] === label)
+chat.draft = ''
+let handledPaste = false
+composer.props.onPaste({clipboardData: {files: [screenshot]}, preventDefault() { handledPaste = true }})
+await flush()
+assert.ok(handledPaste && composerAction('移除 截图.png'))
+assert.equal(composerAction('发送').props.disabled, false)
+const sendingImage = composerAction('发送').props.onClick()
+await flush()
+assert.deepEqual(sentImage, [activeId, '', chat.effort, [{name: '截图.png', data: samplePNG}]])
+emit('chat:generation', {chatId: activeId, nodeId: 'image-reply'})
+await flush()
+assert.ok(composerAction('停止生成'))
+chat.session = {...chat.session, id: 'other-image-chat'}
+await flush()
+assert.equal(composerAction('停止生成'), undefined, 'switching chats must hide the other reply’s stop button')
+chat.session = {...chat.session, id: activeId}
+await flush()
+await composerAction('停止生成').props.onClick()
+await sendingImage
+await flush()
+assert.deepEqual(stopTarget, [activeId, 'image-reply'])
+assert.ok(find(root, node => node.type === 'p' && nodeText(node) === '已停止生成'))
+assert.equal(chat.messages.at(-1).stopped, true, 'a stopped node with no deltas must remain visible')
+assert.equal(chat.sending, false)
+assert.deepEqual(chat.draftFiles, [])
+
 app.unmount()
 const actualConfigsURL = dataModule(rewrite((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/stores/configs.ts'), 'utf8'), 'configs.ts')).code))
 imports['../stores/configs'] = actualConfigsURL

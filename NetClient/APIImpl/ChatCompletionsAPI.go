@@ -31,6 +31,10 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 	}
 
 	for _, m := range req.Messages {
+		// 中断时可能只收到了思考；保留在本地，协议要求 assistant 至少有正文或工具调用。
+		if m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) == 0 {
+			continue
+		}
 		body.Messages = append(body.Messages, api.toCCMessage(m))
 	}
 
@@ -62,8 +66,19 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 
 func (api *ChatCompletionAPI) toCCMessage(m ChatMessage) CCChatMessage {
 	cc := CCChatMessage{Role: m.Role}
-	if m.Content != "" {
-		cc.Content = m.Content
+	text := m.InputText()
+	if text != "" {
+		cc.Content = text
+	}
+	if m.Role == "user" && len(m.Images) > 0 {
+		parts := make([]map[string]any, 0, 1+2*len(m.Images))
+		if text != "" {
+			parts = append(parts, map[string]any{"type": "text", "text": text})
+		}
+		for _, img := range m.Images {
+			parts = append(parts, map[string]any{"type": "text", "text": img.Name}, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img.DataURL()}})
+		}
+		cc.Content = parts
 	}
 	if m.Reasoning != "" {
 		cc.ReasoningContent = &m.Reasoning

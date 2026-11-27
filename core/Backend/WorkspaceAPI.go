@@ -79,6 +79,9 @@ func (c *Core) deleteChatFiles(directory, chatID string) error {
 	if err := c.FS.RemoveAllInRoot(root, filepath.Join("WorkspaceCache", chatInternalWorkspaceID(chatID))); err != nil {
 		return fmt.Errorf("删除对话内部工作区的撤销记录失败：%w", err)
 	}
+	if err := c.FS.RemoveAllInRoot(directory, filepath.Join("attachments", chatID)); err != nil {
+		return err
+	}
 	return c.FS.DeleteFile(filepath.Join(directory, chatID+".json"))
 }
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { onChatDelta, onChatTool, onChatCompaction, ListToolSets, GetMemoryLibraryDetails, CreateMemoryEntry, UpdateMemoryEntry, DeleteMemoryEntry, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
-import { useChatStore } from '../stores/chat'
+import { onChatGeneration, onChatDelta, onChatTool, onChatCompaction, ListToolSets, GetMemoryLibraryDetails, CreateMemoryEntry, UpdateMemoryEntry, DeleteMemoryEntry, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
+import { useChatStore, attachmentTypes } from '../stores/chat'
 import { useConfigsStore } from '../stores/configs'
 import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
@@ -727,6 +727,7 @@ let offs: (() => void)[] = []
 let pageUnmounted = false
 // 首轮发送前等订阅就绪，避免 Wails runtime 尚未注入时漏掉开头的思考增量。
 const streamReady = Promise.all([
+  onChatGeneration((event) => chat.generationStarted(event)),
   onChatDelta((delta) => chat.applyDelta(delta)),
   onChatTool((tool) => chat.applyTool(tool)),
   onChatCompaction((prompt) => chat.applyCompactionPrompt(prompt)),
@@ -818,6 +819,19 @@ function closeMenusOnOutside(event: PointerEvent) {
 
 // Enter 发送；带修饰键的 Enter（Shift、Ctrl+Shift 等）统一插入换行。
 // 浏览器对 Ctrl+Shift+Enter 默认没有行为，所以这里手动插入，不依赖默认行为。
+const attachmentPicker = ref<HTMLInputElement | null>(null)
+function chooseFiles(event: Event) {
+  const el = event.target as HTMLInputElement
+  chat.addFiles(Array.from(el.files ?? [])); el.value = ''
+}
+function pasteFiles(event: ClipboardEvent) {
+  const files = Array.from(event.clipboardData?.files ?? [])
+  if (files.length) { event.preventDefault(); chat.addFiles(files) }
+}
+function dropFiles(event: DragEvent) {
+  if (event.dataTransfer?.types.includes('Files')) { event.preventDefault(); chat.addFiles(Array.from(event.dataTransfer.files)) }
+}
+function dragFiles(event: DragEvent) { if (event.dataTransfer?.types.includes('Files')) event.preventDefault() }
 function onComposerKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
   const modifier = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
@@ -1026,11 +1040,12 @@ watch(
       <div class="chat-list">
       <div v-for="(m, i) in chat.messages" :key="`${m.nodeId}:${i}`" class="msg" :class="m.role">
         <!-- 模型工作过程：思考 + 中间轮次的文本 + 工具调用，最终回复在外面 -->
-        <details v-if="m.role === 'assistant' && m.process?.length" class="process"
+        <ToolCallDetails v-for="item in m.process?.filter(p => p.displayType === 'image')" :key="item.callId || item.image?.id" :item="item" :chat-id="chat.session?.id" />
+        <details v-if="m.role === 'assistant' && m.process?.some(p => p.displayType !== 'image')" class="process"
           :open="chat.sending && i === chat.messages.length - 1">
           <summary>模型工作过程</summary>
           <div class="process-body">
-            <template v-for="(item, pi) in m.process" :key="item.callId ? `${m.nodeId ?? i}:${item.callId}` : pi">
+            <template v-for="(item, pi) in m.process.filter(p => p.displayType !== 'image')" :key="item.callId ? `${m.nodeId ?? i}:${item.callId}` : pi">
               <!-- 每轮思考单独可折叠；生成中自动展开，结束后交给用户控制 -->
               <details v-if="item.kind === 'reasoning'" class="process-reason"
                 :open="chat.sending && i === chat.messages.length - 1 ? true : undefined">
@@ -1059,10 +1074,16 @@ watch(
         </template>
         <template v-else>
           <div v-if="m.role === 'system'" class="msg-system-body">{{ m.content }}</div>
-          <div v-else-if="m.role === 'user'" class="msg-body">{{ m.content }}</div>
+          <template v-else-if="m.role === 'user'"><div v-if="m.content" class="msg-body">{{ m.content }}</div>
+            <template v-for="(file, fi) in m.attachments" :key="file.id || fi">
+              <ToolCallDetails v-if="file.id && file.mime.startsWith('image/')" :chat-id="chat.session?.id" :item="{kind:'tool',name:'图片附件',displayType:'image',image:file}" />
+              <details v-else-if="file.text !== undefined" class="text-attachment"><summary>{{ file.name }}</summary><pre>{{ file.text }}</pre></details>
+              <span v-else class="file-name">{{ file.name }}</span>
+            </template></template>
           <div v-else class="msg-body markdown-body" v-html="bodyHtml(m, i)"></div>
         </template>
 
+        <p v-if="m.stopped" class="reasoning-empty">已停止生成</p>
         <ToolChangesFooter v-if="m.role === 'assistant' && m.toolOperations?.length" :operations="m.toolOperations"
           :can-undo="m.canUndoToolChanges" :can-redo="m.canRedoToolChanges"
           :busy="chat.sending || chat.workspaceChanging || chat.toolChangesChanging"
@@ -1171,13 +1192,16 @@ watch(
           </div>
         </div>
 
-        <div class="composer">
+        <div class="composer" @drop="dropFiles" @dragover="dragFiles" @paste="pasteFiles">
+          <input ref="attachmentPicker" type="file" hidden multiple :accept="attachmentTypes" @change="chooseFiles" />
+          <div v-if="chat.draftFiles?.length" class="draft-files" aria-label="待发送附件"><span v-for="(file, fi) in chat.draftFiles" :key="fi" class="draft-file">{{ file.name }}
+            <button type="button" :disabled="chat.sending" :aria-label="'移除 ' + file.name" @click="chat.draftFiles.splice(fi, 1)">×</button></span></div>
           <textarea v-model="chat.draft" class="composer-input" rows="1"
             placeholder="Enter 发送 · Shift+Enter / Ctrl+Shift+Enter 换行"
             @keydown="onComposerKeydown"></textarea>
 
           <div class="composer-bar">
-            <button type="button" class="bar-icon" title="附件" aria-label="附件">
+            <button type="button" class="bar-icon" title="添加图片或文本文件" aria-label="附件" :disabled="chat.sending" @click="attachmentPicker?.click()">
               <Plus :size="16" :stroke-width="2" />
             </button>
 
@@ -1392,7 +1416,8 @@ watch(
               </div>
             </div>
 
-            <button type="button" class="send" :disabled="!chat.draft.trim() || !!chat.compactionPrompt || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
+            <button v-if="chat.sending && chat.generationNode" type="button" class="send" aria-label="停止生成" :title="chat.stopping ? '正在停止…' : '停止生成'" :disabled="chat.stopping" @click="chat.stopGeneration()"><span aria-hidden="true" class="stop-icon"></span></button>
+            <button v-else type="button" class="send" :disabled="(!chat.draft.trim() && !chat.draftFiles?.length) || !!chat.compactionPrompt || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -2360,4 +2385,9 @@ watch(
   padding: 12px 20px;
   border-top: 1px solid var(--outline);
 }
+.stop-icon { width: 11px; height: 11px; border-radius: 2px; background: currentColor; }
+.draft-files { display:flex; flex-wrap:wrap; gap:6px; padding:6px 10px 0; }
+.draft-file,.file-name { display:inline-flex; align-items:center; gap:6px; max-width:100%; overflow-wrap:anywhere; border-radius:6px; padding:2px 7px; background:var(--tonal); color:var(--ink); font-size:12px; }
+.draft-file button { border:0; background:transparent; font:inherit; cursor:pointer; }
+.text-attachment pre { max-height:16em; overflow:auto; white-space:pre-wrap; } .text-attachment summary { cursor:pointer; }
 </style>

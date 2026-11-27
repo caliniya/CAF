@@ -6,7 +6,9 @@ import "encoding/json"
 type ChatMessage struct {
 	Role string `json:"role"` // "system" | "user" | "assistant" | "tool"
 
-	Content string `json:"content,omitempty"`
+	Content     string       `json:"content,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"` // user-provided references; image bytes live outside the tree
+	Images      []InputImage `json:"-"`                     // request only, for the current multimodal request
 	// Tokens 只记录这条消息新增的用量，用于粗略划分压缩范围；协议不会发送此字段。
 	// 模型输出优先使用本次 completion_tokens，用户消息和工具结果使用文本估算。
 	Tokens int `json:"tokens,omitempty"`
@@ -24,9 +26,11 @@ type ChatMessage struct {
 
 // ToolCall 是一次工具调用。Arguments 是 JSON 对象的字符串形式
 type ToolCall struct {
-	ID             string        `json:"id"`   // 本次调用的 ID，用于关联工具结果。
-	Name           string        `json:"name"` // API 函数名，即 ToolMeta.ID。
+	Image          *Attachment   `json:"image,omitempty"` // snapshot taken by ReadImage
+	ID             string        `json:"id"`              // 本次调用的 ID，用于关联工具结果。
+	Name           string        `json:"name"`            // API 函数名，即 ToolMeta.ID。
 	Arguments      string        `json:"arguments"`
+	ImageSent      bool          `json:"image_sent,omitempty"`   // upstream responded to the request containing the pixels
 	DisplayName    string        `json:"display_name,omitempty"` // 仅用于界面和历史记录，不发送给模型。
 	DisplayType    string        `json:"display_type,omitempty"` // 展示字段不发送给模型。
 	DisplayContent string        `json:"display_content,omitempty"`

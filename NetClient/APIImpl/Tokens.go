@@ -25,7 +25,10 @@ func MessageTokens(message ChatMessage) int {
 	if message.Tokens > 0 {
 		return message.Tokens
 	}
-	tokens := 4 + EstimateTextTokens(message.Content) + EstimateTextTokens(message.Reasoning)
+	tokens := 4 + EstimateTextTokens(message.InputText()) + EstimateTextTokens(message.Reasoning)
+	for _, img := range message.Images {
+		tokens += 85 + 170*((img.Width+511)/512)*((img.Height+511)/512)
+	} // tile estimate, never count Base64 characters
 	if message.ToolCallID != "" {
 		tokens += EstimateTextTokens(message.ToolCallID)
 	}

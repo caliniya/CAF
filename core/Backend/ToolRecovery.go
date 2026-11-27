@@ -34,6 +34,15 @@ func (c *Core) toolRecoveryPath(workspaceID, recoveryID string) (string, error) 
 
 func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.ToolContext, original api.ToolCall) (string, error) {
 	ctx.CallID = original.ID
+	if original.Name == agenttool.ReadImageID && r.vision != nil {
+		before := len(r.vision.pending)
+		ctx.ReadImage = func(parent context.Context, source string) (string, error) { return r.vision.read(parent, ctx, source) }
+		output, err := invokeTool(prepared, ctx)
+		if err != nil {
+			r.vision.pending = r.vision.pending[:before]
+		}
+		return output, err
+	}
 	if _, reversible := prepared.tool.(agenttool.ReversibleTool); !reversible {
 		return invokeTool(prepared, ctx)
 	}

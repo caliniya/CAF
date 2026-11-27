@@ -23,6 +23,7 @@ const (
 	Request      = "request"
 	Archive      = "archive"
 	Recovery     = "recovery"
+	Attachment   = "attachment"
 )
 
 // 限制前缀为路径安全的单个类型名，保证格式中只有一个短横线。

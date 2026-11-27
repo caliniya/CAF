@@ -2,6 +2,7 @@ package MainTool
 
 import (
 	agenttool "github.com/caliniya/caf/core/Agent/AgentTool"
+	extended "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/ExtendedInteraction"
 	FileToolInMainTool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/FileTool"
 	InteractionToolInMainTool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MainTool/InteractionTool"
 )
@@ -30,6 +31,7 @@ func (m *MainTools) Meta() agenttool.ToolSetMeta {
 }
 
 func InitMainTool() *MainTools {
+	extensions := extended.New()
 	FileTool := FileToolInMainTool.InitFileTool()
 	InteractionTool := InteractionToolInMainTool.InitInteractionTool()
 
@@ -39,6 +41,7 @@ func InitMainTool() *MainTools {
 			Description: "内置的标准工具集",
 			Enabled:     true,
 			ToolKits: map[string]agenttool.ToolKit{
+				extensions.Name:      extensions,
 				FileTool.Name:        FileTool,
 				InteractionTool.Name: InteractionTool,
 			},

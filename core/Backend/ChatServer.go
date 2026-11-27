@@ -31,10 +31,12 @@ type ChatServer struct {
 }
 
 type chatSend struct {
-	compaction *pendingCompaction // 由 ChatServer.mu 保护，仅在等待用户决定时存在。
-	ctx        context.Context
-	cancel     context.CancelFunc
-	done       chan struct{}
+	nodeID      string // cancellable desktop reply; guarded by ChatServer.mu
+	userStopped bool
+	compaction  *pendingCompaction // 由 ChatServer.mu 保护，仅在等待用户决定时存在。
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
 }
 
 type pendingQuestion struct {
@@ -182,4 +184,21 @@ func (s *ChatServer) Close(ctx context.Context) error {
 	s.ChatList = nil
 	s.mu.Unlock()
 	return ctx.Err()
+}
+
+// A delayed click from a previous reply must never cancel a newer generation.
+func (c *Core) StopChatGeneration(chatID, nodeID string) error {
+	s, err := c.Servers.Get[*ChatServer](ChatServerName)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run := s.sending[chatID]
+	if run == nil || nodeID == "" || run.nodeID != nodeID {
+		return nil
+	}
+	run.userStopped = true
+	run.cancel()
+	return nil
 }

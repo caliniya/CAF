@@ -8,8 +8,11 @@ import (
 	platform "github.com/caliniya/caf/platform"
 )
 
+const ReadImageID = "ReadImage"
+
 // 用于工具的一个简单上下文
 type ToolContext struct {
+	ReadImage     func(context.Context, string) (string, error)
 	WorkSpace     string
 	WorkspaceID   string
 	WorkspaceName string

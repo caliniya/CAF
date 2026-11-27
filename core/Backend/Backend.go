@@ -1118,8 +1118,11 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 }
 
 func (c *Core) SendChatMessage(id, text, reasoningEffort string) error {
+	return c.SendChatMessageWithAttachments(id, text, reasoningEffort, nil)
+}
+func (c *Core) SendChatMessageWithAttachments(id, text, reasoningEffort string, files []AttachmentUpload) error {
 	text = strings.TrimSpace(text)
-	if text == "" {
+	if text == "" && len(files) == 0 {
 		return errors.New("消息不能为空")
 	}
 	session, config, directory, err := c.beginChatSend(id)
@@ -1132,14 +1135,40 @@ func (c *Core) SendChatMessage(id, text, reasoningEffort string) error {
 	if err != nil {
 		return err
 	}
-	userNode := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "user", Content: text})
+	modelIndex := slices.IndexFunc(config.Model, func(m apiImpl.Model) bool { return m.ID == session.Model })
+	if modelIndex < 0 {
+		return errors.New("模型不在配置中")
+	}
+	attachments, err := prepareUploads(files, config.Model[modelIndex])
+	if err != nil {
+		return err
+	}
+	message := apiImpl.ChatMessage{Role: "user", Content: text}
+	for _, item := range attachments {
+		if item.ref.IsImage() {
+			if err = c.saveImage(directory, id, item.ref, item.data); err != nil {
+				for _, prev := range message.Attachments {
+					if rel, e := imageFile(id, prev); e == nil {
+						_ = c.FS.DeleteFileInRoot(directory, rel)
+					}
+				}
+				return err
+			}
+		}
+		message.Attachments = append(message.Attachments, item.ref)
+	}
+	userNode := chatstruct.CreateChatNode(message)
 	if len(path) == 0 {
 		session.Tree.Root.Add(userNode)
 	} else if err := session.Tree.AddNext(path[len(path)-1].ID, userNode); err != nil {
 		return err
 	}
 	if session.Title == "新建对话" {
-		session.Title = titleFromMessage(text)
+		title := text
+		if title == "" {
+			title = message.Attachments[0].Name
+		}
+		session.Title = titleFromMessage(title)
 	}
 	replyNode := chatstruct.CreateChatNode()
 	if err := session.Tree.AddNext(userNode.ID, replyNode); err != nil {
@@ -1220,7 +1249,14 @@ func (c *Core) EditChatMessage(id, nodeID, text, reasoningEffort string) error {
 	if parent != nil {
 		parentID = parent.ID
 	}
-	userNode := chatstruct.CreateChatNode(apiImpl.ChatMessage{Role: "user", Content: text})
+	message := apiImpl.ChatMessage{Role: "user", Content: text}
+	for _, old := range target.Child {
+		if old.Role == "user" {
+			message.Attachments = slices.Clone(old.Attachments)
+			break
+		}
+	}
+	userNode := chatstruct.CreateChatNode(message)
 	if err := session.Tree.AddNext(parentID, userNode); err != nil {
 		return err
 	}
@@ -1241,6 +1277,9 @@ func hasUserMessage(node *chatstruct.ChatNode) bool {
 }
 
 func hasAssistantMessage(node *chatstruct.ChatNode) bool {
+	if node.Stopped {
+		return true // 用户在首个分片前停止时，空的回复节点也允许重新生成。
+	}
 	for _, message := range node.Child {
 		if message.Role == "assistant" {
 			return true
@@ -1314,7 +1353,7 @@ const maxToolRounds = 10
 
 var errToolDisabled = errors.New("此工具被禁用")
 
-func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string, executionOptions ...*chatExecutionOptions) error {
+func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, directory string, reply *chatstruct.ChatNode, reasoningEffort string, executionOptions ...*chatExecutionOptions) (outErr error) {
 	options := firstExecutionOptions(executionOptions)
 	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
 	if serviceErr != nil {
@@ -1335,6 +1374,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return fmt.Errorf("模型列表中未找到 %q", session.Model)
 	}
 	model := config.Model[modelIndex]
+	vision, err := newChatVision(c, directory, session, reply, model)
+	if err != nil {
+		return err
+	}
 	toolContext, memoryContext, err := c.chatExecutionContext(ctx, session, options)
 	if err != nil {
 		return err
@@ -1359,13 +1402,53 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		return err
 	}
 
+	if options == nil {
+		chatServer.mu.Lock()
+		run.nodeID = reply.ID
+		chatServer.mu.Unlock()
+		defer func() {
+			chatServer.mu.Lock()
+			stopped := run.userStopped
+			run.nodeID = ""
+			chatServer.mu.Unlock()
+			if !stopped {
+				return
+			}
+			reply.Stopped = true
+			// 首个分片前停止时只保存节点标记；已经生成的文本、思考和工具调用仍然保留。
+			reply.Child = slices.DeleteFunc(reply.Child, func(m apiImpl.ChatMessage) bool {
+				return m.Role == "assistant" && m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0
+			})
+			// 补全停止时尚未执行的工具结果，使下次请求的调用和结果仍一一对应。
+			completed := map[string]bool{}
+			for _, m := range reply.Child {
+				if m.Role == "tool" {
+					completed[m.ToolCallID] = true
+				}
+			}
+			const skipped = "本轮生成已由用户停止，未执行此工具调用。"
+			for _, m := range reply.Child {
+				for _, call := range m.ToolCalls {
+					if !completed[call.ID] {
+						reply.Child = append(reply.Child, apiImpl.ChatMessage{Role: "tool", ToolCallID: call.ID, Content: skipped, ToolError: skipped})
+						completed[call.ID] = true
+					}
+				}
+			}
+			if errors.Is(outErr, context.Canceled) {
+				outErr = nil
+			}
+			outErr = errors.Join(outErr, c.saveReplyLocked(directory, session, options))
+		}()
+		EmitJSON(EventChatGeneration, map[string]string{"chatId": id, "nodeId": reply.ID})
+	}
 	if err := c.chatExecutionClient(session, config); err != nil {
 		return err
 	}
 	tools := c.enabledTools(session)
 	request := &apiImpl.ChatRequest{Model: model.ID, Thinking: session.ReasoningEffort, Tools: tools}
 	toolRun := &toolExecutionRun{
-		core: c, approvals: approvals, session: session, generation: run,
+		core: c, vision: vision, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
 		strict: c.strictToolMode(session), blocked: make(map[string]apiImpl.ToolCall), seen: make(map[string]bool),
 		options: options,
@@ -1396,7 +1479,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		assistant := apiImpl.ChatMessage{Role: "assistant"}
 		prefix[policyIndex].Content = toolPolicyPrompt(toolRun.strict, toolContext, session.ToolConfig)
 		history[policyIndex] = prefix[policyIndex]
-		request.Messages = history
+		request.Messages = vision.messages(history)
 		// 只在完整工具轮之后检查预算，避免拆散调用和结果或重放已执行工具。
 		used := apiImpl.RequestTokens(*request)
 		compressed, err := c.maybeCompactChat(toolRun, reply, model, policy, keep, used)
@@ -1408,7 +1491,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			if err != nil {
 				return err
 			}
-			request.Messages = history
+			request.Messages = vision.messages(history)
 			used = apiImpl.RequestTokens(*request)
 		}
 		if model.MaxContext > 0 && used+compactionOutputReserve(model) > model.MaxContext {
@@ -1416,6 +1499,10 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 		var requestUsage *apiImpl.TokenUsage
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
+			// 单独的 [DONE] 只是传输结束；收到模型输出或输入用量后才显示读图回执。
+			if len(vision.pending) > 0 && (delta.Content != "" || delta.Reasoning != "" || len(delta.ToolCalls) > 0 || (delta.Usage != nil && delta.Usage.PromptTokens > 0)) {
+				vision.received(reply)
+			}
 			if delta.Content != "" {
 				assistant.Content += delta.Content
 			}
@@ -1454,6 +1541,9 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 		produced = append(produced, assistant)
 		reply.Child = produced
+		if streamErr == nil && len(vision.pending) > 0 {
+			streamErr = errors.New("模型服务没有返回有效的图片请求响应")
+		}
 		if streamErr != nil {
 			c.saveReplyLocked(directory, session, options)
 			return streamErr
@@ -1481,6 +1571,15 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			}
 			EmitJSON(EventChatTool, payload)
 			output, callErr := toolRun.execute(call)
+			if callErr == nil && call.Name == agenttool.ReadImageID {
+				for _, p := range vision.pending {
+					if p.callID == call.ID {
+						a := p.ref
+						call.Image = &a
+						break
+					}
+				}
+			}
 			toolError := ""
 			if callErr != nil {
 				payload["event"] = "fail"

@@ -121,8 +121,13 @@ func TestToolSetDetailsIncludeParameterSchemas(t *testing.T) {
 	// 禁用工具也需要在模块详情中可见。
 	agenttool.Tools["WriteFile"].Meta().Enabled = false
 	sets := (&backend.Core{}).ListToolSets()
-	if len(sets) != 1 || len(sets[0].Kits) != 2 {
+	if len(sets) != 1 || len(sets[0].Kits) != 3 {
 		t.Fatalf("工具集和模块列表错误：%+v", sets)
+	}
+	if !slices.ContainsFunc(sets[0].Kits, func(k backend.ToolKitDescriptor) bool {
+		return k.Name == "扩展交互工具" && len(k.Tools) == 1 && k.Tools[0].ID == "ReadImage" && k.Tools[0].DisplayType == "image"
+	}) {
+		t.Fatal("缺少独立的读图模块")
 	}
 	var kit backend.ToolKitDescriptor
 	for _, item := range sets[0].Kits {
