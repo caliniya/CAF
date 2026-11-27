@@ -53,8 +53,22 @@ jobs:
         run: go vet -tags bindings ./...
 
       - name: Go headless tests
+        id: go_tests
         if: inputs.run-checks
-        run: go test -count=1 -timeout 5m -tags bindings ./...
+        run: |
+          set -o pipefail
+          go test -count=1 -timeout 5m -tags bindings ./... 2>&1 | tee "$RUNNER_TEMP/caf-go-tests.log"
+
+      - name: Annotate failing Go tests
+        if: failure() && steps.go_tests.outcome == 'failure'
+        shell: python
+        run: |
+          import os, re
+          from pathlib import Path
+          log = (Path(os.environ['RUNNER_TEMP']) / 'caf-go-tests.log').read_text(encoding='utf-8', errors='replace')
+          for name, assertion in re.findall(r'^[ \t]*--- FAIL: (\S+)[^\n]*\n(?:[ \t]+([^\n]*?_test\.go:\d+:[^\n]*))?', log, re.M):
+              message = f'{name}: {assertion.strip()}' if assertion else name
+              print('::error title=Go test failed::' + message[:1000].replace('%', '%25').replace('\r', '%0D'))
 
       - name: Compile desktop application
         env:

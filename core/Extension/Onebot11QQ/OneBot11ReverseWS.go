@@ -160,9 +160,14 @@ func (client *ReverseWSClient) Start(ctx context.Context) error {
 		Handler: client, ReadHeaderTimeout: client.config.HandshakeTimeout,
 	}
 	client.listener, client.server = listener, server
+	client.workers.Add(1)
 	client.mu.Unlock()
 	go func() {
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// Close 可能先于 Serve 登记监听器。Serve 返回时一定已释放端口，
+		// 在可能再次调用 Close 之前结束计数，避免等待自身。
+		err := server.Serve(listener)
+		client.workers.Done()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			client.reportError(err)
 			_ = client.Close()
 		}

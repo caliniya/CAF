@@ -18,15 +18,17 @@ type QQServer struct {
 	// 在使用前设置；测试可设为 127.0.0.1，将端口探测和监听限制为本机。
 	ListenHost string
 
-	mu       sync.Mutex
-	adapters []qqAdapterConfig
-	clients  map[string]*qqAdapterRuntime
-	core     *Core
-	lifeMu   sync.Mutex // 串行执行服务初始化、启动和关闭。
-	chatMu   sync.Mutex
-	chats    map[string]*qqChatRuntime
-	memoryMu sync.Mutex
-	memories map[string]*qqPersonalMemory
+	mu        sync.Mutex
+	adapters  []qqAdapterConfig
+	clients   map[string]*qqAdapterRuntime
+	consumers int           // mu 保护；包括已经移出 clients、仍在退出的事件和对话任务。
+	draining  chan struct{} // 非空时禁止新启动；最后一个消费者退出时关闭。
+	core      *Core
+	lifeMu    sync.Mutex // 串行切换服务状态；等待任务退出时不持有。
+	chatMu    sync.Mutex
+	chats     map[string]*qqChatRuntime
+	memoryMu  sync.Mutex
+	memories  map[string]*qqPersonalMemory
 }
 
 var _ Server = (*QQServer)(nil)
@@ -82,20 +84,18 @@ func (q *QQServer) Start(ctx context.Context) error {
 	return q.core.startExtensionClients(ctx)
 }
 
-// Close 取消全部适配器任务并释放连接，允许重复调用。
-// 即使 ctx 已取消也执行清理，并将取消和连接关闭错误返回调用方。
+// Close 总是先取消任务并释放所有监听端口；ctx 只限制等待后台任务的时间。
+// 等待被取消后，再次 Close 仍可等待同一批任务；全部退出后可以重新启动。
 func (q *QQServer) Close(ctx context.Context) error {
 	if q == nil {
 		return nil
 	}
-	q.lifeMu.Lock()
-	defer q.lifeMu.Unlock()
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	q.lifeMu.Lock()
 	q.mu.Lock()
 	var errs []error
-	waits := []<-chan struct{}{}
 	for id, running := range q.clients {
 		if running.cancel != nil {
 			running.cancel()
@@ -105,29 +105,32 @@ func (q *QQServer) Close(ctx context.Context) error {
 				errs = append(errs, fmt.Errorf("关闭 QQ 适配器 %s：%w", id, err))
 			}
 		}
-		if running.done != nil {
-			waits = append(waits, running.done)
-		}
 		delete(q.clients, id)
 	}
-	q.mu.Unlock()
-	q.chatMu.Lock()
-	for _, runtime := range q.chats {
-		runtime.cancel()
-		waits = append(waits, runtime.done)
+	if q.consumers > 0 && q.draining == nil {
+		q.draining = make(chan struct{})
 	}
-	q.chatMu.Unlock()
-	for _, done := range waits {
+	done := q.draining
+	q.mu.Unlock()
+	q.lifeMu.Unlock()
+	if done != nil {
 		select {
 		case <-done:
 		case <-ctx.Done():
-			return errors.Join(append(errs, ctx.Err())...)
 		}
 	}
-	if ctx != nil && ctx.Err() != nil {
-		errs = append(errs, ctx.Err())
+	return errors.Join(append(errs, ctx.Err())...)
+}
+
+// 事件消费者退出前已等待指令分发和它创建的对话任务结束。
+func (q *QQServer) consumerDone() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.consumers--
+	if q.consumers == 0 && q.draining != nil {
+		close(q.draining)
+		q.draining = nil
 	}
-	return errors.Join(errs...)
 }
 
 type qqAdapterConfig struct {
@@ -143,5 +146,4 @@ type qqAdapterRuntime struct {
 	client onebot11qq.Extension
 	err    string
 	cancel context.CancelFunc
-	done   chan struct{}
 }

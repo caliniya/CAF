@@ -7,7 +7,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
+	"time"
 
 	backend "github.com/caliniya/caf/core/Backend"
 )
@@ -100,6 +103,9 @@ func TestQQServerLifecycleRestoresOnlyEnabledBindings(t *testing.T) {
 }
 
 func TestQQServerCloseCleansUpEvenWithCancelledContext(t *testing.T) {
+	// 单个 P 上容易在 Serve 还未登记 listener 时立即关闭；这里不等待也不重试绑定。
+	previous := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
 	instance := useQQAdapterCore(t)
 	service := testServer[*backend.QQServer](t, instance, backend.QQServerName)
 	adapter, err := instance.CreateQQAdapter("Bot", "token", "10001")
@@ -121,6 +127,54 @@ func TestQQServerCloseCleansUpEvenWithCancelledContext(t *testing.T) {
 		t.Fatalf("close did not release listener: %v", err)
 	}
 	_ = listener.Close()
+}
+
+func TestQQServerCloseCanResumeWaitingForEventConsumer(t *testing.T) {
+	c := useQQAdapterCore(t)
+	q := testServer[*backend.QQServer](t, c, backend.QQServerName)
+	adapter, err := c.CreateQQAdapter("Bot", "token", "10001")
+	checkOK(t, err)
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	firstEvent := sync.OnceFunc(func() { close(entered); <-release })
+	previous := backend.Emit
+	backend.Emit = func(name string, _ ...any) {
+		if name == "qq:event" {
+			firstEvent()
+		}
+	}
+	t.Cleanup(func() {
+		unblock()
+		_ = q.Close(context.Background())
+		backend.Emit = previous
+	})
+	_, err = c.StartQQAdapter(adapter.ID)
+	checkOK(t, err)
+	connectReverseWS(t, adapter.Address, "10001", "token")
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("adapter did not start delivering events")
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := q.Close(cancelled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Close: %v", err)
+	}
+	if _, err := c.StartQQAdapter(adapter.ID); err == nil {
+		t.Fatal("started a new listener while the old consumer was draining")
+	}
+	deadline, finish := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer finish()
+	if err := q.Close(deadline); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second Close forgot the blocked consumer: %v", err)
+	}
+	unblock()
+	ctx, finishDrain := context.WithTimeout(context.Background(), 3*time.Second)
+	defer finishDrain()
+	checkOK(t, q.Close(ctx))
+	_, err = c.StartQQAdapter(adapter.ID)
+	checkOK(t, err)
 }
 
 func TestQQServerInitAndStartReturnConfigurationErrors(t *testing.T) {

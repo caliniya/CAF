@@ -405,6 +405,9 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 	if err := parent.Err(); err != nil {
 		return nil, err
 	}
+	if qqServer.draining != nil {
+		return nil, errors.New("QQ 服务仍在关闭，请等待后台任务结束后再启动")
+	}
 	i, err := c.qqAdapterIndexLocked(id)
 	if err != nil {
 		return nil, err
@@ -434,9 +437,12 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 	if qqServer.clients == nil {
 		qqServer.clients = map[string]*qqAdapterRuntime{}
 	}
-	running := &qqAdapterRuntime{client: client, cancel: cancel, done: make(chan struct{})}
-	qqServer.clients[id] = running
-	go func() { defer close(running.done); c.consumeQQAdapterEvents(ctx, id, client) }()
+	qqServer.clients[id] = &qqAdapterRuntime{client: client, cancel: cancel}
+	qqServer.consumers++
+	go func() {
+		defer qqServer.consumerDone()
+		c.consumeQQAdapterEvents(ctx, id, client)
+	}()
 	view := qqServer.qqAdapterViewLocked(config)
 	return &view, nil
 }
@@ -506,10 +512,16 @@ func (c *Core) consumeQQAdapterEvents(ctx context.Context, id string, client one
 			}{id, event})
 		}
 	}
+	// 父 context 也可能直接关闭扩展。事件流先结束时，仍保留 client，
+	// 直到端口确实释放，避免并发 Close 或重新启动漏掉尚在关闭的监听器。
+	closeErr := client.Close()
 	qqServer.mu.Lock()
 	if running := qqServer.clients[id]; running != nil && running.client == client {
 		running.cancel()
 		running.err = client.Info().LastError
+		if closeErr != nil {
+			running.err = closeErr.Error()
+		}
 		running.client = nil
 	}
 	qqServer.mu.Unlock()

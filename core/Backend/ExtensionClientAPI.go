@@ -416,7 +416,10 @@ func (c *Core) startExtensionClients(ctx context.Context) error {
 				if qqServer.clients == nil {
 					qqServer.clients = map[string]*qqAdapterRuntime{}
 				}
-				qqServer.clients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
+				// 启动失败后其他调用可能已成功启动同一适配器；保留它的取消句柄。
+				if running := qqServer.clients[item.AdapterID]; running == nil || running.client == nil {
+					qqServer.clients[item.AdapterID] = &qqAdapterRuntime{err: err.Error()}
+				}
 				qqServer.mu.Unlock()
 			}
 		}
