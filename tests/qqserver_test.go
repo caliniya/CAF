@@ -64,7 +64,7 @@ func TestQQServerLifecycleRestoresOnlyEnabledBindings(t *testing.T) {
 	}
 	instance.CloseQQAdapters()
 
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	qq := testServer[*backend.QQServer](t, reloaded, backend.QQServerName)
 	qq.ListenHost = "127.0.0.1"
 	var service backend.Server = qq

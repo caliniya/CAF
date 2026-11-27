@@ -18,6 +18,7 @@ import (
 	chat "github.com/caliniya/caf/core/Chat"
 	chatstruct "github.com/caliniya/caf/core/Chat/ChatStruct"
 	persona "github.com/caliniya/caf/core/Persona"
+	"github.com/caliniya/caf/core/credentials"
 	identity "github.com/caliniya/caf/utils/id"
 )
 
@@ -46,7 +47,7 @@ func (c *Core) LoadConfigs() (*Configs, error) {
 		return nil, fmt.Errorf("读取配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 // configAt 校验前置状态并返回第 index 个配置的指针。
@@ -86,7 +87,7 @@ func (c *Core) SelectConfig(index int) (*Configs, error) {
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 // SelectModel 供前端调用：在当前启用的配置里选定要使用的模型，
@@ -120,7 +121,7 @@ func (c *Core) SelectModel(model string) (*Configs, error) {
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 type ModelProbeResult struct {
@@ -203,7 +204,7 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 		Name:          strings.TrimSpace(name),
 		ServerAddress: serverAddress,
 		Protocol:      protocol,
-		APIKey:        apiKey,
+		HasAPIKey:     apiKey != "",
 		Model:         cleanModels,
 		EnabledModel:  cleanModels[0].ID,
 	}
@@ -211,19 +212,33 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 		all := []Config{}
 		c.Configs.ALLConfig = &all
 	}
+	changes := map[string]credentials.Entry{}
+	if apiKey != "" {
+		v, err := modelSecret(serverAddress, apiKey)
+		if err != nil {
+			return nil, err
+		}
+		changes[modelRef(configID)] = v
+	}
+	previousAll := *c.Configs.ALLConfig
 	previousEnabled := c.Configs.EnablesConfig
-	*c.Configs.ALLConfig = append(*c.Configs.ALLConfig, entry)
+	*c.Configs.ALLConfig = append(previousAll, entry)
 	c.Configs.EnablesConfig = &(*c.Configs.ALLConfig)[len(*c.Configs.ALLConfig)-1]
-	if err := c.saveConfig(); err != nil {
-		*c.Configs.ALLConfig = (*c.Configs.ALLConfig)[:len(*c.Configs.ALLConfig)-1]
+	if err := c.withCredentials(changes, false, c.saveConfig); err != nil {
+		*c.Configs.ALLConfig = previousAll
 		c.Configs.EnablesConfig = previousEnabled
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 // RefreshModelConfig 更新已有配置探测到的聊天地址和模型列表。
 func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiImpl.Model) (*Configs, error) {
+	return c.UpdateModelCredentials(index, serverAddress, models, "", false)
+}
+
+// A blank replacement keeps the saved key; clearing it is an explicit action.
+func (c *Core) UpdateModelCredentials(index int, serverAddress string, models []apiImpl.Model, replacement string, clearKey bool) (*Configs, error) {
 	if c == nil {
 		return nil, errors.New("宿主尚未初始化")
 	}
@@ -257,6 +272,26 @@ func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiI
 		return nil, errors.New("探测结果中没有可用模型，原配置未更改")
 	}
 
+	changes := map[string]credentials.Entry{}
+	hadKey := entry.HasAPIKey
+	if clearKey && replacement != "" {
+		return nil, errors.New("不能同时替换和清除密钥")
+	}
+	if clearKey {
+		changes[modelRef(entry.ID)] = credentials.Entry{}
+		entry.HasAPIKey = false
+	} else if replacement != "" {
+		v, err := modelSecret(serverAddress, replacement)
+		if err != nil {
+			return nil, err
+		}
+		changes[modelRef(entry.ID)] = v
+		entry.HasAPIKey = true
+	} else if hadKey {
+		if _, err := c.providerKey(entry, serverAddress); err != nil {
+			return nil, err
+		}
+	}
 	previousAddress := entry.ServerAddress
 	previousModels := entry.Model
 	previousEnabledModel := entry.EnabledModel
@@ -267,13 +302,14 @@ func (c *Core) RefreshModelConfig(index int, serverAddress string, models []apiI
 	}) {
 		entry.EnabledModel = cleanModels[0].ID
 	}
-	if err := c.saveConfig(); err != nil {
+	if err := c.withCredentials(changes, false, c.saveConfig); err != nil {
+		entry.HasAPIKey = hadKey
 		entry.ServerAddress = previousAddress
 		entry.Model = previousModels
 		entry.EnabledModel = previousEnabledModel
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 // RenameConfig 供前端调用：修改第 index 个配置的名称并写回配置文件。
@@ -297,7 +333,7 @@ func (c *Core) RenameConfig(index int, name string) (*Configs, error) {
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 // DeleteConfig 供前端调用：删除第 index 个配置并写回配置文件。
@@ -320,22 +356,28 @@ func (c *Core) DeleteConfig(index int) (*Configs, error) {
 		return nil, fmt.Errorf("配置下标越界：%d（共 %d 项）", index, len(all))
 	}
 
-	previousAll := slices.Clone(all)
+	previousAll := all
 	previousEnables := c.Configs.EnablesConfig
 
 	removed := &all[index]
 	*c.Configs.ALLConfig = append(all[:index:index], all[index+1:]...)
 	if c.Configs.EnablesConfig == removed {
 		c.Configs.EnablesConfig = nil
+	} else {
+		c.Configs.resolveEnabled()
 	}
 
-	if err := c.saveConfig(); err != nil {
+	changes := map[string]credentials.Entry{}
+	if removed.HasAPIKey {
+		changes[modelRef(removed.ID)] = credentials.Entry{}
+	}
+	if err := c.withCredentials(changes, false, c.saveConfig); err != nil {
 		*c.Configs.ALLConfig = previousAll
 		c.Configs.EnablesConfig = previousEnables
 		return nil, fmt.Errorf("写入配置文件失败（%s）：%w", c.Paths.ConfigFile, err)
 	}
 
-	return c.Configs, nil
+	return c.Configs.snapshot(), nil
 }
 
 type chatIndex struct {
@@ -361,7 +403,7 @@ func validChatID(id string) bool {
 }
 
 func (c *Core) readChatIndexLocked(directory string) (chatIndex, error) {
-	data, err := c.FS.ReadFile(filepath.Join(directory, "index.json"))
+	data, err := c.readConversationFile(filepath.Join(directory, "index.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return chatIndex{Version: chatIndexVersion, Chats: []chat.ChatSummary{}}, nil
 	}
@@ -382,7 +424,7 @@ func (c *Core) readChatIndexLocked(directory string) (chatIndex, error) {
 			if !validChatID(id) {
 				return chatIndex{}, errors.New("会话索引包含无效 ID")
 			}
-			data, err := c.FS.ReadFile(filepath.Join(directory, id+".json"))
+			data, err := c.readConversationFile(filepath.Join(directory, id+".json"))
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
@@ -414,6 +456,14 @@ func (c *Core) writeJSONLocked(path string, value any) error {
 	if err != nil {
 		return err
 	}
+	if c.profileRoot != "" {
+		if scope := conversationScope(c.Paths.Data, path); scope != "" {
+			data, err = c.vault.ChatBytes(scope, data, true)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	tmp := path + ".tmp"
 	if err := c.FS.WriteFile(tmp, data, 0o600); err != nil {
 		return err
@@ -429,7 +479,7 @@ func (c *Core) readChatLocked(directory, id string) (*chat.ChatTask, error) {
 	if !validChatID(id) {
 		return nil, errors.New("无效会话 ID")
 	}
-	data, err := c.FS.ReadFile(filepath.Join(directory, id+".json"))
+	data, err := c.readConversationFile(filepath.Join(directory, id+".json"))
 	if err != nil {
 		return nil, err
 	}
@@ -510,16 +560,31 @@ func (c *Core) saveChatLocked(directory string, session *chat.ChatTask) error {
 	return c.writeJSONLocked(filepath.Join(directory, "index.json"), index)
 }
 
+// Return a snapshot so an in-flight chat keeps the exact address checked for its key.
 func (c *Core) configByID(id string) (*Config, error) {
-	if c == nil || c.Configs == nil || c.Configs.ALLConfig == nil {
+	c.configMu.RLock()
+	defer c.configMu.RUnlock()
+	if c.Configs == nil || c.Configs.ALLConfig == nil {
 		return nil, errors.New("模型配置尚未加载")
 	}
 	for i := range *c.Configs.ALLConfig {
 		if (*c.Configs.ALLConfig)[i].ID == id {
-			return &(*c.Configs.ALLConfig)[i], nil
+			return (*c.Configs.ALLConfig)[i].snapshot(), nil
 		}
 	}
 	return nil, fmt.Errorf("会话引用的配置 %q 不存在，请重新选择配置", id)
+}
+
+func (c *Core) defaultProvider() (*Config, error) {
+	c.configMu.RLock()
+	defer c.configMu.RUnlock()
+	if c.Configs == nil {
+		return nil, errors.New("模型配置尚未加载")
+	}
+	if c.Configs.EnablesConfig == nil {
+		return nil, errors.New("尚未选择配置（提供商），请先选择配置")
+	}
+	return c.Configs.EnablesConfig.snapshot(), nil
 }
 
 func (c *Core) ListChats() ([]chat.ChatSummary, error) {
@@ -557,16 +622,13 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 
 	chatServer.mu.Lock()
 	defer chatServer.mu.Unlock()
-	if c == nil || c.Configs == nil {
-		return nil, errors.New("模型配置尚未加载")
-	}
+	var cfg *Config
+	var err error
 	if configID == "" {
-		if c.Configs.EnablesConfig == nil {
-			return nil, errors.New("尚未选择配置（提供商），请先选择配置")
-		}
-		configID = c.Configs.EnablesConfig.ID
+		cfg, err = c.defaultProvider()
+	} else {
+		cfg, err = c.configByID(configID)
 	}
-	cfg, err := c.configByID(configID)
 	if err != nil {
 		return nil, err
 	}
@@ -588,7 +650,7 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 	if err != nil {
 		return nil, err
 	}
-	session := chat.NewChatTask(chatID, title, configID, model, tree)
+	session := chat.NewChatTask(chatID, title, cfg.ID, model, tree)
 	session.MemoryLibraryIDs, err = c.newChatMemoryIDs()
 	if err != nil {
 		return nil, err
@@ -599,8 +661,13 @@ func (c *Core) CreateChat(configID, model, title, personaID string) (*chat.ChatT
 	if err != nil {
 		return nil, err
 	}
+	workspace, err := c.chatWorkspaceLocked(chatID, "")
+	if err != nil {
+		return nil, err
+	}
 	if err := c.saveChatLocked(directory, session); err != nil {
 		_ = c.FS.DeleteFile(filepath.Join(directory, session.ID+".json"))
+		_ = c.FS.DeleteFile(workspace.Path) // 刚分配的空目录；不会递归删除文件。
 		return nil, err
 	}
 	return session, nil
@@ -671,7 +738,7 @@ func (c *Core) DeleteChat(id string) error {
 	if _, err := c.readChatLocked(directory, id); err != nil {
 		return err
 	}
-	if err := c.FS.DeleteFile(filepath.Join(directory, id+".json")); err != nil {
+	if err := c.deleteChatFiles(directory, id); err != nil {
 		return err
 	}
 	index, err := c.readChatIndexLocked(directory)
@@ -983,6 +1050,9 @@ func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
 			if grant.WorkspaceID == "" {
 				return nil, errors.New("工作区授权缺少工作区 ID")
 			}
+			if grant.WorkspaceID == chatInternalWorkspaceID(session.ID) {
+				continue // 本对话的内部工作区不登记在公共工作区列表中。
+			}
 			if _, err := c.workspaceByIDLocked(grant.WorkspaceID); err != nil {
 				return nil, err
 			}
@@ -1219,10 +1289,9 @@ func (c *Core) beginChatSend(id string) (*chat.ChatTask, *Config, string, error)
 	if !slices.ContainsFunc(config.Model, func(item apiImpl.Model) bool { return item.ID == session.Model }) {
 		return nil, nil, "", fmt.Errorf("会话模型 %q 已不在配置中，请重新选择模型", session.Model)
 	}
-	configSnapshot := *config
 	ctx, cancel := context.WithCancel(parent)
 	chatServer.sending[id] = &chatSend{ctx: ctx, cancel: cancel, done: make(chan struct{})}
-	return session, &configSnapshot, directory, nil
+	return session, config, directory, nil
 }
 
 func (c *Core) endChatSend(id string) {

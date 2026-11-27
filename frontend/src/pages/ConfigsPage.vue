@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useConfigsStore } from '../stores/configs'
 import ModelSelectionDialog from '../components/ModelSelectionDialog.vue'
-import type { Model } from '../api'
+import { ProbeSavedModels, type Model } from '../api'
 
 const store = useConfigsStore()
 
@@ -21,12 +21,23 @@ const probedServerAddress = ref('')
 const form = ref({ name: '', serverAddress: '', apiKey: '' })
 const discovered = ref<Model[]>([])
 const selected = ref<string[]>([])
+const clearKey = ref(false)
 const pickerOpen = ref(false)
 const confirmDelete = ref(false)
 
 const editing = computed(() => editingIndex.value >= 0)
-// 探测要求地址与密钥都填了（编辑时用的是已保存的密钥）
-const canProbe = computed(() => !!form.value.serverAddress.trim() && !!form.value.apiKey.trim())
+const savedKey = computed(() => editing.value && !!store.configs[editingIndex.value]?.HasAPIKey)
+const canProbe = computed(() => !!form.value.serverAddress.trim())
+// Discard both successes and errors that belong to an earlier form or credential choice.
+let probeRevision = 0
+watch([dialogOpen, editingIndex, () => store.configs[editingIndex.value]?.ID, savedKey, clearKey,
+  () => form.value.serverAddress, () => form.value.apiKey], () => {
+  ++probeRevision
+  probing.value = false
+  pickerOpen.value = false
+  probedServerAddress.value = ''
+  probeMessage.value = ''
+}, { flush: 'sync' })
 const canSave = computed(
   () => !!form.value.name.trim() && !!form.value.serverAddress.trim() && selected.value.length > 0,
 )
@@ -36,6 +47,7 @@ onMounted(() => {
 })
 
 function resetForm() {
+  clearKey.value = false
   form.value = { name: '', serverAddress: '', apiKey: '' }
   discovered.value = []
   selected.value = []
@@ -53,10 +65,11 @@ function openEdit(index: number) {
   const config = store.configs[index]
   if (!config) return
   editingIndex.value = index
+  clearKey.value = false
   form.value = {
     name: config.Name ?? '',
     serverAddress: config.ServerAddress ?? '',
-    apiKey: config.APIKey ?? '',
+    apiKey: '',
   }
   discovered.value = config.Model ?? []
   selected.value = (config.Model ?? []).map((model) => model.id)
@@ -74,21 +87,29 @@ function closeDialog() {
 
 async function probe() {
   if (!canProbe.value || probing.value) return
+  const revision = ++probeRevision
   probing.value = true
   probeMessage.value = ''
   try {
-    const result = await store.probeModels(form.value.serverAddress.trim(), form.value.apiKey)
+    const address = form.value.serverAddress.trim()
+    const index = editingIndex.value
+    const entered = form.value.apiKey
+    const result = savedKey.value && !clearKey.value && !entered
+      ? await ProbeSavedModels(store.configs[index].ID, address)
+      : await store.probeModels(address, clearKey.value ? '' : entered)
+    if (revision !== probeRevision) return
     const models = Array.isArray(result?.models) ? result.models : []
     probedServerAddress.value = result?.serverAddress || form.value.serverAddress.trim()
     discovered.value = models
     pickerOpen.value = true
     if (!models.length) probeMessage.value = '接口没有返回模型，可在弹窗里手动添加。'
   } catch (err) {
+    if (revision !== probeRevision) return
     discovered.value = []
     pickerOpen.value = true
     probeMessage.value = `探测失败：${String(err)}`
   } finally {
-    probing.value = false
+    if (revision === probeRevision) probing.value = false
   }
 }
 
@@ -109,7 +130,7 @@ async function submit() {
       const index = editingIndex.value
       const name = form.value.name.trim()
       if (name !== store.configs[index]?.Name) await store.rename(index, name)
-      await store.refreshModelConfig(index, form.value.serverAddress.trim(), models)
+      await store.refreshModelConfig(index, probedServerAddress.value || form.value.serverAddress.trim(), models, clearKey.value ? '' : form.value.apiKey, clearKey.value)
       activeIndex.value = index
     } else {
       await store.addModelConfig(
@@ -175,9 +196,9 @@ function contextLabel(model: Model) {
     <header class="head">
       <div class="head-text">
         <h1>模型设置</h1>
-        <p class="sub">管理模型供应商，配置后可在对话中选择使用。</p>
+        <p class="sub">{{ store.sharedModels ? '选择本用户的默认模型。可用模型和 API 凭据由主用户管理。' : '管理模型供应商，配置后可在对话中选择使用。' }}</p>
       </div>
-      <button type="button" class="btn btn-primary" @click="openCreate">
+      <button v-if="store.loaded && !store.sharedModels" type="button" class="btn btn-primary" @click="openCreate">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
@@ -205,7 +226,7 @@ function contextLabel(model: Model) {
           </button>
         </div>
 
-        <p v-if="store.loaded && !store.configs.length" class="empty">还没有配置供应商</p>
+        <p v-if="store.loaded && !store.configs.length" class="empty">{{ store.sharedModels ? (store.sharedModelNotice || '暂时没有可用模型，请主用户在跨平台设置中授权。') : '还没有配置供应商' }}</p>
       </aside>
 
       <!-- 右：选中供应商详情 -->
@@ -220,14 +241,14 @@ function contextLabel(model: Model) {
                 </h2>
                 <span v-if="isInUse(activeIndex)" class="tag">当前使用</span>
               </div>
-              <p class="mono sub">{{ activeConfig.ServerAddress }}</p>
+              <p class="mono sub">{{ store.sharedModels ? '主用户共享' : activeConfig.ServerAddress }}</p>
             </div>
             <div class="actions">
               <button type="button" class="btn btn-sm" :disabled="isInUse(activeIndex)"
                 :title="isInUse(activeIndex) ? '已经是全局默认配置' : '设为全局默认配置'" @click="enableConfig">
                 {{ isInUse(activeIndex) ? '已启用配置' : '启用此配置' }}
               </button>
-              <button type="button" class="btn btn-sm" @click="openEdit(activeIndex)">编辑</button>
+              <button v-if="!store.sharedModels" type="button" class="btn btn-sm" @click="openEdit(activeIndex)">编辑</button>
             </div>
           </header>
 
@@ -277,10 +298,12 @@ function contextLabel(model: Model) {
             <input v-model="form.serverAddress" type="url" placeholder="https://api.example.com/v1" />
           </label>
 
-          <label v-if="!editing" class="field">
-            <span>API Key</span>
-            <input v-model="form.apiKey" type="password" autocomplete="new-password" placeholder="sk-..." />
+          <label class="field">
+            <span>API Key{{ savedKey ? '（已保存，留空保留）' : '（可选）' }}</span>
+            <input v-model="form.apiKey" :disabled="clearKey" type="password" autocomplete="new-password" placeholder="sk-..." />
           </label>
+
+          <label v-if="savedKey"><input v-model="clearKey" type="checkbox" /> 保存时清除已有 API Key</label>
 
           <div class="field">
             <span>模型列表</span>
@@ -290,7 +313,7 @@ function contextLabel(model: Model) {
                 <span v-if="!selected.length" class="muted">尚未添加模型</span>
               </div>
               <button type="button" class="btn btn-sm" :disabled="!canProbe || probing"
-                :title="canProbe ? '' : '先填写 Base URL 和 API Key'" @click="probe">
+                :title="canProbe ? '' : '先填写 Base URL'" @click="probe">
                 {{ probing ? '探测中…' : '自动探测' }}
               </button>
             </div>

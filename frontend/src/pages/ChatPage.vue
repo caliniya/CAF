@@ -48,6 +48,7 @@ const workspacesLoading = ref(false)
 const workspaceDialogOpen = ref(false)
 const workspaceCreating = ref(false)
 const workspaceError = ref('')
+const internalWorkspaceHint = '不选择外部工作区时，文件保存在本对话专属的内部工作区。'
 const workspaceName = computed(() => chat.currentWorkspace?.name
   ?? (chat.currentWorkspaceId ? '工作区不可用' : '不使用工作区'))
 const workspaceChange = ref<{ chatId: string; fromId: string; fromName: string; id: string; name: string } | null>(null)
@@ -1107,7 +1108,7 @@ watch(
         <div class="workspace-bar">
           <div ref="workspaceMenuAnchor" class="workspace-anchor">
             <button ref="workspaceMenuButton" type="button" class="ctx-pill workspace-trigger"
-              :title="chat.currentWorkspace?.path || '选择工作区'" :aria-expanded="workspaceMenuOpen"
+              :title="chat.currentWorkspace?.path || (chat.currentWorkspaceId ? '工作区不可用' : internalWorkspaceHint)" :aria-expanded="workspaceMenuOpen"
               aria-haspopup="menu" aria-controls="workspace-menu" :disabled="chat.sending || chat.workspaceChanging || chat.toolChangesChanging"
               @click="toggleWorkspaceMenu">
               <Folder :size="14" :stroke-width="2" />
@@ -1148,7 +1149,7 @@ watch(
               </button>
               <div class="menu-sep"></div>
               <button type="button" class="menu-row" :class="{ on: !chat.currentWorkspaceId }"
-                role="menuitemradio" :aria-checked="!chat.currentWorkspaceId"
+                role="menuitemradio" :aria-checked="!chat.currentWorkspaceId" :title="internalWorkspaceHint"
                 :disabled="chat.sending || chat.workspaceChanging" @click="selectWorkspace('')">
                 <span class="menu-row-name">不使用工作区</span>
                 <Check v-if="!chat.currentWorkspaceId" class="check" :size="14" :stroke-width="2" />
@@ -1333,7 +1334,7 @@ watch(
                       <span class="menu-spacer"></span>
               <Check v-if="config.ID === activeConfig?.ID" class="check" :size="14" :stroke-width="2" />
                     </button>
-                    <span v-if="!configs.configs.length" class="menu-empty">尚未配置提供商</span>
+                    <span v-if="!configs.configs.length" class="menu-empty">{{ configs.sharedModels ? (configs.sharedModelNotice || '请主用户先授权模型') : '尚未配置提供商' }}</span>
                     <div class="menu-sep"></div>
                     <RouterLink class="menu-row" to="/settings/models" @click="modelMenuOpen = false">
                       管理模型

@@ -4,15 +4,23 @@ import (
 	"sync"
 
 	"github.com/caliniya/caf/NetClient/NetAPI"
+	"github.com/caliniya/caf/core/credentials"
 	platform "github.com/caliniya/caf/platform"
 )
 
 var Platform *Core
 
 type Core struct {
-	Paths   *platform.Paths
-	Configs *Configs
-	FS      platform.FilePlatform
+	DeviceKeys     credentials.DeviceKeys
+	OnVaultReady   func()
+	vaultMu        sync.Mutex
+	vaultReadyOnce sync.Once
+	vault          *credentials.Store
+	internal       *internalModels // non-nil only for a signed-in internal user
+	profileRoot    string          // common account data root, outside the file tools
+	Paths          *platform.Paths
+	Configs        *Configs
+	FS             platform.FilePlatform
 
 	extMu    sync.Mutex
 	configMu sync.RWMutex // 序列化配置读写；发布后的默认工具配置不再原地修改。

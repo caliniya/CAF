@@ -565,7 +565,6 @@ func (r *qqChatRuntime) generate(parent context.Context, record QQContextInfo, j
 	if !slices.ContainsFunc(provider.Model, func(model api.Model) bool { return model.ID == job.config.Model }) {
 		return errors.New("QQ 所选模型已不存在")
 	}
-	config := *provider
 	session.ConfigID, session.Model, session.ReasoningEffort = job.config.ConfigID, job.config.Model, job.config.ReasoningEffort
 	session.Tree.Root.PersonaID = persona.Resolve(job.config.PersonaID).ID
 	if record.Kind == "agent" {
@@ -701,7 +700,7 @@ func (r *qqChatRuntime) generate(parent context.Context, record QQContextInfo, j
 	defer r.core.endChatSend(session.ID)
 	// 提醒必须在生成任务收尾取消 ctx 之前发送。
 	defer func() { r.report(r.warnLongContext(ctx, job)) }()
-	if err := r.core.runChatNode(session.ID, session, &config, r.directory, reply, session.ReasoningEffort, options); err != nil {
+	if err := r.core.runChatNode(session.ID, session, provider, r.directory, reply, session.ReasoningEffort, options); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {

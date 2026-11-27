@@ -14,12 +14,13 @@ import (
 
 	extension "github.com/caliniya/caf/core/Extension"
 	onebot11qq "github.com/caliniya/caf/core/Extension/Onebot11QQ"
+	"github.com/caliniya/caf/core/credentials"
 	identity "github.com/caliniya/caf/utils/id"
 )
 
 const qqAdapterPath = "/onebot/v11/ws"
 
-// QQAdapter 的列表响应不包含令牌；编辑时通过 GetQQAdapter 单独读取。
+// QQAdapter 的列表和编辑响应均不包含令牌。
 type QQAdapter struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
@@ -28,7 +29,7 @@ type QQAdapter struct {
 	Address   string         `json:"address"`
 	State     string         `json:"state"`
 	LastError string         `json:"lastError,omitempty"`
-	Token     string         `json:"token,omitempty"`
+	HasToken  bool           `json:"hasToken"`
 	Port      int            `json:"port"`
 	Options   *QQChatOptions `json:"chatOptions,omitempty"`
 }
@@ -54,18 +55,31 @@ func (c *Core) loadQQAdaptersLocked() error {
 		return fmt.Errorf("读取 QQ 适配器失败：%w", err)
 	}
 	var stored struct {
-		Version  int               `json:"version"`
-		Adapters []qqAdapterConfig `json:"adapters"`
+		Version  int `json:"version"`
+		Adapters []struct {
+			qqAdapterConfig
+			LegacyToken string `json:"token"`
+		} `json:"adapters"`
 	}
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return fmt.Errorf("解析 QQ 适配器失败：%w", err)
 	}
-	if stored.Version != 1 {
+	if stored.Version != 1 && stored.Version != 2 {
 		return errors.New("不支持的 QQ 适配器配置版本")
 	}
 	ids, ports := map[string]bool{}, map[int]bool{}
-	for _, config := range stored.Adapters {
-		if _, _, _, err := validateQQAdapter(config.Name, config.Token, config.SelfID); err != nil {
+	configs := make([]qqAdapterConfig, 0, len(stored.Adapters))
+	changes := map[string]credentials.Entry{}
+	for _, item := range stored.Adapters {
+		config := item.qqAdapterConfig
+		if stored.Version == 1 && strings.TrimSpace(item.LegacyToken) == "" {
+			return errors.New("旧 QQ 配置缺少 Token，已保留原文件")
+		}
+		if item.LegacyToken != "" {
+			changes[qqRef(config.ID)] = credentials.Entry{Value: item.LegacyToken}
+		}
+		configs = append(configs, config)
+		if _, _, err := validateQQAdapter(config.Name, config.SelfID); err != nil {
 			return fmt.Errorf("QQ 适配器配置无效：%w", err)
 		}
 		if config.ID == "" || ids[config.ID] || config.Port < 1 || config.Port > 65535 || ports[config.Port] {
@@ -78,10 +92,10 @@ func (c *Core) loadQQAdaptersLocked() error {
 			}
 		}
 	}
-	qqServer.adapters = stored.Adapters
-	if qqServer.adapters == nil {
-		qqServer.adapters = []qqAdapterConfig{}
+	if stored.Version == 1 || len(changes) > 0 {
+		return c.withCredentials(changes, true, func() error { return c.saveQQAdaptersLocked(configs) })
 	}
+	qqServer.adapters = configs
 	return nil
 }
 
@@ -98,7 +112,7 @@ func (c *Core) saveQQAdaptersLocked(configs []qqAdapterConfig) error {
 	stored := struct {
 		Version  int               `json:"version"`
 		Adapters []qqAdapterConfig `json:"adapters"`
-	}{1, configs}
+	}{2, configs}
 	if err := c.writeJSONLocked(filepath.Join(directory, "adapters.json"), stored); err != nil {
 		return fmt.Errorf("保存 QQ 适配器失败：%w", err)
 	}
@@ -159,7 +173,7 @@ func (c *Core) nextQQAdapterPortLocked() (int, error) {
 
 func (q *QQServer) qqAdapterViewLocked(config qqAdapterConfig) QQAdapter {
 	view := QQAdapter{
-		ID: config.ID, Name: config.Name, SelfID: config.SelfID,
+		ID: config.ID, Name: config.Name, SelfID: config.SelfID, HasToken: true,
 		QQ: config.SelfID, Address: qqAdapterAddress(config.Port), State: "stopped", Port: config.Port,
 	}
 	if view.QQ == "" {
@@ -215,7 +229,6 @@ func (c *Core) GetQQAdapter(id string) (*QQAdapter, error) {
 		return nil, err
 	}
 	view := qqServer.qqAdapterViewLocked(qqServer.adapters[i])
-	view.Token = qqServer.adapters[i].Token
 	options := copyQQChatOptions(qqServer.adapters[i].Options)
 	view.Options = &options
 	return &view, nil
@@ -240,22 +253,19 @@ func (c *Core) GetQQAdapterAddress() (string, error) {
 	return qqAdapterAddress(port), nil
 }
 
-func validateQQAdapter(name, token, selfID string) (string, string, string, error) {
-	name, token, selfID = strings.TrimSpace(name), strings.TrimSpace(token), strings.TrimSpace(selfID)
+func validateQQAdapter(name, selfID string) (string, string, error) {
+	name, selfID = strings.TrimSpace(name), strings.TrimSpace(selfID)
 	if name == "" {
-		return "", "", "", errors.New("适配器名称不能为空")
-	}
-	if token == "" {
-		return "", "", "", errors.New("Token 不能为空")
+		return "", "", errors.New("适配器名称不能为空")
 	}
 	if selfID != "" {
 		id, err := strconv.ParseInt(selfID, 10, 64)
 		if err != nil || id <= 0 {
-			return "", "", "", errors.New("QQ 号必须是正整数")
+			return "", "", errors.New("QQ 号必须是正整数")
 		}
 		selfID = strconv.FormatInt(id, 10)
 	}
-	return name, token, selfID, nil
+	return name, selfID, nil
 }
 
 func (c *Core) CreateQQAdapter(name, token, selfID string) (*QQAdapter, error) {
@@ -268,7 +278,8 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int, chatOptions
 		return nil, serviceErr
 	}
 
-	name, token, selfID, err := validateQQAdapter(name, token, selfID)
+	token = strings.TrimSpace(token)
+	name, selfID, err := validateQQAdapter(name, selfID)
 	if err != nil {
 		return nil, err
 	}
@@ -285,16 +296,19 @@ func (c *Core) createQQAdapter(name, token, selfID string, port int, chatOptions
 	} else if err := c.validateQQPortLocked(port, ""); err != nil {
 		return nil, err
 	}
+	if token == "" {
+		return nil, errors.New("Token 不能为空")
+	}
 	adapterID, err := identity.New(identity.QQAdapter)
 	if err != nil {
 		return nil, err
 	}
-	config := qqAdapterConfig{ID: adapterID, Name: name, Token: token, SelfID: selfID, Port: port}
+	config := qqAdapterConfig{ID: adapterID, Name: name, SelfID: selfID, Port: port}
 	if len(chatOptions) > 0 {
 		config.Options = chatOptions[0]
 	}
 	configs := append(append([]qqAdapterConfig{}, qqServer.adapters...), config)
-	if err := c.saveQQAdaptersLocked(configs); err != nil {
+	if err := c.withCredentials(map[string]credentials.Entry{qqRef(adapterID): {Value: token}}, false, func() error { return c.saveQQAdaptersLocked(configs) }); err != nil {
 		return nil, err
 	}
 	view := qqServer.qqAdapterViewLocked(config)
@@ -311,7 +325,8 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int, chatOpt
 		return nil, serviceErr
 	}
 
-	name, token, selfID, err := validateQQAdapter(name, token, selfID)
+	token = strings.TrimSpace(token)
+	name, selfID, err := validateQQAdapter(name, selfID)
 	if err != nil {
 		return nil, err
 	}
@@ -328,12 +343,22 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int, chatOpt
 	if err := c.validateQQPortLocked(port, id); err != nil {
 		return nil, err
 	}
+	changes := map[string]credentials.Entry{}
+	if token != "" {
+		old, err := c.credential(qqRef(id))
+		if err != nil && !errors.Is(err, credentials.ErrNoEntry) {
+			return nil, err
+		}
+		if old.Value != token {
+			changes[qqRef(id)] = credentials.Entry{Value: token}
+		}
+	}
 	if running := qqServer.clients[id]; running != nil && running.client != nil &&
-		(previous.Token != token || previous.SelfID != selfID || previous.Port != port) {
+		(len(changes) > 0 || previous.SelfID != selfID || previous.Port != port) {
 		return nil, errors.New("请先停用扩展，再修改 Token、QQ 号或端口")
 	}
 	configs := append([]qqAdapterConfig{}, qqServer.adapters...)
-	configs[i].Name, configs[i].Token, configs[i].SelfID = name, token, selfID
+	configs[i].Name, configs[i].SelfID = name, selfID
 	configs[i].Port = port
 	if len(chatOptions) > 0 {
 		configs[i].Options = chatOptions[0]
@@ -341,7 +366,7 @@ func (c *Core) updateQQAdapter(id, name, token, selfID string, port int, chatOpt
 	if previous.SelfID != selfID {
 		configs[i].DetectedQQ = ""
 	}
-	if err := c.saveQQAdaptersLocked(configs); err != nil {
+	if err := c.withCredentials(changes, false, func() error { return c.saveQQAdaptersLocked(configs) }); err != nil {
 		return nil, err
 	}
 	view := qqServer.qqAdapterViewLocked(configs[i])
@@ -389,9 +414,13 @@ func (c *Core) startQQAdapter(parent context.Context, id string) (*QQAdapter, er
 		view := qqServer.qqAdapterViewLocked(config)
 		return &view, nil
 	}
+	secret, err := c.credential(qqRef(id))
+	if err != nil {
+		return nil, err
+	}
 	client, err := onebot11qq.NewReverseWSExtension(onebot11qq.ReverseWSConfig{
 		Address: qqServer.qqAdapterListenAddress(config.Port),
-		Path:    qqAdapterPath, AccessToken: config.Token, SelfID: config.SelfID,
+		Path:    qqAdapterPath, AccessToken: secret.Value, SelfID: config.SelfID,
 	})
 	if err != nil {
 		return nil, err
@@ -541,7 +570,7 @@ func (c *Core) deleteQQAdapterLocked(id string) error {
 	}
 	configs := append([]qqAdapterConfig{}, qqServer.adapters[:i]...)
 	configs = append(configs, qqServer.adapters[i+1:]...)
-	if err := c.saveQQAdaptersLocked(configs); err != nil {
+	if err := c.withCredentials(map[string]credentials.Entry{qqRef(id): {}}, false, func() error { return c.saveQQAdaptersLocked(configs) }); err != nil {
 		return err
 	}
 	c.closeQQChatStorageLocked(id)

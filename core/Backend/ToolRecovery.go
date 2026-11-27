@@ -15,18 +15,16 @@ import (
 )
 
 func (c *Core) toolRecoveryPath(workspaceID, recoveryID string) (string, error) {
-	if c.Paths == nil || c.FS == nil {
-		return "", errors.New("工具恢复存储尚未初始化")
+	root, err := c.internalWorkspacesRoot()
+	if err != nil {
+		return "", err
 	}
-	root := c.Paths.InternalWorkspaces
-	if root == "" && filepath.IsAbs(c.Paths.Data) {
-		root = filepath.Join(c.Paths.Data, "InternalWorkspaces")
-	}
-	if !filepath.IsAbs(root) || !identity.Valid(recoveryID, identity.Recovery) {
-		return "", errors.New("工具恢复路径或 ID 无效")
+	if !identity.Valid(recoveryID, identity.Recovery) {
+		return "", errors.New("工具恢复 ID 无效")
 	}
 	folder := workspaceID
 	if folder == "" {
+		// 旧的无工作区调用可能仍需撤销；新调用始终有实际工作区 ID。
 		folder = "unscoped"
 	} else if !identity.Valid(folder, identity.Workspace) {
 		return "", errors.New("工具恢复工作区 ID 无效")
@@ -35,7 +33,7 @@ func (c *Core) toolRecoveryPath(workspaceID, recoveryID string) (string, error) 
 }
 
 func (r *toolExecutionRun) invoke(prepared *preparedToolCall, ctx *agenttool.ToolContext, original api.ToolCall) (string, error) {
-	ctx.CallID, ctx.WorkspaceID, ctx.FileSystem = original.ID, r.session.WorkspaceID, r.core.FS
+	ctx.CallID = original.ID
 	if _, reversible := prepared.tool.(agenttool.ReversibleTool); !reversible {
 		return invokeTool(prepared, ctx)
 	}
@@ -192,6 +190,9 @@ func (c *Core) restoreToolOperation(operation agenttool.ToolOperation, reapply b
 		return errors.New("恢复调用的工作区路径无效")
 	}
 	ctx := agenttool.CreateContext(operation.Workspace, agenttool.PermissionFullAccess)
+	if c.profileRoot != "" {
+		ctx.CheckPath = c.checkProfilePath
+	}
 	ctx.CallID, ctx.WorkspaceID, ctx.FileSystem = operation.CallID, operation.WorkspaceID, c.FS
 	ctx.Context = context.Background()
 	if reapply {

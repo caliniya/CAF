@@ -4,7 +4,7 @@ export interface Config {
   Name: string
   ServerAddress: string
   Protocol: 'chat-completions'
-  APIKey: string
+  HasAPIKey?: boolean
   Model: Model[]
   // 该配置自己记住的启用模型；每个提供商独立记忆，切换提供商自动恢复。
   EnabledModel: string
@@ -22,6 +22,8 @@ export interface Model {
 }
 
 export interface Configs {
+  sharedModels?: boolean
+  sharedModelNotice?: string
   config: Config[] | null
   EnablesConfig: Config | null
   toolNormalConfig?: ChatToolConfig
@@ -35,7 +37,12 @@ export interface ChatDefaults { tools: ChatToolConfig | null; memoryLibraryIds: 
 export const builtInCompaction: CompactionDefaults = { enabled: true, automatic: false, windowPercent: 70, tokenThreshold: 500000 }
 export interface CompactionPrompt { chatId: string; requestId: string; used: number; threshold: number; nextThreshold?: number; closed?: boolean }
 
+export interface VaultStatus { configured: boolean; unlocked: boolean; remembered: boolean; warning?: string; role?: 'owner' | 'internal' }
+export interface ModelGrant { configId: string; modelId: string }
+export interface InternalUser { id: string; models: ModelGrant[] }
 interface CoreBindings {
+  ProbeSavedModels(id: string, address: string): Promise<ModelProbeResult>
+  UpdateModelCredentials(index: number, address: string, models: Model[], replacement: string, clearKey: boolean): Promise<Configs>
   GetChatDefaults(): Promise<ChatDefaults>
   SetChatDefaults(defaults: ChatDefaults): Promise<ChatDefaults>
   SetChatCompactionMode(id: string, mode: CompactionMode | null): Promise<ChatTask>
@@ -405,20 +412,50 @@ export interface ModelProbeResult {
 }
 
 // window.go 由 Wails 运行时注入，时机可能晚于页面脚本，短暂轮询等待。
-// 后端统一位于 core/Backend，Wails 绑定路径为 go.Backend.Core。
-async function bridge(): Promise<CoreBindings> {
+interface AccountBindings {
+  GetVaultStatus(): Promise<VaultStatus>
+  CreateVault(pass: string): Promise<void>
+  UnlockVault(pass: string): Promise<void>
+  StartVaultSession(): Promise<string>
+  ListInternalUsers(ticket: string): Promise<InternalUser[]>
+  CreateInternalUser(ticket: string, pass: string, models: ModelGrant[]): Promise<InternalUser>
+  SetInternalUserModels(ticket: string, id: string, models: ModelGrant[]): Promise<InternalUser>
+  SetDefaultProfile(ticket: string, on: boolean): Promise<void>
+  ChangePassword(ticket: string, old: string, next: string): Promise<void>
+  ExportUserData(ticket: string, pass: string, includeCredentials: boolean): Promise<string>
+  Logout(ticket: string): Promise<void>
+  Call(ticket: string, method: string, args: string): Promise<unknown>
+}
+let ticket = '' // in memory only; refreshing the webview reattaches through the login gate
+async function accounts(): Promise<AccountBindings> {
   for (let i = 0; i < 50; i++) {
-    const w = window as unknown as {
-      go?: {
-        Backend?: { Core?: CoreBindings }
-      }
-    }
-    const bindings = w.go?.Backend?.Core
-    if (bindings) return bindings
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    const w = window as unknown as {go?: {Backend?: {Accounts?: AccountBindings}}}
+    if (w.go?.Backend?.Accounts) return w.go.Backend.Accounts
+    await new Promise(resolve => setTimeout(resolve, 100))
   }
   throw new Error('Wails 绑定尚未就绪')
 }
+// Capture the ticket at invocation so delayed work cannot cross a login boundary.
+async function bridge(): Promise<CoreBindings> {
+  const session = ticket
+  if (!session) throw new Error('请先登录')
+  const api = await accounts()
+  return new Proxy({} as CoreBindings, {get: (_, method) => typeof method !== 'string' || method === 'then' ? undefined :
+    (...args: unknown[]) => api.Call(session, method, JSON.stringify(args))})
+}
+export const GetVaultStatus = () => accounts().then(a => a.GetVaultStatus())
+export const CreateVault = (pass: string) => accounts().then(a => a.CreateVault(pass))
+export const UnlockVault = (pass: string) => accounts().then(a => a.UnlockVault(pass))
+export async function StartVaultSession() { ticket = await (await accounts()).StartVaultSession() }
+export async function ListInternalUsers() { const session = ticket; return (await accounts()).ListInternalUsers(session) }
+export async function CreateInternalUser(pass: string, models: ModelGrant[]) { const session = ticket; return (await accounts()).CreateInternalUser(session, pass, models) }
+export async function SetInternalUserModels(id: string, models: ModelGrant[]) { const session = ticket; return (await accounts()).SetInternalUserModels(session, id, models) }
+export async function SetVaultRemembered(on: boolean) { const session = ticket; await (await accounts()).SetDefaultProfile(session, on) }
+export async function ChangePassword(old: string, next: string) { const session = ticket; await (await accounts()).ChangePassword(session, old, next) }
+export async function ExportUserData(pass: string, include: boolean) { const session = ticket; return (await accounts()).ExportUserData(session, pass, include) }
+export async function Logout() { const session = ticket; await (await accounts()).Logout(session); ticket = '' }
+export const ProbeSavedModels = (id: string, address: string) => bridge().then(c => c.ProbeSavedModels(id, address))
+export const UpdateModelCredentials = (index: number, address: string, models: Model[], replacement: string, clearKey: boolean) => bridge().then(c => c.UpdateModelCredentials(index, address, models, replacement, clearKey))
 
 // QQ 适配器管理。
 export function ListClientExtensions(clientId: string): Promise<ExtensionOption[]> { return bridge().then((c) => c.ListClientExtensions(clientId)) }

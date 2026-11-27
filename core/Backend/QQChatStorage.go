@@ -45,7 +45,7 @@ func (c *Core) qqChatDirectory(clientID, adapterID string) (string, error) {
 }
 
 func (c *Core) readQQContexts(directory string) ([]QQContextInfo, error) {
-	data, err := c.FS.ReadFile(filepath.Join(directory, "contexts.json"))
+	data, err := c.readConversationFile(filepath.Join(directory, "contexts.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return []QQContextInfo{}, nil
 	}
@@ -160,7 +160,7 @@ func (r *qqChatRuntime) ensureContextLocked(job qqChatJob) (QQContextInfo, error
 }
 
 func (r *qqChatRuntime) readSession(record QQContextInfo) (*chat.ChatTask, error) {
-	data, err := r.core.FS.ReadFile(filepath.Join(r.directory, "sessions", record.ID+".json"))
+	data, err := r.core.readConversationFile(filepath.Join(r.directory, "sessions", record.ID+".json"))
 	if err != nil {
 		return nil, err
 	}

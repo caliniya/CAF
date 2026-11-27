@@ -133,7 +133,6 @@ func (q *QQServer) Close(ctx context.Context) error {
 type qqAdapterConfig struct {
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
-	Token      string         `json:"token"`
 	SelfID     string         `json:"selfId,omitempty"`
 	DetectedQQ string         `json:"detectedQQ,omitempty"`
 	Port       int            `json:"port"`

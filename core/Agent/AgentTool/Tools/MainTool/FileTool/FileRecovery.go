@@ -58,6 +58,11 @@ func editingTarget(ctx *agenttool.ToolContext, path string) (fileEditTarget, err
 	if err != nil {
 		return fileEditTarget{}, err
 	}
+	if ctx.CheckPath != nil {
+		if err := ctx.CheckPath(path); err != nil {
+			return fileEditTarget{}, err
+		}
+	}
 	result := fileEditTarget{path: path}
 	if ctx.PermissionLevel == agenttool.PermissionAutoEdit || ctx.WorkspaceOnly {
 		result.root, err = filepath.Abs(ctx.WorkSpace)

@@ -1,3 +1,4 @@
+import { loginTestProfile } from './profile_bridge.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -49,6 +50,7 @@ globalThis.window = { go: { Backend: { Core: {
     return new Promise((resolve, fail) => { complete = resolve; reject = fail })
   },
 } } } }
+await loginTestProfile(apiURL)
 chat.session = structuredClone(saved)
 chat.rebuildMessages()
 const firstMessage = () => chat.messages.find(message => message.nodeId === 'first-reply')

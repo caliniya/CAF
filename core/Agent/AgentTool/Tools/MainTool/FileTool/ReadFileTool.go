@@ -42,7 +42,7 @@ func (t *ReadFile) Fun(ctx *agenttool.ToolContext, arg map[string]any) (string, 
 	if err != nil {
 		return "", err
 	}
-	fsys, err := fileSystem()
+	fsys, err := editFileSystem(ctx)
 	if err != nil {
 		return "", err
 	}

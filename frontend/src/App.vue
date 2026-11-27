@@ -4,8 +4,10 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { Check, ChevronDown, Monitor } from '@lucide/vue'
 import { useChatStore } from './stores/chat'
 import SidebarTasks from './components/SidebarTasks.vue'
+import VaultGate from './components/VaultGate.vue'
 import { APP_AREAS, readAppArea, saveAppArea, type AppArea } from './navigation'
 
+const vaultReady = ref(false)
 const route = useRoute()
 const router = useRouter()
 const chat = useChatStore()
@@ -146,7 +148,8 @@ function toggleSettings() {
 </script>
 
 <template>
-  <div class="app">
+  <VaultGate v-if="!vaultReady" @ready="vaultReady = true" />
+  <div v-else class="app">
     <aside class="sidebar" :style="{ width: `${sidebarWidth}px` }">
       <div class="brand">
         <span class="brand-name">CAF</span>
@@ -177,6 +180,7 @@ function toggleSettings() {
         <RouterLink to="/settings/models" class="nav-item">模型配置</RouterLink>
         <RouterLink to="/settings/general" class="nav-item">通用设置</RouterLink>
         <RouterLink to="/settings/chat" class="nav-item">对话设置</RouterLink>
+        <RouterLink to="/settings/platform" class="nav-item">跨平台设置</RouterLink>
       </nav>
 
       <!-- Agent：新建对话 + 会话列表 -->

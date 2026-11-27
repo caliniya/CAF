@@ -2,7 +2,7 @@
 import { ref, useId } from 'vue'
 import { Eye, EyeOff } from '@lucide/vue'
 import type { ExtensionParameter } from '../api'
-const props = defineProps<{ fields: ExtensionParameter[]; values: Record<string, string>; busy?: boolean; running?: boolean }>()
+const props = defineProps<{ fields: ExtensionParameter[]; values: Record<string, string>; busy?: boolean; running?: boolean; editing?: boolean }>()
 const emit = defineEmits<{ change: [key: string, value: string] }>()
 const visible = ref<string[]>([])
 const inputPrefix = useId()
@@ -28,12 +28,13 @@ function pairChange(event: Event, field: ExtensionParameter, index: number) {
       <div v-if="field.kind === 'integer-pair'" class="parameter-pair" :aria-label="field.label">
         <label v-for="pairIndex in [0, 1]" :key="pairIndex"><span>{{ field.inputLabels?.[pairIndex] ?? (pairIndex + 1) }}</span><input :id="inputPrefix + field.key + (pairIndex === 0 ? '' : '-second')" type="number" :value="pairValues(field)[pairIndex] ?? ''" :min="field.minimum" :max="field.maximum" step="1" :required="field.required" :disabled="disabled(field)" :aria-label="field.label + ' · ' + (field.inputLabels?.[pairIndex] ?? (pairIndex + 1))" @input="pairChange($event, field, pairIndex)" /></label>
       </div>
-      <span v-else-if="field.kind !== 'boolean'" class="parameter-input" :class="{ secret: field.kind === 'secret' }"><input :id="inputPrefix + field.key" :value="values[field.key] ?? ''" :type="inputType(field)" :required="field.required" :aria-label="field.label" :placeholder="field.placeholder"
+      <span v-else-if="field.kind !== 'boolean'" class="parameter-input" :class="{ secret: field.kind === 'secret' }"><input :id="inputPrefix + field.key" :value="values[field.key] ?? ''" :type="inputType(field)" :required="field.required && !(editing && field.kind === 'secret')" :aria-label="field.label" :placeholder="field.placeholder"
         :min="field.minimum" :max="field.maximum" :step="field.kind === 'integer' ? 1 : undefined" :autofocus="index === 0"
         :autocomplete="field.kind === 'secret' ? 'new-' + secretType : 'off'" :disabled="disabled(field)" @input="update($event, field.key)" />
         <button v-if="field.kind === 'secret'" type="button" class="secret-toggle" :aria-label="visible.includes(field.key) ? '隐藏 ' + field.label : '显示 ' + field.label" @click="toggle(field.key)"><EyeOff v-if="visible.includes(field.key)" :size="15" /><Eye v-else :size="15" /></button>
       </span>
-      <span v-if="field.help" class="field-help">{{ field.help }}</span>
+      <span v-if="editing && field.kind === 'secret'" class="field-help">已保存。留空保留，输入新值可替换。</span>
+      <span v-else-if="field.help" class="field-help">{{ field.help }}</span>
     </div>
     <p v-if="running" class="field-help">停用扩展后可修改连接参数。</p>
   </div>

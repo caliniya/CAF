@@ -35,7 +35,7 @@ func TestExtensionClientsUseInternalIDFolders(t *testing.T) {
 	if _, err := instance.CreateExtensionClient("duplicate", "FIRST-CLIENT"); err == nil {
 		t.Fatal("accepted case-insensitive duplicate ID")
 	}
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	list, err := reloaded.ListExtensionClients()
 	if err != nil || len(list) != 1 || list[0].ID != client.ID {
@@ -218,7 +218,7 @@ func TestExtensionClientsMultipleNamedQQBindings(t *testing.T) {
 	if err := instance.DeleteQQAdapter(first.ID); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	client, err = reloaded.GetExtensionClient(client.ID)
 	if err != nil || len(client.Extensions) != 1 || !client.Extensions[0].Enabled {

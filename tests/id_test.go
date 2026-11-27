@@ -13,7 +13,7 @@ import (
 func TestGeneratedObjectIDsUseTypedUUIDv7(t *testing.T) {
 	instance := useChatTaskCore(t)
 	instance.Paths.ConfigFile = filepath.Join(instance.Paths.Data, "config", "MainConfig.json")
-	if _, err := instance.AddModelConfig("Provider", "https://example.test", "chat-completions", "key", []apiImpl.Model{{ID: "m1"}}); err != nil {
+	if _, err := instance.AddModelConfig("Provider", "https://example.test", "chat-completions", "", []apiImpl.Model{{ID: "m1"}}); err != nil {
 		t.Fatal(err)
 	}
 	if value := instance.Configs.EnablesConfig.ID; !id.Valid(value, id.Config) {

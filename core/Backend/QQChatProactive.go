@@ -64,8 +64,7 @@ func (r *qqChatRuntime) startProactiveLocked(groupKey string) {
 }
 
 // 同一扩展复用传输客户端；协议解码器持有流状态，仍须每个请求独立创建。
-func (r *qqChatRuntime) proactiveClient(provider *Config, model string) *netclient.APIClient {
-	options := netclient.Options{ServerAddress: provider.ServerAddress, APIKey: provider.APIKey, Model: model}
+func (r *qqChatRuntime) proactiveClient(options netclient.Options) *netclient.APIClient {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.decisionClient == nil || *r.decisionClient.Config != options {
@@ -134,7 +133,12 @@ func (r *qqChatRuntime) judgeProactive(groupKey string, job qqChatJob, decisionR
 	}}
 	var result strings.Builder
 	var requestUsage *api.TokenUsage
-	err = r.proactiveClient(provider, job.config.Model).StreamChat(ctx, request, &api.ChatCompletionAPI{}, func(delta api.Delta) {
+	opts, err := r.core.providerOptions(provider, job.config.Model)
+	if err != nil {
+		r.report(err)
+		return
+	}
+	err = r.proactiveClient(opts).StreamChat(ctx, request, &api.ChatCompletionAPI{}, func(delta api.Delta) {
 		result.WriteString(delta.Content)
 		if delta.Usage != nil {
 			usage := *delta.Usage

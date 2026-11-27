@@ -10,12 +10,15 @@ import (
 
 // 用于工具的一个简单上下文
 type ToolContext struct {
-	WorkSpace   string
-	WorkspaceID string
+	WorkSpace     string
+	WorkspaceID   string
+	WorkspaceName string
 	// CallID 来自模型；RecoveryFile 是宿主生成的独立恢复文件路径。
 	CallID       string
 	RecoveryFile string
 	FileSystem   platform.FilePlatform
+	// CheckPath lets the host reserve private application storage, also in full-access mode.
+	CheckPath func(string) error
 	PermissionLevel
 	// WorkspaceOnly 在单工具工作区授权下仍保留实际写入的目录约束。
 	WorkspaceOnly bool
@@ -69,11 +72,17 @@ func (c ToolContext) Check(level PermissionLevel) bool {
 
 // ResolvePath 将相对路径按当前工作区解析，不改变进程的工作目录。
 func (c ToolContext) ResolvePath(path string) (string, error) {
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
+	if !filepath.IsAbs(path) {
+		if c.WorkSpace == "" {
+			return "", errors.New("未选择工作区，请使用绝对路径")
+		}
+		path = filepath.Join(c.WorkSpace, path)
 	}
-	if c.WorkSpace == "" {
-		return "", errors.New("未选择工作区，请使用绝对路径")
+	path = filepath.Clean(path)
+	if c.CheckPath != nil {
+		if err := c.CheckPath(path); err != nil {
+			return "", err
+		}
 	}
-	return filepath.Join(c.WorkSpace, path), nil
+	return path, nil
 }

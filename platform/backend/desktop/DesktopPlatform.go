@@ -2,9 +2,14 @@ package DesktopBackend
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,37 +26,30 @@ func Init(assets fs.FS) error {
 	}
 	fileSystem := &DesktopFileSystem{}
 	backend.Platform.FS = fileSystem
+	backend.Platform.DeviceKeys = deviceKeys{}
 
 	path, err := DiscoverPaths(os.Getenv("CAF_DATA_DIR"))
 	if err != nil {
 		return err
 	}
 	backend.Platform.Paths = &path
-	if _, err := backend.Platform.LoadConfigs(); err != nil {
-		return err
-	}
-	if _, err := backend.Platform.GetChatMemorySettings(""); err != nil {
-		return err
-	}
-	chatServer, err := backend.Platform.Servers.Get[*backend.ChatServer](backend.ChatServerName)
-	if err != nil {
-		return err
-	}
-	qqServer, err := backend.Platform.Servers.Get[*backend.QQServer](backend.QQServerName)
-	if err != nil {
-		return err
-	}
-	approvalServer, err := backend.Platform.Servers.Get[*backend.ToolApprovalServer](backend.ToolApprovalServerName)
-	if err != nil {
-		return err
-	}
+	profiles := backend.NewProfiles(path, fileSystem, deviceKeys{}, backend.Platform.APIClient)
 
 	timeContext, stopTime := context.WithCancel(context.Background())
 	defer stopTime()
 	var startTime sync.Once
 
+	// Serialize registrations and writes for one data directory across desktop processes.
+	instancePath := path.Data
+	if real, err := filepath.EvalSymlinks(instancePath); err == nil {
+		instancePath = real
+	}
+	if goruntime.GOOS == "windows" {
+		instancePath = strings.ToLower(instancePath)
+	}
 	return wails.Run(&options.App{
-		Title: "CAF", Width: 980, Height: 680, MinWidth: 680, MinHeight: 500,
+		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: fmt.Sprintf("caf-%x", sha256.Sum256([]byte(instancePath))), OnSecondInstanceLaunch: func(options.SecondInstanceData) {}},
+		Title:              "CAF", Width: 980, Height: 680, MinWidth: 680, MinHeight: 500,
 		BackgroundColour: &options.RGBA{R: 245, G: 246, B: 250, A: 255},
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup: func(ctx context.Context) {
@@ -61,15 +59,7 @@ func Init(assets fs.FS) error {
 			backend.Emit = func(event string, data ...any) {
 				runtime.EventsEmit(ctx, event, data...)
 			}
-			if err := chatServer.Start(ctx); err != nil {
-				runtime.LogError(ctx, "启动对话服务失败："+err.Error())
-			}
-			if err := approvalServer.Start(ctx); err != nil {
-				runtime.LogError(ctx, "启动工具审批服务失败："+err.Error())
-			}
-			if err := qqServer.Start(ctx); err != nil {
-				runtime.LogError(ctx, "启动 QQ 服务失败："+err.Error())
-			}
+			profiles.Start(ctx)
 		},
 		OnDomReady: func(ctx context.Context) {
 			// 前端重载时仍只保留一个取时循环；网络请求不阻塞窗口启动。
@@ -102,18 +92,12 @@ func Init(assets fs.FS) error {
 			stopTime()
 			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := chatServer.Close(closeCtx); err != nil {
-				runtime.LogError(ctx, "关闭对话服务失败："+err.Error())
-			}
-			if err := approvalServer.Close(closeCtx); err != nil {
-				runtime.LogError(ctx, "关闭工具审批服务失败："+err.Error())
-			}
-			if err := qqServer.Close(closeCtx); err != nil {
-				runtime.LogError(ctx, "关闭 QQ 服务失败："+err.Error())
+			if err := profiles.Close(closeCtx); err != nil {
+				runtime.LogError(ctx, "关闭用户会话失败："+err.Error())
 			}
 		},
 		Bind: []interface{}{
-			backend.Platform,
+			profiles.API(),
 		},
 	})
 }

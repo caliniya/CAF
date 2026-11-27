@@ -88,8 +88,10 @@ func useQQChat(t *testing.T, parameters map[string]string, respond func(http.Res
 		}
 	}))
 	t.Cleanup(model.Close)
-	configs := []backend.Config{{ID: identity.MustNew(identity.Config), Name: "QQ model", ServerAddress: model.URL, APIKey: "test-token", Protocol: "chat-completions", Model: []api.Model{{ID: "qq-model"}}, EnabledModel: "qq-model"}}
-	core.Configs = &backend.Configs{ALLConfig: &configs, EnablesConfig: &configs[0]}
+	core.Configs = &backend.Configs{}
+	if _, err := core.AddModelConfig("QQ model", model.URL, "chat-completions", "test-token", []api.Model{{ID: "qq-model"}}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := core.CreateExtensionClient("QQ 测试", f.clientID); err != nil {
 		t.Fatal(err)
 	}

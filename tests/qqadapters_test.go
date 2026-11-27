@@ -26,6 +26,8 @@ func useQQAdapterCore(t *testing.T) *backend.Core {
 		Paths: &platform.Paths{Data: t.TempDir()},
 		FS:    &desktopBackend.DesktopFileSystem{},
 	}
+	instance.Paths.ConfigFile = filepath.Join(instance.Paths.Data, "config", "MainConfig.json")
+	setupTestVault(t, instance)
 	testServer[*backend.QQServer](t, instance, backend.QQServerName).ListenHost = "127.0.0.1"
 	t.Cleanup(instance.CloseQQAdapters)
 	return instance
@@ -66,7 +68,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Name != "First" || first.QQ != "10001" || first.State != "stopped" || first.Address != preview || first.Token != "" {
+	if first.Name != "First" || first.QQ != "10001" || first.State != "stopped" || first.Address != preview || !first.HasToken {
 		t.Fatalf("unexpected new adapter: %+v", first)
 	}
 	second, err := instance.CreateQQAdapter("Second", "second-token", "")
@@ -76,18 +78,18 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	if second.ID == first.ID || second.Address == first.Address || second.QQ != "" {
 		t.Fatalf("adapters must have separate endpoints: %+v / %+v", first, second)
 	}
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	adapters, err := reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 2 {
 		t.Fatalf("failed to restore adapter list: %+v / %v", adapters, err)
 	}
 	details, err := reloaded.GetQQAdapter(first.ID)
-	if err != nil || details.Token != "first-token" {
-		t.Fatalf("edit details did not restore token: %+v / %v", details, err)
+	if err != nil || !details.HasToken {
+		t.Fatalf("edit details did not report the stored token: %+v / %v", details, err)
 	}
 	for _, adapter := range adapters {
-		if adapter.Token != "" || adapter.State != "stopped" {
+		if !adapter.HasToken || adapter.State != "stopped" {
 			t.Fatalf("list exposed a token or started an adapter: %+v", adapter)
 		}
 	}
@@ -98,7 +100,7 @@ func TestQQAdaptersPersistAndValidate(t *testing.T) {
 	if err := instance.DeleteQQAdapter(second.ID); err != nil {
 		t.Fatal(err)
 	}
-	reloaded = &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded = &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	adapters, err = reloaded.ListQQAdapters()
 	if err != nil || len(adapters) != 1 || adapters[0].Name != "Renamed" {
@@ -205,7 +207,7 @@ func TestQQAdaptersRealLifecycleAndDetectedAccount(t *testing.T) {
 	// 等待事件消费者将自动识别的 QQ 号写入配置。
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+		reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 		reloaded.InitServers()
 		details, err := reloaded.GetQQAdapter(adapter.ID)
 		if err == nil && details.QQ == "10001" {
@@ -298,7 +300,7 @@ func TestQQAdaptersFailuresPreserveConfigurationAndRuntime(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(instance.Paths.Data, "qq", "adapters.json"), []byte("invalid JSON"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	if _, err := reloaded.ListQQAdapters(); err == nil {
 		t.Fatal("silently accepted corrupted adapter configuration")

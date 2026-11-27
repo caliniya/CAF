@@ -35,7 +35,9 @@ func (c *APIClient) FetchModels(ctx context.Context) ([]apiImpl.Model, error) {
 			return nil, err
 		}
 		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
+		if c.Config.APIKey != "" {
+			request.Header.Set("Authorization", "Bearer "+c.Config.APIKey)
+		}
 
 		response, err := client.Do(request)
 		if err != nil {

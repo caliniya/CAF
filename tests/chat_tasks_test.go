@@ -21,8 +21,8 @@ func useChatTaskCore(t *testing.T) *backend.Core {
 	root := t.TempDir()
 	configs := []backend.Config{{
 		ID: "provider-1", Name: "Test Provider", ServerAddress: "https://example.test/v1",
-		Protocol: "chat-completions", APIKey: "secret-key",
-		Model: []apiImpl.Model{{ID: "model-1", Name: "Model 1"}}, EnabledModel: "model-1",
+		Protocol: "chat-completions",
+		Model:    []apiImpl.Model{{ID: "model-1", Name: "Model 1"}}, EnabledModel: "model-1",
 	}}
 	instance := &backend.Core{
 		Paths: &platform.Paths{Data: root},

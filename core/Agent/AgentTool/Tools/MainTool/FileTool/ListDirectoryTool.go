@@ -41,7 +41,7 @@ func (t *ListDirectory) Fun(ctx *agenttool.ToolContext, arg map[string]any) (str
 	if err != nil {
 		return "", err
 	}
-	fsys, err := fileSystem()
+	fsys, err := editFileSystem(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -60,6 +60,9 @@ func (t *ListDirectory) Fun(ctx *agenttool.ToolContext, arg map[string]any) (str
 		Entries []directoryEntry `json:"entries"`
 	}{Path: path, Entries: make([]directoryEntry, 0, len(entries))}
 	for _, entry := range entries {
+		if (entry.IsDir() || entry.Type()&fs.ModeSymlink != 0) && ctx != nil && ctx.CheckPath != nil && ctx.CheckPath(filepath.Join(path, entry.Name())) != nil {
+			continue
+		}
 		kind := "file"
 		switch {
 		case entry.IsDir():

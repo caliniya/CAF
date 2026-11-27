@@ -133,7 +133,7 @@ func (r *toolExecutionRun) effectiveContext(toolID string, permission agenttool.
 			ctx.PermissionLevel = agenttool.PermissionFullAccess
 			return &ctx, true
 		}
-		if exists && grant.Scope == agenttool.GrantWorkspace && grant.WorkspaceID != "" && grant.WorkspaceID == r.session.WorkspaceID && permission.Workspace {
+		if exists && grant.Scope == agenttool.GrantWorkspace && grant.WorkspaceID != "" && grant.WorkspaceID == ctx.WorkspaceID && permission.Workspace {
 			ctx.PermissionLevel = agenttool.PermissionFullAccess
 			ctx.WorkspaceOnly = true
 			return &ctx, true
@@ -218,20 +218,9 @@ func (r *toolExecutionRun) requestBlocked(display *api.ToolCall, id string) (str
 func (r *toolExecutionRun) approve(display *api.ToolCall, original api.ToolCall, prepared *preparedToolCall) (*agenttool.ToolContext, error) {
 	view := &api.ToolApproval{
 		CallID: original.ID, ToolID: original.Name, Name: agenttool.DisplayName(original.Name), Arguments: original.Arguments,
-		Reason: prepared.permission.Reason, WorkspaceID: r.session.WorkspaceID,
-		WorkspaceAllowed: prepared.permission.Workspace && r.session.WorkspaceID != "",
+		Reason: prepared.permission.Reason, WorkspaceID: r.context.WorkspaceID, WorkspaceName: r.context.WorkspaceName,
+		WorkspaceAllowed: prepared.permission.Workspace && r.context.WorkspaceID != "",
 	}
-	chatServer, err := r.core.Servers.Get[*ChatServer](ChatServerName)
-	if err != nil {
-		return nil, err
-	}
-	chatServer.mu.Lock()
-	if r.options != nil && r.options.workspace != nil {
-		view.WorkspaceName = r.options.workspace.Name
-	} else if workspace, err := r.core.workspaceByIDLocked(r.session.WorkspaceID); err == nil && workspace != nil {
-		view.WorkspaceName = workspace.Name
-	}
-	chatServer.mu.Unlock()
 	if r.context.PermissionLevel < agenttool.PermissionFullAccess {
 		view.HigherPermission = int(agenttool.PermissionFullAccess)
 		if prepared.permission.Level <= agenttool.PermissionAutoEdit && view.WorkspaceAllowed && r.context.PermissionLevel < agenttool.PermissionAutoEdit {

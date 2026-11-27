@@ -1,3 +1,4 @@
+import { loginTestProfile } from './profile_bridge.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -43,12 +44,13 @@ globalThis.window = { innerWidth: 1100, innerHeight: 800, go: { Backend: { Core:
   ListChats: async () => [],
 } } } }
 
+await loginTestProfile(apiURL)
 chat.session = { id: 'chat-1', memoryLibraryIds: ['missing'] }
 await chat.loadMemorySettings()
 assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'])
 const saving = chat.setMemoryLibraries(['local'])
 await nextTick()
-await Promise.resolve()
+await new Promise(setImmediate)
 chat.session = { id: 'chat-2', memoryLibraryIds: [] }
 resolveSave()
 await saving
@@ -56,7 +58,7 @@ assert.deepEqual(chat.enabledMemoryLibraryIds, [], 'save response for an older c
 
 window.go.Backend.Core.GetChatMemorySettings = () => new Promise(resolve => { resolveLoad = resolve })
 const loading = chat.loadMemorySettings()
-await Promise.resolve()
+await new Promise(setImmediate)
 chat.session = { id: 'chat-3', memoryLibraryIds: ['local'] }
 resolveLoad({ libraries, enabledIds: ['global'] })
 await loading
@@ -129,8 +131,7 @@ assert.deepEqual(chat.enabledMemoryLibraryIds, ['global'])
 
 window.go.Backend.Core.RenameMemoryLibrary = () => new Promise(resolve => { resolveSave = resolve })
 const rename = chat.manageMemoryLibrary({ kind: 'rename', id: 'global', name: 'Renamed' })
-await Promise.resolve()
-await Promise.resolve()
+await new Promise(setImmediate)
 chat.session = { id: 'unrelated-chat', memoryLibraryIds: ['unrelated'] }
 resolveSave()
 await rename

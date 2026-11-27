@@ -1,3 +1,4 @@
+import { loginTestProfile } from './profile_bridge.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -147,6 +148,7 @@ let finishApproval, failApproval, approvalCalls = []
 globalThis.window = { innerWidth: 420, innerHeight: 550, addEventListener() {}, removeEventListener() {}, go: { Backend: { Core: {
   SubmitToolApproval: (...args) => { approvalCalls.push(args); return new Promise((resolve, reject) => { finishApproval = resolve; failApproval = reject }) },
 } } } }
+await loginTestProfile(apiURL)
 const state = reactive({ item: { kind: 'tool', callId: 'ui-call', status: 'run', requestId: 'ui-request', approval, displayType: 'info', displayContent: 'arguments.content', content: approval.arguments }, chatId: 'chat' })
 const accepted = []
 const app = renderer.createApp({ render: () => h(ToolCallDetails, { ...state, onApproved: value => accepted.push(value) }) })

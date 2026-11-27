@@ -174,7 +174,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 		t.Fatal("cross-client parameter read accepted")
 	}
 	parameters, err := instance.GetClientExtensionParameters(firstClient.ID, first.ID)
-	if err != nil || parameters["token"] != "first-token" {
+	if err != nil || parameters["token"] != "" {
 		t.Fatalf("wrong client's token: %+v / %v", parameters, err)
 	}
 	parameters["name"] = "renamed"
@@ -191,7 +191,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	secondParameters, err := instance.GetClientExtensionParameters(secondClient.ID, second.ID)
-	if err != nil || secondParameters["name"] != "助手" || secondParameters["token"] != "second-token" {
+	if err != nil || secondParameters["name"] != "助手" || secondParameters["token"] != "" {
 		t.Fatalf("edit changed other client: %+v / %v", secondParameters, err)
 	}
 	if _, err := instance.SetClientExtensionEnabled(firstClient.ID, first.ID, true); err != nil {
@@ -214,7 +214,7 @@ func TestClientExtensionsAreIndependent(t *testing.T) {
 	if err != nil || len(options) != 1 || !options[0].Enabled || !options[0].Running {
 		t.Fatalf("deleting affected other client: %+v / %v", options, err)
 	}
-	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS}
+	reloaded := &backend.Core{Paths: instance.Paths, FS: instance.FS, DeviceKeys: instance.DeviceKeys}
 	reloaded.InitServers()
 	options, err = reloaded.ListClientExtensions(secondClient.ID)
 	if err != nil || len(options) != 1 || options[0].ID != second.ID {

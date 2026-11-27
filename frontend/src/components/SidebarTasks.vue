@@ -363,11 +363,11 @@ onUnmounted(() => {
     </div>
   </Teleport>
   <ConfirmationDialog :open="!!deleteTarget" title="删除对话"
-    :message="`确定删除「${deleteTarget?.title ?? ''}」吗？删除后无法恢复。`"
+    :message="`确定删除「${deleteTarget?.title ?? ''}」吗？本对话的内部工作区及其中的文件也会删除，无法恢复。外部工作区的文件会保留。`"
     confirm-label="确认删除" danger :busy="deleting" :error="deleteError"
     @confirm="confirmDelete" @cancel="deleteTarget = null" />
   <ConfirmationDialog :open="!!workspaceDeleteTarget" title="删除工作区"
-    :message="`确定删除「${workspaceDeleteTarget?.name ?? ''}」工作区吗？\n确认删除：保留对话，转为不使用工作区。\n全部删除：同时删除所有对话，无法恢复。\n不会影响工作区实际文件。`"
+    :message="`确定删除「${workspaceDeleteTarget?.name ?? ''}」工作区吗？\n确认删除：保留对话，每个对话改用自己的内部工作区。\n全部删除：同时删除这些对话及其内部工作区文件，无法恢复。\n两种操作都会保留外部工作区的文件。`"
     confirm-label="确认删除" danger :busy="workspaceDeleting" :error="workspaceDeleteError"
     @confirm="confirmWorkspaceDelete()" @cancel="workspaceDeleteTarget = null">
     <template #extra-actions>

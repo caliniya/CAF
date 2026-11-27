@@ -29,9 +29,10 @@ func useConfigFile(t *testing.T, file string) {
 	previous := backend.Platform
 	t.Cleanup(func() { backend.Platform = previous })
 	backend.Platform = &backend.Core{
-		Paths: &platform.Paths{ConfigFile: file},
+		Paths: &platform.Paths{Data: t.TempDir(), ConfigFile: file},
 		FS:    &desktopBackend.DesktopFileSystem{},
 	}
+	setupTestVault(t, backend.Platform)
 }
 
 func TestLoadConfigReadsFile(t *testing.T) {
@@ -47,7 +48,7 @@ func TestLoadConfigReadsFile(t *testing.T) {
 		t.Fatalf("unexpected configs: %+v", got)
 	}
 	entry := (*got.ALLConfig)[0]
-	if entry.ServerAddress != "https://example.com" || entry.APIKey != "sk-test" || len(entry.Model) != 2 {
+	if entry.ServerAddress != "https://example.com" || !entry.HasAPIKey || len(entry.Model) != 2 {
 		t.Fatalf("unexpected entry: %+v", entry)
 	}
 }
@@ -410,7 +411,7 @@ func TestRefreshModelConfigPersistsUpdatedModels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	configs, err := backend.Platform.RefreshModelConfig(0, "https://new.example/chat/completions", []apiImpl.Model{{ID: "keep", Name: "Keep updated"}, {ID: "new", Name: "New"}})
+	configs, err := backend.Platform.UpdateModelCredentials(0, "https://new.example/chat/completions", []apiImpl.Model{{ID: "keep", Name: "Keep updated"}, {ID: "new", Name: "New"}}, "replacement-key", false)
 	if err != nil {
 		t.Fatal(err)
 	}

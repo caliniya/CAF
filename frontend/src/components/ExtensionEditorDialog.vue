@@ -24,7 +24,7 @@ onUnmounted(() => { generation++ })
 const valid = computed(() => !!descriptor.value && descriptor.value.parameters.every((field) => {
   const value = values.value[field.key] ?? ''
   if (field.kind === 'boolean') return value === 'true' || value === 'false'
-  if (!value.trim()) return !field.required
+  if (!value.trim()) return !field.required || (!!props.option && field.kind === 'secret')
   if (field.kind === 'integer-pair') {
     const values = value.split(/[,，\s]+/)
     return values.length === 2 && values.every(item => item.trim() !== '' && Number.isInteger(Number(item)) && Number(item) >= (field.minimum ?? 0) && Number(item) <= (field.maximum ?? Infinity))
@@ -80,7 +80,7 @@ async function remove() {
     <ExtensionTypeCatalog v-else-if="!option && !selectedType" :types="ext.types" selectable :busy="busy" @select="selectedType = $event" />
     <form v-else :id="formId" @submit.prevent="save">
       <p v-if="descriptor?.description" class="description">{{ descriptor.description }}</p>
-      <ExtensionParameterFields v-if="descriptor" :fields="descriptor.parameters" :values="values" :busy="busy" :running="option?.running" @change="(key, value) => values[key] = value" />
+      <ExtensionParameterFields v-if="descriptor" :fields="descriptor.parameters" :editing="!!option" :values="values" :busy="busy" :running="option?.running" @change="(key, value) => values[key] = value" />
     </form>
     <p v-if="error && !deleteOpen" class="error" role="alert">{{ error }}</p>
     <button v-if="descriptor?.needsModel && option" type="button" class="btn" :disabled="busy || loading" @click="chatConfigOpen = true">对话配置</button>

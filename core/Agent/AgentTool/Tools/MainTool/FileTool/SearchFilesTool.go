@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"path/filepath"
 	"sort"
@@ -93,7 +94,7 @@ func (t *SearchFiles) Fun(ctx *agenttool.ToolContext, arg map[string]any) (strin
 			return "", fmt.Errorf("参数 pattern 的通配符格式无效：%w", err)
 		}
 	}
-	fsys, err := fileSystem()
+	fsys, err := editFileSystem(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -112,6 +113,9 @@ func (t *SearchFiles) Fun(ctx *agenttool.ToolContext, arg map[string]any) (strin
 		}
 		for _, entry := range entries {
 			entryPath := filepath.Join(directory, entry.Name())
+			if (entry.IsDir() || entry.Type()&fs.ModeSymlink != 0) && ctx != nil && ctx.CheckPath != nil && ctx.CheckPath(entryPath) != nil {
+				continue
+			}
 			if entry.IsDir() {
 				if recursive {
 					if err := search(entryPath); err != nil {

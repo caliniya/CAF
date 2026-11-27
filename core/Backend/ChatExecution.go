@@ -50,20 +50,15 @@ func firstExecutionOptions(options []*chatExecutionOptions) *chatExecutionOption
 }
 
 func (c *Core) chatExecutionContext(ctx context.Context, session *chat.ChatTask, options *chatExecutionOptions) (*agenttool.ToolContext, string, error) {
-	var toolContext *agenttool.ToolContext
-	var err error
-	if options != nil && options.workspace != nil {
-		var path string
-		path, err = c.validateWorkspacePath(options.workspace.Path)
-		toolContext = agenttool.CreateContext(path, c.toolPermission(session.ToolConfig))
-	} else {
-		toolContext, err = c.toolContextFor(session)
+	var workspace *chat.WorkSpace
+	if options != nil {
+		workspace = options.workspace
 	}
+	toolContext, err := c.toolContextFor(session, workspace)
 	if err != nil {
 		return nil, "", err
 	}
 	toolContext.Context = ctx
-	toolContext.WorkspaceID, toolContext.FileSystem = session.WorkspaceID, c.FS
 	enabledMemoryIDs := append([]string(nil), session.MemoryLibraryIDs...)
 	toolContext.MemoryScope = func(callCtx context.Context, libraryID string) (bool, error) {
 		return c.chatMemoryScope(callCtx, session.WorkspaceID, enabledMemoryIDs, libraryID)
@@ -86,14 +81,16 @@ func (c *Core) chatExecutionClient(session *chat.ChatTask, config *Config) error
 	if err != nil {
 		return err
 	}
+	opts, err := c.providerOptions(config, session.Model)
+	if err != nil {
+		return err
+	}
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	server.initLocked()
 	entry := server.ChatList[session.ID]
-	if entry.Client == nil || entry.Client.Config == nil || entry.ConfigID != session.ConfigID || entry.Model != session.Model ||
-		entry.Client.Config.ServerAddress != config.ServerAddress || entry.Client.Config.APIKey != config.APIKey {
-		entry = chat.ChatTask{ConfigID: session.ConfigID, Model: session.Model,
-			Client: netclient.NewAPIClient(netclient.Options{ServerAddress: config.ServerAddress, APIKey: config.APIKey, Model: session.Model})}
+	if entry.Client == nil || entry.Client.Config == nil || entry.ConfigID != session.ConfigID || *entry.Client.Config != opts {
+		entry = chat.ChatTask{ConfigID: session.ConfigID, Model: session.Model, Client: netclient.NewAPIClient(opts)}
 		server.ChatList[session.ID] = entry
 	}
 	session.Client = entry.Client
@@ -107,11 +104,7 @@ func chatExecutionPrefix(session *chat.ChatTask, ctx *agenttool.ToolContext, mem
 			prefix = append(prefix, api.ChatMessage{Role: "system", Content: prompt})
 		}
 	}
-	workspace := texts.ChatWithoutWorkspace
-	if ctx.WorkSpace != "" {
-		workspace = fmt.Sprintf(texts.ChatWorkspace, ctx.WorkSpace)
-	}
-	prefix = append(prefix, api.ChatMessage{Role: "system", Content: workspace})
+	prefix = append(prefix, api.ChatMessage{Role: "system", Content: fmt.Sprintf(texts.ChatWorkspace, ctx.WorkSpace)})
 	if memoryContext != "" {
 		prefix = append(prefix, api.ChatMessage{Role: "system", Content: memoryContext})
 	}

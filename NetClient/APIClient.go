@@ -33,8 +33,12 @@ type APIClient struct {
 // NewAPIClient 构造客户端。
 // http.Client 不设总超时(长回复会被掐断),超时与取消统一由传入的 context 控制。
 func NewAPIClient(opts Options) *APIClient {
+	transport := &http.Client{}
+	if opts.APIKey != "" {
+		transport.CheckRedirect = credentialRedirect
+	}
 	return &APIClient{
-		Client: &http.Client{},
+		Client: transport,
 		Config: &opts,
 	}
 }

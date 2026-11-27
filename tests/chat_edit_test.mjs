@@ -1,3 +1,4 @@
+import { loginTestProfile } from './profile_bridge.mjs'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -88,6 +89,7 @@ globalThis.window = {
   } } },
   runtime: { EventsOn: (name, handler) => listeners.set(name, handler), EventsOff: (name) => listeners.delete(name) },
 }
+await loginTestProfile(apiURL)
 const renderer = createRenderer({
   createElement: element, createText: (text) => ({ ...element('#text'), text }), createComment: (text) => ({ ...element('#comment'), text }),
   setText: (node, text) => { node.text = text },

@@ -173,8 +173,8 @@ func (o QQChatOptions) parameters() map[string]string {
 func (c *Core) defaultExtensionChatConfig() ExtensionChatConfig {
 	strict := false
 	config := ExtensionChatConfig{PersonaID: "assistant", ReasoningEffort: "high", ToolConfig: &agenttool.ChatToolConfig{Permission: agenttool.PermissionAutoEdit, StrictMode: &strict}}
-	if c.Configs != nil && c.Configs.EnablesConfig != nil {
-		config.ConfigID, config.Model = c.Configs.EnablesConfig.ID, c.Configs.EnablesConfig.EnabledModel
+	if provider, err := c.defaultProvider(); err == nil {
+		config.ConfigID, config.Model = provider.ID, provider.EnabledModel
 	}
 	return config
 }

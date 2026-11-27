@@ -7,7 +7,7 @@ import {
   DeleteConfig,
   ProbeModels,
   AddModelConfig,
-  RefreshModelConfig,
+  UpdateModelCredentials,
   type Config,
   type Configs,
   type Model,
@@ -22,6 +22,8 @@ export const useConfigsStore = defineStore('configs', {
     toolNormalConfig: null as ChatToolConfig | null,
     defaultMemoryIds: [] as string[],
     defaultCompaction: { ...builtInCompaction },
+    sharedModels: false,
+    sharedModelNotice: '',
     loaded: false,
     loading: false,
     status: '',
@@ -30,7 +32,7 @@ export const useConfigsStore = defineStore('configs', {
   getters: {
     isEnabled(state) {
       return (item: Config) =>
-        !!state.enables && state.enables.ServerAddress === item.ServerAddress
+        !!state.enables && state.enables.ID === item.ID
     },
     // 当前启用的模型，随启用的配置走（每个提供商有自己的记忆）。
     enabledModel(state) {
@@ -39,6 +41,8 @@ export const useConfigsStore = defineStore('configs', {
   },
   actions: {
     apply(configs: Configs) {
+      this.sharedModels = !!configs.sharedModels
+      this.sharedModelNotice = configs.sharedModelNotice ?? ''
       this.configs = configs.config ?? []
       this.enables = configs.EnablesConfig
       this.toolNormalConfig = configs.toolNormalConfig ?? null
@@ -102,9 +106,9 @@ export const useConfigsStore = defineStore('configs', {
     probeModels(serverAddress: string, apiKey: string) {
       return ProbeModels(serverAddress, apiKey)
     },
-    async refreshModelConfig(index: number, serverAddress: string, models: Model[]) {
+    async refreshModelConfig(index: number, serverAddress: string, models: Model[], replacement = '', clearKey = false) {
       if (models.length === 0) throw new Error('没有选择模型，原配置未更改')
-      this.apply(await RefreshModelConfig(index, serverAddress, models))
+      this.apply(await UpdateModelCredentials(index, serverAddress, models, replacement, clearKey))
     },
     addModelConfig(name: string, serverAddress: string, protocol: Config['Protocol'], apiKey: string, models: Model[]) {
       this.error = ''

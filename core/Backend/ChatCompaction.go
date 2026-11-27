@@ -324,10 +324,7 @@ func (c *Core) compactChatSnapshot(run *toolExecutionRun, marker *chatstruct.Cha
 
 func (c *Core) compactChatPlan(run *toolExecutionRun, marker *chatstruct.ChatNode, model api.Model, keep int, plan *chatstruct.CompactionPlan) error {
 	allowed := compactionTools(run)
-	workspace := texts.ChatWithoutWorkspace
-	if run.context.WorkSpace != "" {
-		workspace = fmt.Sprintf(texts.ChatWorkspace, run.context.WorkSpace)
-	}
+	workspace := fmt.Sprintf(texts.ChatWorkspace, run.context.WorkSpace)
 	state := []string{workspace, toolPolicyPrompt(run.strict, run.context, run.session.ToolConfig)}
 	if notice, err := toolChangesNotice(run.session); err != nil {
 		return err
@@ -501,6 +498,9 @@ func (c *Core) restoreCompactionReads(run *toolExecutionRun, model api.Model) er
 				} else if ctx, allowed := run.effectiveContext(call.Name, prepared.permission); !allowed {
 					err = errors.New("当前权限不允许此恢复读取")
 				} else {
+					if c.profileRoot != "" {
+						ctx.CheckPath = c.checkProfilePath
+					}
 					ctx.CallID, ctx.RecoveryFile, ctx.FileSystem = call.ID, "", c.FS
 					prepared.timeout = min(prepared.timeout, agenttool.DefaultToolTimeout)
 					output, err = invokeTool(prepared, ctx)

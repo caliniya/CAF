@@ -12,6 +12,7 @@ import (
 
 // 内部对象使用的类型名；自定义类型也可直接传入 New。
 const (
+	User         = "user"
 	Memory       = "memory"
 	Recollection = "recollection"
 	Chat         = "chat"

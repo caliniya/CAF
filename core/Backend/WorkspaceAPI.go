@@ -22,6 +22,66 @@ type workspaceIndex struct {
 	Workspaces []chat.WorkSpace `json:"workspaces"`
 }
 
+func (c *Core) internalWorkspacesRoot() (string, error) {
+	if c.Paths != nil && c.FS != nil {
+		if root := c.Paths.InternalWorkspaces; filepath.IsAbs(root) {
+			return filepath.Clean(root), nil
+		} else if root == "" && filepath.IsAbs(c.Paths.Data) {
+			return filepath.Join(c.Paths.Data, "InternalWorkspaces"), nil
+		}
+	}
+	return "", errors.New("内部工作区路径尚未初始化")
+}
+
+// 内部工作区复用对话的 UUIDv7；切换工作区或重启后无需另存 ID 映射。
+func chatInternalWorkspaceID(chatID string) string {
+	return identity.Workspace + "-" + strings.TrimPrefix(chatID, identity.Chat+"-")
+}
+
+// 空选择只代表没有关联外部项目。首次使用时建立按对话 ID 命名的目录，不加入工作区列表。
+func (c *Core) chatWorkspaceLocked(chatID, selectedID string) (*chat.WorkSpace, error) {
+	if selectedID != "" {
+		return c.workspaceByIDLocked(selectedID)
+	}
+	if !validChatID(chatID) {
+		return nil, errors.New("无效会话 ID")
+	}
+	root, err := c.internalWorkspacesRoot()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(root, chatID)
+	if err := c.FS.CreateDirectory(path, 0o700); err != nil {
+		return nil, fmt.Errorf("创建对话内部工作区失败：%w", err)
+	}
+	info, err := c.FS.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
+		return nil, errors.New("对话内部工作区必须是独立目录")
+	}
+	return &chat.WorkSpace{ID: chatInternalWorkspaceID(chatID), Name: "本对话的内部工作区", Path: path}, nil
+}
+
+// 只清理这个对话拥有的目录和恢复缓存；不使用会话文件里记录的路径进行删除。
+func (c *Core) deleteChatFiles(directory, chatID string) error {
+	if !validChatID(chatID) {
+		return errors.New("无效会话 ID")
+	}
+	root, err := c.internalWorkspacesRoot()
+	if err != nil {
+		return err
+	}
+	if err := c.FS.RemoveAllInRoot(root, chatID); err != nil {
+		return fmt.Errorf("删除对话内部工作区失败：%w", err)
+	}
+	if err := c.FS.RemoveAllInRoot(root, filepath.Join("WorkspaceCache", chatInternalWorkspaceID(chatID))); err != nil {
+		return fmt.Errorf("删除对话内部工作区的撤销记录失败：%w", err)
+	}
+	return c.FS.DeleteFile(filepath.Join(directory, chatID+".json"))
+}
+
 func (c *Core) workspaceFile() (string, error) {
 	if c == nil || c.Paths == nil || c.FS == nil {
 		return "", errors.New("工作区存储尚未初始化")
@@ -72,6 +132,9 @@ func (c *Core) validateWorkspacePath(path string) (string, error) {
 		return "", errors.New("请选择工作区文件夹或填写绝对路径")
 	}
 	path = filepath.Clean(path)
+	if err := c.checkProfilePath(path); err != nil {
+		return "", err
+	}
 	info, err := c.FS.Stat(path)
 	if err != nil {
 		return "", fmt.Errorf("无法访问工作区文件夹：%w", err)
@@ -223,7 +286,7 @@ func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 	}
 	if deleteChats {
 		for _, session := range sessions {
-			if err := c.FS.DeleteFile(filepath.Join(directory, session.ID+".json")); err != nil {
+			if err := c.deleteChatFiles(directory, session.ID); err != nil {
 				return fmt.Errorf("删除工作区对话失败：%w", err)
 			}
 			delete(chatServer.ChatList, session.ID)
@@ -239,8 +302,11 @@ func (c *Core) deleteWorkspace(id string, deleteChats bool) error {
 			return err
 		}
 	} else {
-		// 先解除对话关联，全部保存成功后再移除工作区记录。
+		// 先切回各自的内部工作区，全部保存成功后再移除工作区记录。
 		for _, session := range sessions {
+			if _, err := c.chatWorkspaceLocked(session.ID, ""); err != nil {
+				return err
+			}
 			session.WorkspaceID = ""
 			if err := c.saveChatLocked(directory, session); err != nil {
 				return err
@@ -275,7 +341,7 @@ func (c *Core) workspaceByIDLocked(id string) (*chat.WorkSpace, error) {
 	return nil, fmt.Errorf("工作区 %q 不存在", id)
 }
 
-// workspaceID 为空表示不使用工作区，不更改对话权限档位。
+// workspaceID 为空表示使用本对话的内部工作区，不更改对话权限档位。
 func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) {
 	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
 	if serviceErr != nil {
@@ -287,15 +353,6 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 	if chatServer.sending[id] != nil {
 		return nil, errors.New("对话正在生成中，暂时无法切换工作区")
 	}
-	workspace, err := c.workspaceByIDLocked(workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	if workspace != nil {
-		if _, err := c.validateWorkspacePath(workspace.Path); err != nil {
-			return nil, err
-		}
-	}
 	directory, err := c.chatDirectory()
 	if err != nil {
 		return nil, err
@@ -304,18 +361,26 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 	if err != nil {
 		return nil, err
 	}
+	workspace, err := c.chatWorkspaceLocked(id, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.validateWorkspacePath(workspace.Path); err != nil {
+		return nil, err
+	}
 	if session.WorkspaceID == workspaceID {
 		return session, nil
 	}
-	previousName := "不使用工作区"
+	const internalChoice = "不使用工作区（本对话的内部工作区）"
+	previousName := internalChoice
 	if previous, err := c.workspaceByIDLocked(session.WorkspaceID); err == nil && previous != nil {
 		previousName = previous.Name
 	} else if session.WorkspaceID != "" {
 		previousName = "已删除的工作区"
 	}
-	nextName := "不使用工作区"
-	if workspace != nil {
-		nextName = workspace.Name
+	nextName := workspace.Name
+	if workspaceID == "" {
+		nextName = internalChoice
 	}
 	server, err := c.memoryServer(context.Background())
 	if err != nil {
@@ -344,30 +409,33 @@ func (c *Core) SetChatWorkspace(id, workspaceID string) (*chat.ChatTask, error) 
 	return session, nil
 }
 
-func (c *Core) toolContextFor(session *chat.ChatTask) (*agenttool.ToolContext, error) {
-	chatServer, serviceErr := c.Servers.Get[*ChatServer](ChatServerName)
-	if serviceErr != nil {
-		return nil, serviceErr
-	}
-
-	chatServer.mu.Lock()
-	defer chatServer.mu.Unlock()
-	workspace, err := c.workspaceByIDLocked(session.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
-	path := ""
-	if workspace != nil {
-		path, err = c.validateWorkspacePath(workspace.Path)
+func (c *Core) toolContextFor(session *chat.ChatTask, workspace *chat.WorkSpace) (*agenttool.ToolContext, error) {
+	if workspace == nil {
+		server, err := c.Servers.Get[*ChatServer](ChatServerName)
 		if err != nil {
 			return nil, err
 		}
+		server.mu.Lock()
+		workspace, err = c.chatWorkspaceLocked(session.ID, session.WorkspaceID)
+		server.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+	}
+	path, err := c.validateWorkspacePath(workspace.Path)
+	if err != nil {
+		return nil, err
 	}
 	permission := c.toolPermission(session.ToolConfig)
 	if permission < agenttool.PermissionReadOnly || permission > agenttool.PermissionFullAccess {
 		return nil, errors.New("无效的工具权限配置")
 	}
-	return agenttool.CreateContext(path, permission), nil
+	ctx := agenttool.CreateContext(path, permission)
+	if c.profileRoot != "" {
+		ctx.CheckPath = c.checkProfilePath
+	}
+	ctx.WorkspaceID, ctx.WorkspaceName, ctx.FileSystem = workspace.ID, workspace.Name, c.FS
+	return ctx, nil
 }
 
 func (c *Core) toolPermission(config *agenttool.ChatToolConfig) agenttool.PermissionLevel {

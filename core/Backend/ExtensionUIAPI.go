@@ -96,7 +96,7 @@ func (c *Core) GetExtensionParameters(id string) (map[string]string, error) {
 
 func qqExtensionParameters(name string, adapter *QQAdapter) map[string]string {
 	values := copyQQChatOptions(adapter.Options).parameters()
-	values["name"], values["token"], values["selfId"], values["port"] = name, adapter.Token, adapter.SelfID, strconv.Itoa(adapter.Port)
+	values["name"], values["token"], values["selfId"], values["port"] = name, "", adapter.SelfID, strconv.Itoa(adapter.Port)
 	return values
 }
 
@@ -131,7 +131,7 @@ func (c *Core) CreateExtension(kind string, parameters map[string]string) (*Exte
 	return &ExtensionOption{ID: adapter.ID, Type: kind, Name: adapter.Name, Values: map[string]string{"status": "未启动", "address": adapter.Address}}, nil
 }
 
-// UpdateExtensionParameters 同步实例参数及绑定名称，失败时恢复已写入的适配器配置。
+// UpdateExtensionParameters 同步实例参数及绑定名称，失败时恢复原绑定。
 func (c *Core) UpdateExtensionParameters(id string, parameters map[string]string) error {
 	c.extMu.Lock()
 	defer c.extMu.Unlock()
@@ -148,12 +148,15 @@ func (c *Core) updateExtensionParametersLocked(id string, parameters map[string]
 		return err
 	}
 	var owner *ExtensionClient
+	var bindingToRename *ClientExtension
 	for i := range clients {
 		for j := range clients[i].Extensions {
 			binding := &clients[i].Extensions[j]
 			if binding.AdapterID == id {
 				owner = &clients[i]
-				binding.Name = name
+				if binding.Name != name {
+					bindingToRename = binding
+				}
 			}
 		}
 	}
@@ -172,14 +175,19 @@ func (c *Core) updateExtensionParametersLocked(id string, parameters map[string]
 	if err != nil {
 		return err
 	}
-	if _, err := c.updateQQAdapter(id, name, token, selfID, port, options); err != nil {
-		return err
-	}
-	if owner != nil {
+	var oldName string
+	if bindingToRename != nil {
+		oldName, bindingToRename.Name = bindingToRename.Name, name
 		if err := c.saveExtensionClientLocked(owner); err != nil {
-			_, _ = c.updateQQAdapter(id, previous.Name, previous.Token, previous.SelfID, previous.Port, previous.Options)
 			return err
 		}
+	}
+	if _, err := c.updateQQAdapter(id, name, token, selfID, port, options); err != nil {
+		if bindingToRename != nil {
+			bindingToRename.Name = oldName
+			return errors.Join(err, c.saveExtensionClientLocked(owner))
+		}
+		return err
 	}
 	c.cancelQQChatRuns(id)
 	return nil
