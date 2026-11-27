@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import type { Model } from '../api'
+import ModelCapabilityBadges from './ModelCapabilityBadges.vue'
 
 const props = defineProps<{
   open: boolean
   models: Model[]
+  initialIds?: string[]
   confirmLabel?: string
 }>()
 
@@ -23,7 +25,7 @@ watch(
   async (open) => {
     if (open) {
       availableModels.value = props.models.map((model) => ({ ...model }))
-      selectedIDs.value = availableModels.value.map((model) => model.id)
+      selectedIDs.value = props.initialIds ? [...props.initialIds] : availableModels.value.map((model) => model.id)
       manualModelID.value = ''
       await nextTick()
       if (dialog.value && !dialog.value.open) dialog.value.showModal()
@@ -70,11 +72,17 @@ function confirmSelection() {
       </div>
 
       <div class="picker-list">
-        <label v-for="model in availableModels" :key="model.id" class="item">
-          <input v-model="selectedIDs" type="checkbox" :value="model.id" />
-          <span class="item-name">{{ model.name || model.id }}</span>
-          <span v-if="model.name && model.name !== model.id" class="item-id">{{ model.id }}</span>
-        </label>
+        <div v-for="model in availableModels" :key="model.id">
+          <label class="item">
+            <input v-model="selectedIDs" type="checkbox" :value="model.id" />
+            <span class="item-name">{{ model.name || model.id }}</span>
+            <span v-if="model.name && model.name !== model.id" class="item-id">{{ model.id }}</span>
+            <ModelCapabilityBadges :model="model" />
+          </label>
+          <label v-if="!model.input_modalities?.length && selectedIDs.includes(model.id)" class="confirm-vision">
+            <input v-model="model.vision_confirmed" type="checkbox" /> 接口未声明视觉能力；我确认此模型支持图片输入
+          </label>
+        </div>
 
         <p v-if="!availableModels.length" class="empty">
           没有探测到模型，可以在下面手动输入 ID
@@ -181,6 +189,8 @@ function confirmSelection() {
 .item:hover {
   background: var(--tonal);
 }
+
+.confirm-vision { display: flex; align-items: center; gap: 6px; margin: 0 8px 8px 32px; color: var(--muted); font-size: 12px; cursor: pointer; }
 
 .item input {
   flex-shrink: 0;

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import {
   CreateChat, CompactChat, SetChatCompactionMode, SubmitCompactionDecision, GetPendingCompaction,
+  SetChatWebSearch, type SearchReceipt,
   builtInCompaction, type CompactionMode, type CompactionPrompt, type ChatTreeNode,
   CreateMemoryLibrary,
   CreateWorkspace,
@@ -43,12 +44,14 @@ import {
   type PermissionLevel,
   type ToolApproval,
   type ToolOperation,
+  imageInputState, type Model, type Config,
 } from '../api'
 import { useConfigsStore } from './configs'
 
 let openChatRequest = 0
 let contextWindowRequestId = 0
 let compactionUpdates: Promise<void> = Promise.resolve()
+let webSearchUpdate: Promise<void> = Promise.resolve()
 let effortUpdates: Promise<void> = Promise.resolve()
 let toolConfigUpdates: Promise<void> = Promise.resolve()
 let memorySettingsUpdates: Promise<void> = Promise.resolve()
@@ -64,7 +67,9 @@ function estimateTextTokens(text: string): number {
   return Math.ceil(ascii / 4) + nonAscii * 2
 }
 
-export const attachmentTypes = '.png,.jpg,.jpeg,.txt,.md,.log,.json,.csv,.go,.py,.js,.ts,.vue,.yaml,.yml,.toml,.xml,.html,.css,.rs,.c,.cpp,.h,.java,.sh,.ps1,.ini'
+const textTypes = '.txt,.md,.log,.json,.csv,.go,.py,.js,.ts,.vue,.yaml,.yml,.toml,.xml,.html,.css,.rs,.c,.cpp,.h,.java,.sh,.ps1,.ini'
+const allTypes = '.png,.jpg,.jpeg,' + textTypes
+const isImageFile = (file: File) => file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name)
 async function uploadFile(file: File): Promise<AttachmentUpload> {
   const data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -76,6 +81,19 @@ async function uploadFile(file: File): Promise<AttachmentUpload> {
 }
 function directImage(image: ChatAttachment): ProcessItem {
   return {kind: 'tool', name: '读取图片', displayType: 'image', image, imageSent: true, status: 'done'}
+}
+
+function mergeWebSearch(current: SearchReceipt | undefined, incoming?: SearchReceipt | null): SearchReceipt | undefined {
+  if (!incoming) return current
+  const sources = new Map((current?.sources ?? []).map(s => [s.url, s]))
+  for (const source of incoming.sources ?? []) {
+    try {
+      const url = new URL(source.url)
+      if (url.protocol !== 'http:' && url.protocol !== 'https:' || url.username || url.password) continue
+      if (!sources.has(source.url) || source.title) sources.set(source.url, source)
+    } catch { /* ignore unusable citation URLs */ }
+  }
+  return { sources: [...sources.values()] }
 }
 
 // 一次回复里的「工作过程」：思考、模型中间说的话、工具调用
@@ -97,6 +115,7 @@ export interface ProcessItem {
 }
 
 export interface ChatMessage {
+  webSearch?: SearchReceipt
   role: 'user' | 'assistant' | 'system'
   content: string
   stopped?: boolean
@@ -130,6 +149,8 @@ export const useChatStore = defineStore('chat', {
     pendingToolConfig: null as ChatToolConfig | null,
     pendingMemoryLibraryIds: null as string[] | null,
     pendingCompactionMode: null as CompactionMode | null,
+    pendingWebSearch: false,
+    webSearchChanging: false,
     compactionChanging: false,
     compactionPrompts: {} as Record<string, CompactionPrompt>,
     answeringCompaction: false,
@@ -147,6 +168,31 @@ export const useChatStore = defineStore('chat', {
     effort: 'high' as 'none' | 'low' | 'high' | 'max',
   }),
   getters: {
+    composerConfig(state): Config | null {
+      const configs = useConfigsStore()
+      const session = state.session
+      return session ? configs.configs.find(c => c.ID === session.configId) ?? null : configs.enables
+    },
+    composerModel(): Model | undefined {
+      const config = this.composerConfig
+      const id = this.session ? this.session.model : config?.EnabledModel
+      return config?.Model?.find(m => m.id === id)
+    },
+    webSearchMode(): Model['native_search_mode'] {
+      return this.composerModel?.native_web_search === true ? this.composerModel.native_search_mode : undefined
+    },
+    webSearchActive(): boolean {
+      return this.webSearchMode === 'always' || (!!this.webSearchMode && (this.session ? !!this.session.webSearchEnabled : this.pendingWebSearch))
+    },
+    imageInputIssue(): string {
+      switch (imageInputState(this.composerModel)) {
+        case 'unsupported': return '当前模型不支持图片输入，请切换到带「视觉」标签的模型。'
+        case 'unknown': return '尚未确认当前模型支持图片输入，可在模型供应商设置中确认视觉能力，或切换到带「视觉」标签的模型。'
+        default: return ''
+      }
+    },
+    attachmentTypes(): string { return this.imageInputIssue ? textTypes : allTypes },
+    draftImageIssue(): string { return this.draftFiles.some(isImageFile) ? this.imageInputIssue : '' },
     generationNode(state): string {
       return state.generation && state.generation.chatId === state.session?.id ? state.generation.nodeId : ''
     },
@@ -298,6 +344,7 @@ export const useChatStore = defineStore('chat', {
       // 新建对话回到默认档位，不再沿用上一个对话的设置
       this.effort = 'high'
       this.pendingCompactionMode = null
+      this.pendingWebSearch = false
       this.compactionStatus = ''
       this.pendingMemoryLibraryIds = null
     },
@@ -308,6 +355,16 @@ export const useChatStore = defineStore('chat', {
       this.effort = saved === 'none' || saved === 'low' || saved === 'high' || saved === 'max'
         ? saved
         : 'high'
+    },
+    async setWebSearch(enabled: boolean) {
+      if (this.sending || this.webSearchChanging || !this.webSearchMode || this.webSearchMode === 'always') return
+      const id = this.session?.id
+      if (!id) { this.pendingWebSearch = enabled; return }
+      this.webSearchChanging = true
+      webSearchUpdate = SetChatWebSearch(id, enabled).then(saved => {
+        if (this.session?.id === id) this.session.webSearchEnabled = saved.webSearchEnabled
+      }).catch(err => { if (this.session?.id === id) this.error = String(err) })
+      try { await webSearchUpdate } finally { this.webSearchChanging = false }
     },
     async setCompactionMode(mode: CompactionMode | null) {
       if (this.sending || this.compactionChanging) return
@@ -403,6 +460,7 @@ export const useChatStore = defineStore('chat', {
       if (delta.usage) this.usage = delta.usage
       const last = this.messages[this.messages.length - 1]
       if (!last || last.role !== 'assistant') return
+      if (delta.webSearch) last.webSearch = mergeWebSearch(last.webSearch, delta.webSearch)
       if (delta.reasoning) {
         // 思考内容直接进工作过程，作为其中一段
         last.process = last.process ?? []
@@ -465,22 +523,26 @@ export const useChatStore = defineStore('chat', {
     },
     addFiles(files: File[]) {
       if (this.sending || !files.length) return
+      const blocked = files.some(isImageFile) ? this.imageInputIssue : ''
+      if (blocked) files = files.filter(file => !isImageFile(file))
       const next = [...this.draftFiles, ...files]
-      const extensions = attachmentTypes.split(',')
+      const extensions = allTypes.split(',')
       for (const file of files) {
         const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? ''
         if (!extensions.includes(ext)) { this.error = '暂不支持此附件类型：' + file.name; return }
-        const image = ['.png', '.jpg', '.jpeg'].includes(ext)
+        const image = isImageFile(file)
         if (file.size > (image ? 8 * 1024 * 1024 : 256 * 1024)) { this.error = image ? '单张图片不能超过 8 MiB' : '单份文本附件不能超过 256 KiB'; return }
       }
       if (next.length > 4 || next.reduce((n, f) => n + f.size, 0) > 12 * 1024 * 1024) { this.error = '每条消息最多 4 个附件，合计最多 12 MiB'; return }
-      this.error = ''; this.draftFiles = next
+      this.error = blocked; this.draftFiles = next
     },
     async send() {
       this.compactionStatus = ''
       const text = this.draft.trim()
+      const view = openChatRequest
       const files = [...this.draftFiles], startingChat = this.session?.id
-      if ((!text && !files.length) || this.compactionPrompt || this.sending || this.workspaceChanging || this.toolChangesChanging) return
+      if ((!text && !files.length) || this.compactionPrompt || this.sending || this.webSearchChanging || this.workspaceChanging || this.toolChangesChanging) return
+      if (this.draftImageIssue) { this.error = this.draftImageIssue; return }
       const effort = this.effort
       let sentTo = '', previousLastUser: string | undefined
       // 首轮创建会话也属于发送过程，防止重复提交覆盖正在接收的思考。
@@ -492,15 +554,21 @@ export const useChatStore = defineStore('chat', {
         await effortUpdates
         await toolConfigUpdates
         await memorySettingsUpdates
-        const uploads = await Promise.all(files.map(uploadFile))
-        if (startingChat !== this.session?.id) return
+        if (view !== openChatRequest || startingChat !== this.session?.id) return
         if (!this.session) {
           await this.createChat(effort)
+          if (view !== openChatRequest) return
         }
         if (!this.session?.configId || !this.session.model) {
           this.error = '请先为此对话选择提供商和模型。'
           return
         }
+        const target = this.session.id
+        const withImages = files.some(isImageFile)
+        if (withImages && this.imageInputIssue) { this.error = this.imageInputIssue; return }
+        const uploads = await Promise.all(files.map(uploadFile))
+        if (target !== this.session?.id) return
+        if (withImages && this.imageInputIssue) { this.error = this.imageInputIssue; return }
         this.usage = null
         sentTo = this.session.id; previousLastUser = this.messages.filter(m => m.role === 'user').at(-1)?.nodeId
         this.draft = ''; this.draftFiles = []
@@ -570,6 +638,7 @@ export const useChatStore = defineStore('chat', {
           this.messages.push({
             role: 'assistant',
             content: final.content ?? '',
+            webSearch: assistantChildren.reduce<SearchReceipt | undefined>((seen, m) => mergeWebSearch(seen, m.webSearch), undefined),
             process: process.length ? process : undefined,
             stopped: node.stopped, reasoningEffort: node.reasoningEffort,
             reasoningTokens: node.usage?.completion_tokens_details?.reasoning_tokens,
@@ -737,6 +806,7 @@ export const useChatStore = defineStore('chat', {
     },
     async createChat(effort?: 'none' | 'low' | 'high' | 'max') {
       effort ??= this.effort
+      const view = openChatRequest, search = this.pendingWebSearch
       const configs = useConfigsStore()
       const session = await CreateChat(
         configs.enables?.ID ?? '',
@@ -744,8 +814,15 @@ export const useChatStore = defineStore('chat', {
         '',
         this.pendingPersonaId,
       )
+      if (view !== openChatRequest) return
       this.session = session
       this.rebuildMessages()
+      if (search) {
+        const saved = await SetChatWebSearch(session.id, true)
+        if (view !== openChatRequest || this.session?.id !== session.id) return
+        this.session.webSearchEnabled = saved.webSearchEnabled
+        this.pendingWebSearch = false
+      }
       if (this.pendingWorkspaceId) {
         this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
       }
@@ -774,7 +851,7 @@ export const useChatStore = defineStore('chat', {
       const request = ++openChatRequest
       this.compactionStatus = ''
       this.error = ''
-      await Promise.all([compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
+      await Promise.all([webSearchUpdate, compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
       const [session, prompt] = await Promise.all([GetChat(id), GetPendingCompaction(id)])
       if (request !== openChatRequest) return
       if (this.session?.id !== id) this.draftFiles = []
@@ -835,14 +912,18 @@ export const useChatStore = defineStore('chat', {
     },
     async updateModel(configId: string, model: string) {
       if (!this.session) return
-      this.session = await UpdateChatModel(this.session.id, configId, model)
+      const id = this.session.id
+      await webSearchUpdate
+      const saved = await UpdateChatModel(id, configId, model)
+      if (this.session?.id !== id) return
+      this.session = saved
       this.syncEffort()
       await this.loadContextWindow()
       await this.loadChats()
     },
     // 编辑用户消息：后端在该节点的父节点下挂新分支并重新生成，原分支保留
     async editMessage(message: ChatMessage, text: string) {
-      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending || this.toolChangesChanging) return
+      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending || this.webSearchChanging || this.toolChangesChanging) return
       text = text.trim()
       if (!text || text === message.content) return
       const index = this.messages.indexOf(message)
@@ -868,12 +949,13 @@ export const useChatStore = defineStore('chat', {
       }
     },
     async regenerate(message: ChatMessage) {
-      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending || this.toolChangesChanging) return
+      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending || this.webSearchChanging || this.toolChangesChanging) return
       const index = this.messages.indexOf(message)
       this.messages = this.messages.slice(0, index + 1)
       const pending = this.messages[index]
       pending.content = ''; pending.stopped = false
       pending.process = []
+      pending.webSearch = undefined
       pending.reasoningEffort = this.effort
       pending.reasoningTokens = undefined
       pending.toolOperations = undefined

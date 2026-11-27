@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ModelCapabilityBadges from './ModelCapabilityBadges.vue'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Bot, Check, ChevronLeft, ChevronRight, ShieldCheck, UserRound, Wrench } from '@lucide/vue'
 import { GetClientExtensionChatConfig, UpdateClientExtensionChatConfig, ListPersonas, ListToolSets, type ExtensionChatConfig, type Persona, type ToolSetDescriptor } from '../api'
@@ -81,7 +82,7 @@ async function save() {
       <div v-else-if="tab === 'model'" class="choices">
         <section v-for="provider in providers.configs" :key="provider.ID" class="choice-group">
           <h3>{{ provider.Name || provider.ServerAddress }}</h3>
-          <button v-for="item in provider.Model" :key="item.id" type="button" class="choice" :class="{ selected: config.configId === provider.ID && config.model === item.id }" @click="model(provider.ID, item.id)"><span>{{ item.name || item.id }}<small v-if="item.name && item.name !== item.id">{{ item.id }}</small></span><Check v-if="config.configId === provider.ID && config.model === item.id" :size="16" /></button>
+          <button v-for="item in provider.Model" :key="item.id" type="button" class="choice" :class="{ selected: config.configId === provider.ID && config.model === item.id }" @click="model(provider.ID, item.id)"><span>{{ item.name || item.id }}<small v-if="item.name && item.name !== item.id">{{ item.id }}</small></span><ModelCapabilityBadges :model="item" /><Check v-if="config.configId === provider.ID && config.model === item.id" :size="16" /></button>
         </section>
         <p v-if="!providers.configs.length" class="hint">请先在模型页面添加供应商和模型。</p>
         <label class="reasoning">思考强度<select v-model="config.reasoningEffort"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>

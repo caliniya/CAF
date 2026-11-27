@@ -386,6 +386,8 @@ func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
 		Name:            "Model One",
 		MaxContext:      32768,
 		MaxOutputTokens: 4096,
+		NativeWebSearch: new(true),
+		VisionConfirmed: true,
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -399,8 +401,8 @@ func TestAddModelConfigPersistsModelMetadata(t *testing.T) {
 	if _, err := backend.Platform.LoadConfigs(); err != nil {
 		t.Fatal(err)
 	}
-	if got := backend.Platform.Configs.EnablesConfig.Model[0].ID; got != "m1" {
-		t.Fatalf("model config not persisted: %q", got)
+	if got := backend.Platform.Configs.EnablesConfig.Model[0]; got.ID != "m1" || !got.AllowsImages() || got.NativeWebSearch == nil || !*got.NativeWebSearch {
+		t.Fatalf("model config not persisted: %+v", got)
 	}
 }
 

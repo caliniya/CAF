@@ -19,6 +19,7 @@ type Options struct {
 	ServerAddress string
 	APIKey        string
 	Model         string
+	SearchMode    apiImpl.NativeSearchMode
 }
 
 // APIClient 是传输层:负责 HTTP、认证头与 SSE 分帧。
@@ -89,6 +90,9 @@ func (c *APIClient) ProbeChatEndpoint(ctx context.Context) (string, error) {
 	return candidates[0], nil
 }
 
+// ErrNativeSearchToolMix is returned only for a provider validation rejection before any SSE has been delivered.
+var ErrNativeSearchToolMix = errors.New("服务端拒绝同时使用原生搜索和函数工具")
+
 // StreamChat 发起一次流式对话:编码请求 → POST → 按行分帧 SSE →
 // 每行交给协议解码 → 通过 onDelta 上抛内部增量。
 // 阻塞直到流结束(ctx 取消或收到 Done)后返回。
@@ -100,6 +104,10 @@ func (c *APIClient) StreamChat(
 ) error {
 	if c == nil || c.Config == nil {
 		return errors.New("客户端未配置")
+	}
+	req.SearchMode = ""
+	if req.Model == c.Config.Model {
+		req.SearchMode = c.Config.SearchMode
 	}
 	body, err := proto.EncodeRequest(req)
 	if err != nil {
@@ -124,6 +132,12 @@ func (c *APIClient) StreamChat(
 
 	if resp.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if resp.StatusCode == http.StatusBadRequest && req.SearchMode == apiImpl.SearchDeepSeek && req.WebSearch && len(req.Tools) > 0 {
+			message := strings.ToLower(string(snippet))
+			if strings.Contains(message, "other tools cannot be used together with") && strings.Contains(message, "deepseek_web_search") {
+				return fmt.Errorf("%w：%s", ErrNativeSearchToolMix, snippet)
+			}
+		}
 		var apiErr struct {
 			Message string `json:"message"`
 		}

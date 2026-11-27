@@ -47,6 +47,9 @@ func (c *Config) snapshot() *Config {
 		m.InputModalities = slices.Clone(m.InputModalities)
 		m.OutputModalities = slices.Clone(m.OutputModalities)
 		m.SupportedLevels = slices.Clone(m.SupportedLevels)
+		if m.NativeWebSearch != nil {
+			m.NativeWebSearch = new(*m.NativeWebSearch)
+		}
 	}
 	return &copy
 }
@@ -100,6 +103,7 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	if err := json.Unmarshal(raw.Model, &c.Model); err == nil {
+		c.resolveModelCapabilities()
 		return nil
 	}
 	var legacy []string
@@ -114,7 +118,16 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 			c.Model = append(c.Model, apiImpl.Model{ID: name, Name: name})
 		}
 	}
+	c.resolveModelCapabilities()
 	return nil
+}
+
+func (c *Config) resolveModelCapabilities() {
+	if c.Protocol == "chat-completions" {
+		for i, m := range c.Model {
+			c.Model[i] = netclient.ResolveModelCapabilities(c.ServerAddress, m)
+		}
+	}
 }
 
 func (c *Core) loadConfig() error {

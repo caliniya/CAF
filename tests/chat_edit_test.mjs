@@ -13,7 +13,8 @@ const { createRenderer, h, KeepAlive, nextTick, ref } = await import(pathToFileU
 const { createPinia, setActivePinia } = await import(pathToFileURL(require.resolve('pinia')).href)
 const dataModule = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
-const configsURL = dataModule('export const useConfigsStore = () => ({ loaded: true, configs: [], enables: null })')
+const configsURL = dataModule(`const provider = {ID:'provider', EnabledModel:'model', Model:[{id:'model',input_modalities:['text','image'],native_web_search:true,native_search_mode:'deepseek'},{id:'text',input_modalities:['text']},{id:'unknown'},{id:'online',native_web_search:true,native_search_mode:'always'}]};
+  export const useConfigsStore = () => ({ loaded: true, configs: [provider], enables: provider, enabledModel:provider.EnabledModel })`)
 const markdownURL = dataModule('export const renderDone = (_, text) => text; export const renderStreaming = (text) => text; export const resetStreaming = () => {}')
 const vueURL = pathToFileURL(require.resolve('vue')).href
 const dialogURL = dataModule(`import { h } from ${JSON.stringify(vueURL)}; export default { inheritAttrs: false, setup(_, { attrs }) { return () => h('test-dialog', { ...attrs }) } }`)
@@ -582,6 +583,25 @@ coreApi.SetChatCompactionMode = async (id, mode) => { compressionCalls.push([id,
 coreApi.CompactChat = async id => { compressionCalls.push([id,'compact']); return { ...chat.session } }
 const settingButton = find(root, node => node.props['aria-controls'] === 'chat-settings-menu')
 await settingButton.props.onClick(); await flush()
+const searchCalls = []
+coreApi.SetChatWebSearch = async (id, enabled) => { searchCalls.push([id,enabled]); return {...chat.session, id, webSearchEnabled:enabled} }
+const searchToggle = () => find(root, n => n.props['aria-label'] === '启用联网搜索')
+assert.equal(searchToggle().props['aria-checked'], false)
+await searchToggle().props.onClick(); await flush()
+assert.deepEqual(searchCalls, [[chat.session.id,true]])
+assert.equal(searchToggle().props['aria-checked'], true)
+const onlineSession = chat.session
+for (const [model, checked] of [['text',false], ['online',true]]) {
+  chat.session = {...onlineSession, model}; await flush()
+  assert.equal(searchToggle().props.disabled,true)
+  assert.equal(searchToggle().props['aria-checked'],checked)
+  await chat.setWebSearch(false)
+  assert.equal(searchCalls.length,1, 'switching models must not change the saved preference')
+}
+chat.session = onlineSession; await flush()
+assert.equal(searchToggle().props['aria-checked'], true)
+await searchToggle().props.onClick(); await flush()
+assert.deepEqual(searchCalls.at(-1),[chat.session.id,false])
 const submenuButton = find(root, node => node.props['aria-controls'] === 'chat-compaction-menu')
 await submenuButton.props.onClick({ currentTarget: submenuButton }); await flush()
 const submenu = () => find(root, node => node.props.id === 'chat-compaction-menu')
@@ -633,6 +653,28 @@ composer.props.onPaste({clipboardData: {files: [screenshot]}, preventDefault() {
 await flush()
 assert.ok(handledPaste && composerAction('移除 截图.png'))
 assert.equal(composerAction('发送').props.disabled, false)
+const filePicker = find(composer, n => n.type === 'input' && n.props.type === 'file')
+assert.ok(filePicker.props.accept.includes('.png'))
+const originalModel = {configId: chat.session.configId, model: chat.session.model}
+for (const [configId, model, reason] of [['provider','text',/不支持图片/],['provider','unknown',/尚未确认/],['missing','model',/尚未确认/]]) {
+  chat.session = {...chat.session, configId, model}
+  await flush()
+  assert.ok(!filePicker.props.accept.includes('.png') && filePicker.props.accept.includes('.txt'))
+  assert.equal(composerAction('发送').props.disabled, true)
+  await chat.send()
+  assert.match(chat.error, reason)
+  assert.equal(sentImage, undefined)
+  assert.equal(chat.draftFiles[0], screenshot, 'switching providers must retain the draft image')
+  composer.props.onPaste({clipboardData:{files:[screenshot]}, preventDefault(){}})
+  assert.equal(chat.draftFiles.length, 1, 'paste must not add another image')
+}
+const note = new File(['可以发送文本'], '笔记.txt', {type:'text/plain'})
+composer.props.onDrop({dataTransfer:{types:['Files'],files:[screenshot,note]}, preventDefault(){}})
+assert.deepEqual(chat.draftFiles.map(f => f.name), [screenshot.name,note.name], 'mixed drop retains text attachments')
+chat.draftFiles.pop()
+chat.session = {...chat.session, ...originalModel}
+await flush()
+assert.equal(composerAction('发送').props.disabled, false)
 const sendingImage = composerAction('发送').props.onClick()
 await flush()
 assert.deepEqual(sentImage, [activeId, '', chat.effort, [{name: '截图.png', data: samplePNG}]])
@@ -654,6 +696,21 @@ assert.equal(chat.sending, false)
 assert.deepEqual(chat.draftFiles, [])
 
 app.unmount()
+const newConversation = useChatStore(createPinia())
+const countBeforeNew = searchCalls.length
+await newConversation.setWebSearch(true)
+assert.equal(newConversation.webSearchActive,true); assert.equal(searchCalls.length,countBeforeNew)
+coreApi.CreateChat = async () => ({...structuredClone(originalSession),id:'new-search-chat'})
+coreApi.SetChatWebSearch = async (id,enabled) => {searchCalls.push([id,enabled]);return {...newConversation.session,webSearchEnabled:enabled}}
+await newConversation.createChat()
+assert.deepEqual(searchCalls.at(-1),['new-search-chat',true]); assert.equal(newConversation.session.webSearchEnabled,true)
+const receipt = {sources:[{url:'https://example.org/news',title:'新闻'},{url:'https://example.org/news'},{url:'javascript:void(0)'}]}
+newConversation.applyDelta({chatId:'new-search-chat',webSearch:receipt})
+assert.deepEqual(newConversation.messages.at(-1).webSearch.sources,[receipt.sources[0]])
+newConversation.session.tree.root.next[0].next[0].child[0].webSearch=receipt
+newConversation.rebuildMessages()
+assert.deepEqual(newConversation.messages.find(m=>m.role==='assistant').webSearch.sources,[receipt.sources[0]])
+newConversation.startNewChat();assert.equal(newConversation.webSearchActive,false)
 const actualConfigsURL = dataModule(rewrite((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/stores/configs.ts'), 'utf8'), 'configs.ts')).code))
 imports['../stores/configs'] = actualConfigsURL
 imports['../memory'] = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/memory.ts'), 'utf8'), 'memory.ts')).code)

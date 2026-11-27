@@ -60,6 +60,11 @@ func (c *APIClient) FetchModels(ctx context.Context) ([]apiImpl.Model, error) {
 			lastErr = parseErr
 			continue
 		}
+		for i, model := range models {
+			// This opt-in belongs to the local user, never to a remote catalogue.
+			model.VisionConfirmed = false
+			models[i] = ResolveModelCapabilities(c.Config.ServerAddress, model)
+		}
 		return models, nil
 	}
 	return nil, fmt.Errorf("获取模型信息失败：%w", lastErr)

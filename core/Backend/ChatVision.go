@@ -47,8 +47,8 @@ func newChatVision(c *Core, directory string, s *chat.ChatTask, reply *tree.Chat
 				if !a.IsImage() {
 					continue
 				}
-				if !m.AllowsImages() {
-					return nil, errors.New("当前模型不支持图片输入，请切换视觉模型后重试")
+				if err := m.CheckImageInput(); err != nil {
+					return nil, err
 				}
 				img, err := c.loadImage(directory, s.ID, a)
 				if err != nil {
@@ -62,8 +62,8 @@ func newChatVision(c *Core, directory string, s *chat.ChatTask, reply *tree.Chat
 	return v, nil
 }
 func (v *chatVision) read(ctx context.Context, tc *tool.ToolContext, source string) (string, error) {
-	if !v.model.AllowsImages() {
-		return "", errors.New("当前模型不支持图片输入")
+	if err := v.model.CheckImageInput(); err != nil {
+		return "", err
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err

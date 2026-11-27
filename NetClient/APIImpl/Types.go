@@ -1,14 +1,21 @@
 package APIImpl
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+)
 
 // ChatMessage 是一条对话消息。
 type ChatMessage struct {
 	Role string `json:"role"` // "system" | "user" | "assistant" | "tool"
 
-	Content     string       `json:"content,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"` // user-provided references; image bytes live outside the tree
-	Images      []InputImage `json:"-"`                     // request only, for the current multimodal request
+	Content         string          `json:"content,omitempty"`
+	WebSearch       *SearchReceipt  `json:"webSearch,omitempty"`         // only provider evidence, not permission
+	ServerToolCalls json.RawMessage `json:"server_tool_calls,omitempty"` // DeepSeek signed search steps, not local functions
+	SearchConfigID  string          `json:"searchConfigId,omitempty"`    // the provider account that issued the signed steps
+	Attachments     []Attachment    `json:"attachments,omitempty"`       // user-provided references; image bytes live outside the tree
+	Images          []InputImage    `json:"-"`                           // request only, for the current multimodal request
 	// Tokens 只记录这条消息新增的用量，用于粗略划分压缩范围；协议不会发送此字段。
 	// 模型输出优先使用本次 completion_tokens，用户消息和工具结果使用文本估算。
 	Tokens int `json:"tokens,omitempty"`
@@ -48,22 +55,27 @@ type Tool struct {
 // ChatRequest 是一次对话请求（协议无关）。
 // MaxTokens/Temperature 为零值时表示不发送该字段。
 type ChatRequest struct {
-	Model     string        `json:"model"`
-	Messages  []ChatMessage `json:"messages"`
-	Tools     []Tool        `json:"tools,omitempty"`
-	Thinking  string        `json:"thinking,omitempty"`
-	MaxTokens int           `json:"max_tokens,omitempty"`
+	SearchConfigID string           `json:"-"`
+	WebSearch      bool             `json:"-"` // per-conversation permission; internal requests default to false
+	SearchMode     NativeSearchMode `json:"-"` // supplied by the resolved client route
+	Model          string           `json:"model"`
+	Messages       []ChatMessage    `json:"messages"`
+	Tools          []Tool           `json:"tools,omitempty"`
+	Thinking       string           `json:"thinking,omitempty"`
+	MaxTokens      int              `json:"max_tokens,omitempty"`
 
 	//通常来说这条没用
 	Temperature float64 `json:"temperature,omitempty"`
 }
 
 type Delta struct {
-	Content   string      `json:"content,omitempty"`
-	Reasoning string      `json:"reasoning,omitempty"`
-	ToolCalls []ToolCall  `json:"tool_calls,omitempty"`
-	Usage     *TokenUsage `json:"usage,omitempty"`
-	Done      bool        `json:"done,omitempty"`
+	WebSearch       *SearchReceipt  `json:"webSearch,omitempty"`
+	ServerToolCalls json.RawMessage `json:"server_tool_calls,omitempty"`
+	Content         string          `json:"content,omitempty"`
+	Reasoning       string          `json:"reasoning,omitempty"`
+	ToolCalls       []ToolCall      `json:"tool_calls,omitempty"`
+	Usage           *TokenUsage     `json:"usage,omitempty"`
+	Done            bool            `json:"done,omitempty"`
 }
 
 // TokenUsage 是模型服务返回的本次请求 token 用量。
@@ -102,27 +114,28 @@ func (e *StreamError) Error() string {
 
 // Model 表示模型服务返回的模型元数据。
 type Model struct {
-	ID               string   `json:"id"`
-	Name             string   `json:"name,omitempty"`
-	MaxContext       int      `json:"context_window,omitempty"`
-	MaxOutputTokens  int      `json:"max_output_tokens,omitempty"`
-	InputModalities  []string `json:"input_modalities,omitempty"`
-	OutputModalities []string `json:"output_modalities,omitempty"`
-	SupportedLevels  []string `json:"supported_levels,omitempty"`
-	DefaultLevel     string   `json:"default_level,omitempty"`
+	ID               string           `json:"id"`
+	Name             string           `json:"name,omitempty"`
+	MaxContext       int              `json:"context_window,omitempty"`
+	MaxOutputTokens  int              `json:"max_output_tokens,omitempty"`
+	InputModalities  []string         `json:"input_modalities,omitempty"`
+	OutputModalities []string         `json:"output_modalities,omitempty"`
+	NativeWebSearch  *bool            `json:"native_web_search,omitempty"` // nil: the provider has not declared this capability
+	NativeSearchMode NativeSearchMode `json:"native_search_mode,omitempty"`
+	VisionConfirmed  bool             `json:"vision_confirmed,omitempty"` // local confirmation, only used when input modalities are missing
+	SupportedLevels  []string         `json:"supported_levels,omitempty"`
+	DefaultLevel     string           `json:"default_level,omitempty"`
 }
 
 func (m *Model) UnmarshalJSON(data []byte) error {
+	type plain Model
 	var raw struct {
-		ID               string   `json:"id"`
-		Name             string   `json:"name"`
-		ContextWindow    int      `json:"context_window"`
-		MaxOutputTokens  int      `json:"max_output_tokens"`
-		InputModalities  []string `json:"input_modalities"`
-		OutputModalities []string `json:"output_modalities"`
-		SupportedLevels  []string `json:"supported_levels"`
-		DefaultLevel     string   `json:"default_level"`
-		Effort           struct {
+		plain
+		Architecture struct {
+			Input  []string `json:"input_modalities"`
+			Output []string `json:"output_modalities"`
+		} `json:"architecture"`
+		Effort struct {
 			SupportedLevels []string `json:"supported_levels"`
 			DefaultLevel    string   `json:"default_level"`
 		} `json:"effort"`
@@ -130,19 +143,33 @@ func (m *Model) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	m.ID = raw.ID
-	m.Name = raw.Name
-	m.MaxContext = raw.ContextWindow
-	m.MaxOutputTokens = raw.MaxOutputTokens
-	m.InputModalities = raw.InputModalities
-	m.OutputModalities = raw.OutputModalities
-	m.SupportedLevels = raw.SupportedLevels
-	m.DefaultLevel = raw.DefaultLevel
+	*m = Model(raw.plain)
+	m.InputModalities = modelModalities(m.InputModalities, raw.Architecture.Input)
+	m.OutputModalities = modelModalities(m.OutputModalities, raw.Architecture.Output)
+	if len(m.InputModalities) != 0 {
+		m.VisionConfirmed = false
+	}
 	if len(m.SupportedLevels) == 0 {
 		m.SupportedLevels = raw.Effort.SupportedLevels
 	}
 	if m.DefaultLevel == "" {
 		m.DefaultLevel = raw.Effort.DefaultLevel
+	}
+	return nil
+}
+
+func modelModalities(primary, nested []string) []string {
+	for _, values := range [][]string{primary, nested} {
+		var clean []string
+		for _, value := range values {
+			value = strings.ToLower(strings.TrimSpace(value))
+			if value != "" && !slices.Contains(clean, value) {
+				clean = append(clean, value)
+			}
+		}
+		if len(clean) != 0 {
+			return clean
+		}
 	}
 	return nil
 }

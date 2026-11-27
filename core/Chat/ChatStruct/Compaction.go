@@ -212,6 +212,9 @@ func (tree *ChatTree) NewCompactionPlan(keepTokens int) (*CompactionPlan, error)
 		message := entry.message
 		message.Tokens, message.Reasoning = 0, ""
 		message.ToolCalls = append([]api.ToolCall(nil), message.ToolCalls...)
+		// The summarizer needs the answer and its sources, not opaque provider signatures.
+		message.ServerToolCalls = nil
+		message.SearchConfigID = ""
 		for callIndex := range message.ToolCalls {
 			call := &message.ToolCalls[callIndex]
 			call.DisplayName, call.DisplayType, call.DisplayContent, call.Approval = "", "", "", nil

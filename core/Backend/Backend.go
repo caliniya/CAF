@@ -208,6 +208,7 @@ func (c *Core) AddModelConfig(name, serverAddress, protocol, apiKey string, mode
 		Model:         cleanModels,
 		EnabledModel:  cleanModels[0].ID,
 	}
+	entry.resolveModelCapabilities()
 	if c.Configs.ALLConfig == nil {
 		all := []Config{}
 		c.Configs.ALLConfig = &all
@@ -297,6 +298,7 @@ func (c *Core) UpdateModelCredentials(index int, serverAddress string, models []
 	previousEnabledModel := entry.EnabledModel
 	entry.ServerAddress = serverAddress
 	entry.Model = cleanModels
+	entry.resolveModelCapabilities()
 	if !slices.ContainsFunc(cleanModels, func(model apiImpl.Model) bool {
 		return model.ID == entry.EnabledModel
 	}) {
@@ -1074,7 +1076,7 @@ func (c *Core) SetChatToolConfig(id, raw string) (*chat.ChatTask, error) {
 
 // enabledTools 按「对话覆盖 → 全局默认 → 代码默认」解析每个 ToolKit，
 // 把启用 kit 下的工具转成请求可直接携带的 apiImpl.Tool。
-func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
+func (c *Core) enabledTools(session *chat.ChatTask, model apiImpl.Model) []apiImpl.Tool {
 	if session == nil {
 		return nil
 	}
@@ -1096,6 +1098,9 @@ func (c *Core) enabledTools(session *chat.ChatTask) []apiImpl.Tool {
 			for _, tool := range kit.List() {
 				tm := tool.Meta()
 				if tm == nil || !tm.Enabled {
+					continue
+				}
+				if tm.ID == agenttool.ReadImageID && !model.AllowsImages() {
 					continue
 				}
 				if tm.ID == agenttool.RequestToolExecutionID && !c.strictToolMode(session) {
@@ -1417,7 +1422,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			reply.Stopped = true
 			// 首个分片前停止时只保存节点标记；已经生成的文本、思考和工具调用仍然保留。
 			reply.Child = slices.DeleteFunc(reply.Child, func(m apiImpl.ChatMessage) bool {
-				return m.Role == "assistant" && m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0
+				return m.Role == "assistant" && m.Content == "" && m.Reasoning == "" && len(m.ToolCalls) == 0 && m.WebSearch == nil && len(m.ServerToolCalls) == 0
 			})
 			// 补全停止时尚未执行的工具结果，使下次请求的调用和结果仍一一对应。
 			completed := map[string]bool{}
@@ -1445,8 +1450,13 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 	if err := c.chatExecutionClient(session, config); err != nil {
 		return err
 	}
-	tools := c.enabledTools(session)
-	request := &apiImpl.ChatRequest{Model: model.ID, Thinking: session.ReasoningEffort, Tools: tools}
+	tools := c.enabledTools(session, model)
+	// OpenRouter routes these native-only Sonar models without support for local functions.
+	if session.Client.Config.SearchMode == apiImpl.SearchAlwaysOn {
+		tools = nil
+	}
+	request := &apiImpl.ChatRequest{Model: model.ID, Thinking: session.ReasoningEffort, Tools: tools,
+		WebSearch: session.WebSearchEnabled, SearchConfigID: session.ConfigID}
 	toolRun := &toolExecutionRun{
 		core: c, vision: vision, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
@@ -1498,7 +1508,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 			return errors.New("当前上下文及输出预留超过模型窗口，原始对话已保留；请立即压缩上下文、缩短过大的单条消息或选择更大的窗口")
 		}
 		var requestUsage *apiImpl.TokenUsage
-		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, func(delta apiImpl.Delta) {
+		receive := func(delta apiImpl.Delta) {
 			// 单独的 [DONE] 只是传输结束；收到模型输出或输入用量后才显示读图回执。
 			if len(vision.pending) > 0 && (delta.Content != "" || delta.Reasoning != "" || len(delta.ToolCalls) > 0 || (delta.Usage != nil && delta.Usage.PromptTokens > 0)) {
 				vision.received(reply)
@@ -1524,13 +1534,27 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 				reply.Usage = &usage
 				requestUsage = &usage
 			}
-			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil {
+			if len(delta.ServerToolCalls) != 0 {
+				assistant.ServerToolCalls = delta.ServerToolCalls
+				assistant.SearchConfigID = session.ConfigID
+			}
+			if delta.WebSearch != nil && assistant.WebSearch != nil && slices.Equal(assistant.WebSearch.Sources, delta.WebSearch.Sources) {
+				delta.WebSearch = nil // some services repeat the same citation snapshot on every token
+			}
+			assistant.WebSearch = assistant.WebSearch.Merge(delta.WebSearch)
+			if delta.Content != "" || delta.Reasoning != "" || delta.Usage != nil || delta.WebSearch != nil {
 				EmitJSON(EventChatDelta, map[string]any{
 					"chatId": id, "nodeId": reply.ID, "content": delta.Content,
-					"reasoning": delta.Reasoning, "usage": delta.Usage,
+					"reasoning": delta.Reasoning, "usage": delta.Usage, "webSearch": delta.WebSearch,
 				})
 			}
-		})
+		}
+		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, receive)
+		if errors.Is(streamErr, netclient.ErrNativeSearchToolMix) && ctx.Err() == nil {
+			// This request was rejected before inference. Keep the user's search choice and enforce the reduced tool list locally too.
+			request.Tools, toolRun.enabled = nil, nil
+			streamErr = session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, receive)
+		}
 		// 流可能多次上报用量快照，只记录最后一份；不持有 ChatServer.mu。
 		if options != nil && options.recordUsage != nil {
 			options.recordUsage(requestUsage)

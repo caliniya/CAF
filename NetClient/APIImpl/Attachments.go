@@ -2,6 +2,7 @@ package APIImpl
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -26,8 +27,8 @@ func (i InputImage) DataURL() string {
 }
 func (m Model) AllowsImages() bool {
 	if len(m.InputModalities) == 0 {
-		return true
-	} // many compatible endpoints omit capabilities
+		return m.VisionConfirmed
+	}
 	for _, v := range m.InputModalities {
 		if strings.EqualFold(strings.TrimSpace(v), "image") {
 			return true
@@ -35,6 +36,17 @@ func (m Model) AllowsImages() bool {
 	}
 	return false
 }
+
+func (m Model) CheckImageInput() error {
+	if m.AllowsImages() {
+		return nil
+	}
+	if len(m.InputModalities) == 0 {
+		return errors.New("尚未确认当前模型支持图片输入，请在模型供应商设置中确认视觉能力，或切换到带「视觉」标签的模型")
+	}
+	return errors.New("当前模型不支持图片输入，请切换到带「视觉」标签的模型")
+}
+
 func (m ChatMessage) InputText() string {
 	if m.Role != "user" || len(m.Attachments) == 0 {
 		return m.Content

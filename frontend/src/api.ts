@@ -17,8 +17,18 @@ export interface Model {
   max_output_tokens?: number
   input_modalities?: string[]
   output_modalities?: string[]
+  native_web_search?: boolean
+  native_search_mode?: 'deepseek' | 'dashscope' | 'sonar' | 'always'
+  vision_confirmed?: boolean
   supported_levels?: string[]
   default_level?: string
+}
+
+export function imageInputState(model?: Model): 'supported' | 'unsupported' | 'unknown' {
+  if (model?.input_modalities?.length) {
+    return model.input_modalities.some(value => value.trim().toLowerCase() === 'image') ? 'supported' : 'unsupported'
+  }
+  return model?.vision_confirmed ? 'supported' : 'unknown'
 }
 
 export interface Configs {
@@ -46,6 +56,7 @@ interface CoreBindings {
   GetChatDefaults(): Promise<ChatDefaults>
   SetChatDefaults(defaults: ChatDefaults): Promise<ChatDefaults>
   SetChatCompactionMode(id: string, mode: CompactionMode | null): Promise<ChatTask>
+  SetChatWebSearch(id: string, enabled: boolean): Promise<ChatTask>
   CompactChat(id: string): Promise<ChatTask>
   GetPendingCompaction(id: string): Promise<CompactionPrompt | null>
   SubmitCompactionDecision(id: string, requestId: string, compact: boolean): Promise<void>
@@ -284,7 +295,9 @@ export interface Persona {
 
 export interface ChatAttachment { id: string; name: string; mime: string; text?: string }
 export interface AttachmentUpload { name: string; data: string }
+export interface SearchReceipt { sources?: { url: string; title?: string }[] }
 export interface StoredChatMessage {
+  webSearch?: SearchReceipt
   attachments?: ChatAttachment[]
   tokens?: number
   role: string
@@ -296,6 +309,7 @@ export interface StoredChatMessage {
 }
 
 export interface ChatTask extends ChatSummary {
+  webSearchEnabled?: boolean
   compactionMode?: CompactionMode
   tree: ChatTree
   createdAt: string
@@ -563,6 +577,7 @@ export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c
 export const GetChatDefaults = () => bridge().then(c => c.GetChatDefaults())
 export const SetChatDefaults = (value: ChatDefaults) => bridge().then(c => c.SetChatDefaults(value))
 export const SetChatCompactionMode = (id: string, mode: CompactionMode | null) => bridge().then(c => c.SetChatCompactionMode(id, mode))
+export const SetChatWebSearch = (id: string, enabled: boolean) => bridge().then(c => c.SetChatWebSearch(id, enabled))
 export const CompactChat = (id: string) => bridge().then(c => c.CompactChat(id))
 export const GetPendingCompaction = (id: string) => bridge().then(c => c.GetPendingCompaction(id))
 export const SubmitCompactionDecision = (id: string, requestId: string, compact: boolean) => bridge().then(c => c.SubmitCompactionDecision(id, requestId, compact))
@@ -638,6 +653,7 @@ export function RegenerateChatMessage(id: string, nodeId: string, reasoningEffor
 
 // "chat:delta" 事件载荷:文本增量与思考增量分开携带(可同时)。
 export interface ChatDeltaEvent {
+  webSearch?: SearchReceipt | null
   chatId?: string
   nodeId?: string
   content?: string

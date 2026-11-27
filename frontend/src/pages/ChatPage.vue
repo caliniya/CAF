@@ -2,9 +2,10 @@
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { onChatGeneration, onChatDelta, onChatTool, onChatCompaction, ListToolSets, GetMemoryLibraryDetails, CreateMemoryEntry, UpdateMemoryEntry, DeleteMemoryEntry, type Persona, type PermissionLevel, type ToolKitDescriptor, type ToolSetDescriptor } from '../api'
-import { useChatStore, attachmentTypes } from '../stores/chat'
+import { useChatStore } from '../stores/chat'
+import ModelCapabilityBadges from '../components/ModelCapabilityBadges.vue'
 import { useConfigsStore } from '../stores/configs'
-import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Globe, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
@@ -687,9 +688,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   effortIndex.value = (effortIndex.value + 1) % effortSteps.length
 }
 
-const activeConfig = computed(
-  () => configs.configs.find((item) => item.ID === chat.session?.configId) ?? configs.enables,
-)
+const activeConfig = computed(() => chat.composerConfig)
 const activeModel = computed(() => chat.session?.model || activeConfig.value?.EnabledModel || '')
 const modelChange = ref<{ chatId: string; configId: string; model: string } | null>(null)
 const modelChanging = ref(false)
@@ -1061,6 +1060,11 @@ watch(
         <p v-if="missingReasoning(m, i)" class="reasoning-empty">
           {{ m.reasoningTokens ? '模型进行了思考，但未返回思考文本' : '模型未返回思考内容' }}
         </p>
+        <details v-if="m.webSearch?.sources?.length" class="search-sources">
+          <summary>已联网搜索 · {{ m.webSearch.sources.length }} 个来源</summary>
+          <ol><li v-for="source in m.webSearch.sources" :key="source.url"><a :href="source.url" target="_blank" rel="noopener noreferrer">{{ source.title || source.url }}</a></li></ol>
+        </details>
+        <p v-else-if="m.webSearch" class="search-sources">已联网搜索</p>
 
         <!-- 编辑中的用户消息 -->
         <template v-if="m.role === 'user' && m.nodeId && editingNodeId === m.nodeId">
@@ -1193,15 +1197,16 @@ watch(
         </div>
 
         <div class="composer" @drop="dropFiles" @dragover="dragFiles" @paste="pasteFiles">
-          <input ref="attachmentPicker" type="file" hidden multiple :accept="attachmentTypes" @change="chooseFiles" />
+          <input ref="attachmentPicker" type="file" hidden multiple :accept="chat.attachmentTypes" @change="chooseFiles" />
           <div v-if="chat.draftFiles?.length" class="draft-files" aria-label="待发送附件"><span v-for="(file, fi) in chat.draftFiles" :key="fi" class="draft-file">{{ file.name }}
             <button type="button" :disabled="chat.sending" :aria-label="'移除 ' + file.name" @click="chat.draftFiles.splice(fi, 1)">×</button></span></div>
+          <p v-if="chat.draftImageIssue && chat.draftImageIssue !== chat.error" class="draft-issue" role="status">{{ chat.draftImageIssue }}</p>
           <textarea v-model="chat.draft" class="composer-input" rows="1"
             placeholder="Enter 发送 · Shift+Enter / Ctrl+Shift+Enter 换行"
             @keydown="onComposerKeydown"></textarea>
 
           <div class="composer-bar">
-            <button type="button" class="bar-icon" title="添加图片或文本文件" aria-label="附件" :disabled="chat.sending" @click="attachmentPicker?.click()">
+            <button type="button" class="bar-icon" :title="chat.imageInputIssue ? '添加文本文件。' + chat.imageInputIssue : '添加图片或文本文件'" aria-label="附件" :disabled="chat.sending" @click="attachmentPicker?.click()">
               <Plus :size="16" :stroke-width="2" />
             </button>
 
@@ -1279,6 +1284,14 @@ watch(
                   <span class="menu-row-label">记忆设置</span>
                   <span class="menu-spacer"></span>
                   <span class="menu-value">{{ chat.enabledMemoryLibraryIds.length }} 个已启用</span>
+                </button>
+                <button type="button" class="menu-row" role="menuitemcheckbox" aria-label="启用联网搜索" :aria-checked="chat.webSearchActive"
+                  :disabled="chat.sending || chat.webSearchChanging || modelChanging || !chat.webSearchMode || chat.webSearchMode === 'always'"
+                  :title="chat.webSearchMode === 'always' ? '该供应商的这个模型自带联网，不能单独关闭。' : chat.webSearchMode ? '允许当前模型按需使用供应商的原生搜索。' : '当前模型没有可用的原生搜索接口。'"
+                  @click="chat.setWebSearch(!chat.webSearchActive)">
+                  <Globe class="row-icon" :size="16" :stroke-width="1.6" /><span class="menu-row-label">启用联网搜索</span><span class="menu-spacer"></span>
+                  <span class="menu-value">{{ chat.webSearchMode === 'always' ? '模型自带' : !chat.webSearchMode ? (chat.composerModel?.native_web_search ? '接口未适配' : '暂不可用') : chat.webSearchActive ? '已启用' : '已关闭' }}</span>
+                  <Check v-if="chat.webSearchActive" :size="14" />
                 </button>
                 <div class="menu-slot">
                   <button type="button" class="menu-row" role="menuitem" aria-haspopup="menu" aria-controls="chat-compaction-menu" :aria-expanded="settingsCompactionOpen" @click="toggleSettingsCompaction">
@@ -1380,7 +1393,7 @@ watch(
                     <button v-for="model in activeConfig?.Model ?? []" :key="model.id" type="button" class="menu-item"
                       :class="{ on: model.id === activeModel }" @click="selectModel(model.id)">
                       <span class="menu-item-name">{{ model.name || model.id }}</span>
-                      <span v-if="model.input_modalities?.includes('image')" class="tag">视觉</span>
+                      <ModelCapabilityBadges :model="model" />
               <Check v-if="model.id === activeModel" class="check" :size="14" :stroke-width="2" />
                     </button>
                     <span v-if="!activeConfig?.Model?.length" class="menu-empty">暂无模型</span>
@@ -1417,7 +1430,7 @@ watch(
             </div>
 
             <button v-if="chat.sending && chat.generationNode" type="button" class="send" aria-label="停止生成" :title="chat.stopping ? '正在停止…' : '停止生成'" :disabled="chat.stopping" @click="chat.stopGeneration()"><span aria-hidden="true" class="stop-icon"></span></button>
-            <button v-else type="button" class="send" :disabled="(!chat.draft.trim() && !chat.draftFiles?.length) || !!chat.compactionPrompt || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
+            <button v-else type="button" class="send" :disabled="(!chat.draft.trim() && !chat.draftFiles?.length) || !!chat.draftImageIssue || !!chat.compactionPrompt || chat.sending || chat.webSearchChanging || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>
@@ -2387,6 +2400,11 @@ watch(
 }
 .stop-icon { width: 11px; height: 11px; border-radius: 2px; background: currentColor; }
 .draft-files { display:flex; flex-wrap:wrap; gap:6px; padding:6px 10px 0; }
+.search-sources { margin: 4px 0 8px; font-size: 12px; color: var(--muted); }
+.search-sources summary { cursor: pointer; }
+.search-sources ol { padding-left: 22px; }
+.search-sources a { color: var(--accent); overflow-wrap: anywhere; }
+.draft-issue { margin: 5px 10px 0; color: var(--muted); font-size: 12px; }
 .draft-file,.file-name { display:inline-flex; align-items:center; gap:6px; max-width:100%; overflow-wrap:anywhere; border-radius:6px; padding:2px 7px; background:var(--tonal); color:var(--ink); font-size:12px; }
 .draft-file button { border:0; background:transparent; font:inherit; cursor:pointer; }
 .text-attachment pre { max-height:16em; overflow:auto; white-space:pre-wrap; } .text-attachment summary { cursor:pointer; }

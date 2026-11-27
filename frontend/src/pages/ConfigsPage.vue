@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useConfigsStore } from '../stores/configs'
 import ModelSelectionDialog from '../components/ModelSelectionDialog.vue'
+import ModelCapabilityBadges from '../components/ModelCapabilityBadges.vue'
 import { ProbeSavedModels, type Model } from '../api'
 
 const store = useConfigsStore()
@@ -23,6 +24,9 @@ const discovered = ref<Model[]>([])
 const selected = ref<string[]>([])
 const clearKey = ref(false)
 const pickerOpen = ref(false)
+const pickerSelection = ref<string[]>()
+const pickerModels = ref<Model[]>([])
+const pickerAddress = ref('')
 const confirmDelete = ref(false)
 
 const editing = computed(() => editingIndex.value >= 0)
@@ -37,6 +41,13 @@ watch([dialogOpen, editingIndex, () => store.configs[editingIndex.value]?.ID, sa
   pickerOpen.value = false
   probedServerAddress.value = ''
   probeMessage.value = ''
+}, { flush: 'sync' })
+// A different deployment or credential may expose different capabilities for the same ID.
+watch([() => form.value.serverAddress.trim(), () => form.value.apiKey, clearKey], () => {
+  if (dialogOpen.value && discovered.value.length) {
+    discovered.value = discovered.value.map(({ id }) => ({ id }))
+    probeMessage.value = '服务地址或密钥已更改，请重新探测模型能力。'
+  }
 }, { flush: 'sync' })
 const canSave = computed(
   () => !!form.value.name.trim() && !!form.value.serverAddress.trim() && selected.value.length > 0,
@@ -90,6 +101,7 @@ async function probe() {
   const revision = ++probeRevision
   probing.value = true
   probeMessage.value = ''
+  pickerSelection.value = undefined
   try {
     const address = form.value.serverAddress.trim()
     const index = editingIndex.value
@@ -99,13 +111,15 @@ async function probe() {
       : await store.probeModels(address, clearKey.value ? '' : entered)
     if (revision !== probeRevision) return
     const models = Array.isArray(result?.models) ? result.models : []
-    probedServerAddress.value = result?.serverAddress || form.value.serverAddress.trim()
-    discovered.value = models
+    pickerAddress.value = result?.serverAddress || form.value.serverAddress.trim()
+    const confirmed = new Set(discovered.value.filter(m => m.vision_confirmed).map(m => m.id))
+    pickerModels.value = models.map(m => confirmed.has(m.id) && !m.input_modalities?.length ? { ...m, vision_confirmed: true } : m)
     pickerOpen.value = true
     if (!models.length) probeMessage.value = '接口没有返回模型，可在弹窗里手动添加。'
   } catch (err) {
     if (revision !== probeRevision) return
-    discovered.value = []
+    pickerModels.value = []
+    pickerAddress.value = ''
     pickerOpen.value = true
     probeMessage.value = `探测失败：${String(err)}`
   } finally {
@@ -114,10 +128,18 @@ async function probe() {
 }
 
 function acceptSelection(picked: Model[], available: Model[]) {
+  probedServerAddress.value = pickerAddress.value
   discovered.value = available
   selected.value = picked.map((model) => model.id)
   pickerOpen.value = false
   probeMessage.value = `已选择 ${picked.length} 个模型`
+}
+
+function editModels() {
+  pickerAddress.value = probedServerAddress.value
+  pickerModels.value = discovered.value
+  pickerSelection.value = [...selected.value]
+  pickerOpen.value = true
 }
 
 async function submit() {
@@ -258,6 +280,7 @@ function contextLabel(model: Model) {
               :class="{ on: model.id === activeConfig.EnabledModel, dim: !isInUse(activeIndex) }"
               @click="useModel(model.id)">
               <span class="model-name">{{ model.name || model.id }}</span>
+              <ModelCapabilityBadges :model="model" />
               <span v-if="contextLabel(model)" class="model-meta">{{ contextLabel(model) }}</span>
               <svg v-if="model.id === activeConfig.EnabledModel && isInUse(activeIndex)" class="check"
                 viewBox="0 0 24 24" aria-hidden="true">
@@ -316,6 +339,7 @@ function contextLabel(model: Model) {
                 :title="canProbe ? '' : '先填写 Base URL'" @click="probe">
                 {{ probing ? '探测中…' : '自动探测' }}
               </button>
+              <button type="button" class="btn btn-sm" :disabled="!canProbe || probing" @click="editModels">调整模型</button>
             </div>
           </div>
 
@@ -351,7 +375,7 @@ function contextLabel(model: Model) {
     </div>
   </Teleport>
 
-  <ModelSelectionDialog :open="pickerOpen" :models="discovered" @confirm="acceptSelection"
+  <ModelSelectionDialog :open="pickerOpen" :models="pickerModels" :initial-ids="pickerSelection" @confirm="acceptSelection"
     @cancel="pickerOpen = false" />
 </template>
 

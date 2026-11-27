@@ -203,8 +203,8 @@ func prepareUploads(files []AttachmentUpload, model api.Model) ([]pendingAttachm
 		var a api.Attachment
 		switch strings.ToLower(filepath.Ext(name)) {
 		case ".png", ".jpg", ".jpeg":
-			if !model.AllowsImages() {
-				return nil, errors.New("当前模型不支持图片输入，请切换视觉模型后发送")
+			if err := model.CheckImageInput(); err != nil {
+				return nil, err
 			}
 			img, err := validatedImage(name, b)
 			if err != nil {

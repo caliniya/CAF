@@ -578,7 +578,7 @@ func (c *Core) CompactChat(id string) (*chat.ChatTask, error) {
 	if err := c.chatExecutionClient(session, config); err != nil {
 		return nil, err
 	}
-	tools := c.enabledTools(session)
+	tools := c.enabledTools(session, config.Model[modelIndex])
 	run := &toolExecutionRun{core: c, session: session, generation: generation, directory: directory,
 		nodeID: path[len(path)-1].ID, context: toolContext, enabled: tools, strict: c.strictToolMode(session)}
 	prefix := chatExecutionPrefix(session, toolContext, memoryContext, nil, run.strict)

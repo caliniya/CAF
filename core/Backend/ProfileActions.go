@@ -15,6 +15,7 @@ var profileActions = map[string]reflect.Value{
 	"GetChatDefaults":                 reflect.ValueOf((*Core).GetChatDefaults),
 	"SetChatDefaults":                 reflect.ValueOf((*Core).SetChatDefaults),
 	"SetChatCompactionMode":           reflect.ValueOf((*Core).SetChatCompactionMode),
+	"SetChatWebSearch":                reflect.ValueOf((*Core).SetChatWebSearch),
 	"CompactChat":                     reflect.ValueOf((*Core).CompactChat),
 	"GetPendingCompaction":            reflect.ValueOf((*Core).GetPendingCompaction),
 	"SubmitCompactionDecision":        reflect.ValueOf((*Core).SubmitCompactionDecision),

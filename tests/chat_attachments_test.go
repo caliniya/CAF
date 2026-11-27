@@ -56,6 +56,7 @@ func imageParts(t *testing.T, r api.ChatCompletionsRequest) []string {
 }
 func TestDesktopImageInputsAndWorkspaceTool(t *testing.T) {
 	c, _ := approvalCore(t)
+	c.Configs.EnablesConfig.Model[0].InputModalities = []string{"text", "image"}
 	raw, encoded := imageFixture(t)
 	url := "data:image/png;base64," + encoded
 	work := t.TempDir()
@@ -70,6 +71,13 @@ func TestDesktopImageInputsAndWorkspaceTool(t *testing.T) {
 	var uploadedID string
 	responses := approvalModel(t, c,
 		func(req api.ChatCompletionsRequest) []api.ToolCall {
+			var hasReadImage bool
+			for _, tool := range req.Tools {
+				hasReadImage = hasReadImage || tool.Function.Name == "ReadImage"
+			}
+			if !hasReadImage {
+				t.Error("visual model was not offered ReadImage")
+			}
 			u := imageParts(t, req)
 			if len(u) != 1 || u[0] != url {
 				t.Error("direct input did not contain the real PNG")
@@ -122,6 +130,18 @@ func TestDesktopImageInputsAndWorkspaceTool(t *testing.T) {
 	if got != url {
 		t.Fatal("preview differs from sent bytes")
 	}
+	// Replaying a previous image must re-check the model, before saving a new branch.
+	c.Configs.EnablesConfig.Model[0].InputModalities = []string{"text"}
+	if err := c.EditChatMessage(task.ID, first.ID, "改写", "high"); err == nil || !strings.Contains(err.Error(), "不支持图片") {
+		t.Fatal("editing replayed an image to a text model", err)
+	}
+	if err := c.RegenerateChatMessage(task.ID, path[1].ID, "high"); err == nil || !strings.Contains(err.Error(), "不支持图片") {
+		t.Fatal("regenerating replayed an image to a text model", err)
+	}
+	if responses.Load() != 1 {
+		t.Fatal("blocked image replay reached provider")
+	}
+	c.Configs.EnablesConfig.Model[0].InputModalities = []string{"text", "image"}
 	checkOK(t, c.SendChatMessage(task.ID, "现在请看工作区图片和上一张图", "high"))
 	if responses.Load() != 3 {
 		t.Fatal("two tool reads should use one follow-up request")
@@ -183,10 +203,19 @@ func TestChatImageFailuresAndModelCapability(t *testing.T) {
 	send := func(name, b64 string) error {
 		return c.SendChatMessageWithAttachments(s.ID, "", "high", []backend.AttachmentUpload{{Name: name, Data: b64}})
 	}
-	if send("a.png", encoded) == nil {
+	if err := send("a.png", encoded); err == nil || !strings.Contains(err.Error(), "不支持图片") {
 		t.Fatal("text-only model accepted an image")
 	}
 	cfg.Model[0].InputModalities = nil
+	if err := send("a.png", encoded); err == nil || !strings.Contains(err.Error(), "尚未确认") {
+		t.Fatal("unconfirmed model accepted an image", err)
+	}
+	unchanged, err := c.GetChat(s.ID)
+	checkOK(t, err)
+	if path, err := unchanged.Tree.CurrentPath(); err != nil || len(path) != 0 || hits.Load() != 0 {
+		t.Fatal("blocked images changed the chat or contacted the provider")
+	}
+	cfg.Model[0].InputModalities = []string{"text", "image"}
 	for _, f := range [][2]string{{"broken.png", base64.StdEncoding.EncodeToString([]byte("not an image"))}, {"../bad.png", encoded}, {"bad.png", encoded[:len(encoded)/2]}, {"doc.pdf", encoded}} {
 		if send(f[0], f[1]) == nil {
 			t.Fatal("accepted an invalid file", f[0])
@@ -446,6 +475,7 @@ func TestStopBeforeFirstAnswerCanContinueAndRegenerate(t *testing.T) {
 
 func TestImageToolDeniedAndDirectInputIndependentOfKit(t *testing.T) {
 	c, _ := approvalCore(t)
+	c.Configs.EnablesConfig.Model[0].InputModalities = []string{"text", "image"}
 	s, e := c.CreateChat("", "", "", "")
 	checkOK(t, e)
 	_, b64 := imageFixture(t)

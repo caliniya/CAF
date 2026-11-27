@@ -10,6 +10,7 @@ import (
 type ChatCompletionAPI struct {
 	// 工具调用分片的聚合中间态(每流独立)
 	toolDrafts []ccToolCallDraft
+	searchMode NativeSearchMode
 }
 
 func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
@@ -30,23 +31,21 @@ func (api *ChatCompletionAPI) EncodeRequest(req ChatRequest) (string, error) {
 		body.Thinking = &CCThinkingConfig{Type: thinkingType}
 	}
 
+	for _, t := range req.Tools {
+		body.Tools = append(body.Tools, CCChatTool{Type: "function", Function: &CCFunctionSpec{
+			Name: t.Name, Description: t.Description, Parameters: t.Parameters,
+		}})
+	}
+	api.configureSearch(&body, req)
 	for _, m := range req.Messages {
+		if m.SearchConfigID != req.SearchConfigID {
+			m.ServerToolCalls = nil
+		}
 		// 中断时可能只收到了思考；保留在本地，协议要求 assistant 至少有正文或工具调用。
-		if m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) == 0 {
+		if m.Role == "assistant" && m.Content == "" && len(m.ToolCalls) == 0 && !(api.searchMode == SearchDeepSeek && len(m.ServerToolCalls) != 0) {
 			continue
 		}
 		body.Messages = append(body.Messages, api.toCCMessage(m))
-	}
-
-	for _, t := range req.Tools {
-		body.Tools = append(body.Tools, CCChatTool{
-			Type: "function",
-			Function: CCFunctionSpec{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  t.Parameters,
-			},
-		})
 	}
 
 	if req.MaxTokens > 0 {
@@ -88,6 +87,18 @@ func (api *ChatCompletionAPI) toCCMessage(m ChatMessage) CCChatMessage {
 	case "tool":
 		cc.ToolCallID = m.ToolCallID
 	case "assistant":
+		if api.searchMode == SearchDeepSeek && len(m.ServerToolCalls) > 0 {
+			cc.ServerToolCalls = m.ServerToolCalls
+			// The stream concatenates reasoning from all steps; the signed steps already contain their own reasoning.
+			var steps []searchStep
+			if cc.ReasoningContent != nil && json.Unmarshal(m.ServerToolCalls, &steps) == nil {
+				final := m.Reasoning
+				for _, step := range steps {
+					final = strings.TrimPrefix(final, step.Reasoning)
+				}
+				cc.ReasoningContent = &final
+			}
+		}
 		for _, tc := range m.ToolCalls {
 			cc.ToolCalls = append(cc.ToolCalls, CCToolCall{
 				ID:   tc.ID,
@@ -107,7 +118,10 @@ func (api *ChatCompletionAPI) toCCMessage(m ChatMessage) CCChatMessage {
 // 内部结构体简写为CC
 type ChatCompletionsRequest struct {
 	// Model 是模型 ID，必填；可用模型以账号可调用列表和文档为准。
-	Model string `json:"model"`
+	Model                  string `json:"model"`
+	EnableSearch           *bool  `json:"enable_search,omitempty"`
+	DisableSearch          *bool  `json:"disable_search,omitempty"`
+	EnableSearchClassifier bool   `json:"enable_search_classifier,omitempty"`
 
 	// Messages 是对话消息列表，必填且至少包含一条消息；按顺序传入 system、user、ksassistant 等消息。
 	Messages []CCChatMessage `json:"messages"`
@@ -181,6 +195,7 @@ type CCStreamOptions struct {
 
 // ChatMessage 表示对话中的一条消息，也可承载模型的工具调用或工具执行结果。
 type CCChatMessage struct {
+	ServerToolCalls json.RawMessage `json:"server_tool_calls,omitempty"`
 	// Role 表示消息角色，常见可用值为 "system"、"user"、"assistant"、"tool"。
 	// tool 角色用于回传工具执行结果；assistant 消息可包含 ToolCalls。
 	Role string `json:"role"`
@@ -201,13 +216,13 @@ type CCChatMessage struct {
 	ReasoningContent *string `json:"reasoning_content,omitempty"`
 }
 
-// ChatTool 声明模型可以调用的工具。目前 DeepSeek Chat Completions 支持 function 类型。
+// 函数工具需要 function 定义；原生搜索只有 type，由服务端执行。
 type CCChatTool struct {
-	// Type 工具类型，目前必须为 "function"。
+	// Type 是 function 或供应商声明的服务端工具类型。
 	Type string `json:"type"`
 
 	// Function 描述可供模型选择调用的函数。
-	Function CCFunctionSpec `json:"function"`
+	Function *CCFunctionSpec `json:"function,omitempty"`
 }
 
 // FunctionSpec 描述函数用途和参数 JSON Schema。它只提供调用说明，不会执行实际函数。
@@ -256,10 +271,15 @@ type CCNamedFunctionChoice struct {
 
 // ccStreamChunk 是 Chat Completions 流式响应的单个 JSON chunk。
 type ccStreamChunk struct {
-	Choices []struct {
+	Citations     json.RawMessage `json:"citations"`
+	SearchResults json.RawMessage `json:"search_results"`
+	SearchInfo    json.RawMessage `json:"search_info"`
+	Choices       []struct {
 		Delta struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
+			Annotations      json.RawMessage `json:"annotations"`
+			ServerToolCalls  json.RawMessage `json:"server_tool_calls"`
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
 			ToolCalls        []struct {
 				Index    int    `json:"index"`
 				ID       string `json:"id"`
@@ -310,6 +330,9 @@ func (api *ChatCompletionAPI) DecodeEvent(text string) ([]Delta, error) {
 	}
 
 	var deltas []Delta
+	if search := searchEvidence(api.searchMode, &chunk); search.WebSearch != nil || len(search.ServerToolCalls) != 0 {
+		deltas = append(deltas, search)
+	}
 	finished := false
 
 	for _, choice := range chunk.Choices {

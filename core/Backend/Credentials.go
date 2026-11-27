@@ -114,17 +114,27 @@ func (c *Core) providerKey(cfg *Config, address string) (string, error) {
 	return v.Value, nil
 }
 func (c *Core) providerOptions(cfg *Config, model string) (netclient.Options, error) {
+	opts := netclient.Options{ServerAddress: cfg.ServerAddress, Model: model}
 	if c.internal != nil {
-		opts, ok := c.internal.routes[credentials.ModelGrant{ConfigID: cfg.ID, ModelID: model}]
+		var ok bool
+		opts, ok = c.internal.routes[credentials.ModelGrant{ConfigID: cfg.ID, ModelID: model}]
 		if !ok {
 			return netclient.Options{}, errors.New("主用户未授权使用此模型，请重新选择模型")
 		}
-		return opts, nil
+	} else {
+		key, err := c.providerKey(cfg, opts.ServerAddress)
+		if err != nil {
+			return netclient.Options{}, err
+		}
+		opts.APIKey = key
 	}
-	opts := netclient.Options{ServerAddress: cfg.ServerAddress, Model: model}
-	key, err := c.providerKey(cfg, opts.ServerAddress)
-	opts.APIKey = key
-	return opts, err
+	for _, m := range cfg.Model {
+		if m.ID == model {
+			opts.SearchMode = netclient.ResolveModelCapabilities(opts.ServerAddress, m).NativeSearchMode
+			break
+		}
+	}
+	return opts, nil
 }
 
 func (c *Core) ProbeSavedModels(id, address string) (*ModelProbeResult, error) {

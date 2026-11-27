@@ -226,9 +226,6 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
 				}
-				if len(request.Tools) != len(agenttool.Tools)-1 {
-					t.Errorf("普通模式工具声明应排除申请工具：%d，期望 %d", len(request.Tools), len(agenttool.Tools)-1)
-				}
 				requestToolIDs := make(map[string]bool, len(request.Tools))
 				for _, tool := range request.Tools {
 					if requestToolIDs[tool.Function.Name] || agenttool.Tools[tool.Function.Name] == nil {
@@ -236,8 +233,11 @@ func TestChatToolUsesIDForRequestsAndNameForDisplay(t *testing.T) {
 					}
 					requestToolIDs[tool.Function.Name] = true
 				}
-				if !requestToolIDs["ReadFile"] {
-					t.Error("工具声明缺少 ReadFile")
+				for id := range agenttool.Tools {
+					want := id != agenttool.RequestToolExecutionID && id != agenttool.ReadImageID
+					if requestToolIDs[id] != want {
+						t.Errorf("未确认视觉的普通模型：工具 %s，已声明=%v，期望 %v", id, requestToolIDs[id], want)
+					}
 				}
 				if strings.Contains(string(data), "display_name") || strings.Contains(string(data), "display_type") || strings.Contains(string(data), "display_content") || strings.Contains(string(data), "tool_error") {
 					t.Error("展示字段不能发送给模型")
