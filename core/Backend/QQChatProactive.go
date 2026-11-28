@@ -128,7 +128,7 @@ func (r *qqChatRuntime) judgeProactive(groupKey string, job qqChatJob, decisionR
 		r.report(err)
 		return
 	}
-	request := api.ChatRequest{Model: job.config.Model, MaxTokens: 256, Thinking: "low", Messages: []api.ChatMessage{
+	request := api.ChatRequest{Model: job.config.Model, MaxTokens: 256, Thinking: "low", SkipWebSearch: true, Messages: []api.ChatMessage{
 		{Role: "system", Content: prompt + texts.QQProactiveDecision}, {Role: "user", Content: string(body)},
 	}}
 	var result strings.Builder

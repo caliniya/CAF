@@ -610,7 +610,9 @@ func (r *qqChatRuntime) generate(parent context.Context, record QQContextInfo, j
 			return false, nil
 		}
 	}
-	options.checkTool = qqToolCheck(job.mentioned)
+	if !job.mentioned {
+		options.checkTool = qqMemoryToolCheck()
+	}
 	options.askUser = func(callCtx context.Context, chatID, nodeID, callID string, question agenttool.UserQuestion) (string, error) {
 		return r.askUser(callCtx, job.commandName, job.message, question)
 	}

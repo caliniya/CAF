@@ -56,7 +56,7 @@ type Tool struct {
 // MaxTokens/Temperature 为零值时表示不发送该字段。
 type ChatRequest struct {
 	SearchConfigID string           `json:"-"`
-	WebSearch      bool             `json:"-"` // per-conversation permission; internal requests default to false
+	SkipWebSearch  bool             `json:"-"` // internal text tasks or turns that restrict tool execution
 	SearchMode     NativeSearchMode `json:"-"` // supplied by the resolved client route
 	Model          string           `json:"model"`
 	Messages       []ChatMessage    `json:"messages"`

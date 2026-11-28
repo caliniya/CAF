@@ -132,7 +132,7 @@ func (c *APIClient) StreamChat(
 
 	if resp.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		if resp.StatusCode == http.StatusBadRequest && req.SearchMode == apiImpl.SearchDeepSeek && req.WebSearch && len(req.Tools) > 0 {
+		if resp.StatusCode == http.StatusBadRequest && req.SearchMode == apiImpl.SearchDeepSeek && !req.SkipWebSearch && len(req.Tools) > 0 {
 			message := strings.ToLower(string(snippet))
 			if strings.Contains(message, "other tools cannot be used together with") && strings.Contains(message, "deepseek_web_search") {
 				return fmt.Errorf("%w：%s", ErrNativeSearchToolMix, snippet)

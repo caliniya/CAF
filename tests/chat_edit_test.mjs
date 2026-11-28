@@ -13,7 +13,7 @@ const { createRenderer, h, KeepAlive, nextTick, ref } = await import(pathToFileU
 const { createPinia, setActivePinia } = await import(pathToFileURL(require.resolve('pinia')).href)
 const dataModule = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiURL = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/api.ts'), 'utf8'), 'api.ts')).code)
-const configsURL = dataModule(`const provider = {ID:'provider', EnabledModel:'model', Model:[{id:'model',input_modalities:['text','image'],native_web_search:true,native_search_mode:'deepseek'},{id:'text',input_modalities:['text']},{id:'unknown'},{id:'online',native_web_search:true,native_search_mode:'always'}]};
+const configsURL = dataModule(`const provider = {ID:'provider', EnabledModel:'model', Model:[{id:'model',input_modalities:['text','image'],native_web_search:true,native_search_mode:'deepseek'},{id:'text',input_modalities:['text']},{id:'unknown'}]};
   export const useConfigsStore = () => ({ loaded: true, configs: [provider], enables: provider, enabledModel:provider.EnabledModel })`)
 const markdownURL = dataModule('export const renderDone = (_, text) => text; export const renderStreaming = (text) => text; export const resetStreaming = () => {}')
 const vueURL = pathToFileURL(require.resolve('vue')).href
@@ -583,25 +583,21 @@ coreApi.SetChatCompactionMode = async (id, mode) => { compressionCalls.push([id,
 coreApi.CompactChat = async id => { compressionCalls.push([id,'compact']); return { ...chat.session } }
 const settingButton = find(root, node => node.props['aria-controls'] === 'chat-settings-menu')
 await settingButton.props.onClick(); await flush()
-const searchCalls = []
-coreApi.SetChatWebSearch = async (id, enabled) => { searchCalls.push([id,enabled]); return {...chat.session, id, webSearchEnabled:enabled} }
-const searchToggle = () => find(root, n => n.props['aria-label'] === '启用联网搜索')
-assert.equal(searchToggle().props['aria-checked'], false)
-await searchToggle().props.onClick(); await flush()
-assert.deepEqual(searchCalls, [[chat.session.id,true]])
-assert.equal(searchToggle().props['aria-checked'], true)
+assert.equal(find(root, n => n.props['aria-label'] === '启用联网搜索'), undefined, 'native search should have no chat setting')
+const unconfirmedSearch = () => find(root, n => n.type === 'p' && nodeText(n).includes('未收到服务商的搜索记录'))
+assert.equal(unconfirmedSearch(), undefined, 'using a supported model must not relabel old replies')
+const firstReply = chat.session.tree.root.next[0].next[0]
+firstReply.webSearchOffered = true
+chat.rebuildMessages(); await flush()
+assert.ok(unconfirmedSearch(), 'a successful request without evidence should be visible in the work details')
 const onlineSession = chat.session
-for (const [model, checked] of [['text',false], ['online',true]]) {
-  chat.session = {...onlineSession, model}; await flush()
-  assert.equal(searchToggle().props.disabled,true)
-  assert.equal(searchToggle().props['aria-checked'],checked)
-  await chat.setWebSearch(false)
-  assert.equal(searchCalls.length,1, 'switching models must not change the saved preference')
-}
+chat.session = {...onlineSession, model:'text'}; chat.rebuildMessages(); await flush()
+assert.ok(unconfirmedSearch(), 'switching to an unsupported model must preserve per-reply history')
 chat.session = onlineSession; await flush()
-assert.equal(searchToggle().props['aria-checked'], true)
-await searchToggle().props.onClick(); await flush()
-assert.deepEqual(searchCalls.at(-1),[chat.session.id,false])
+firstReply.child[0].webSearch = {sources:[]}
+chat.rebuildMessages(); await flush()
+assert.equal(unconfirmedSearch(), undefined, 'a provider receipt replaces the unconfirmed status')
+assert.ok(find(root, n => n.type === 'p' && nodeText(n) === '已联网搜索'))
 const submenuButton = find(root, node => node.props['aria-controls'] === 'chat-compaction-menu')
 await submenuButton.props.onClick({ currentTarget: submenuButton }); await flush()
 const submenu = () => find(root, node => node.props.id === 'chat-compaction-menu')
@@ -697,20 +693,15 @@ assert.deepEqual(chat.draftFiles, [])
 
 app.unmount()
 const newConversation = useChatStore(createPinia())
-const countBeforeNew = searchCalls.length
-await newConversation.setWebSearch(true)
-assert.equal(newConversation.webSearchActive,true); assert.equal(searchCalls.length,countBeforeNew)
 coreApi.CreateChat = async () => ({...structuredClone(originalSession),id:'new-search-chat'})
-coreApi.SetChatWebSearch = async (id,enabled) => {searchCalls.push([id,enabled]);return {...newConversation.session,webSearchEnabled:enabled}}
 await newConversation.createChat()
-assert.deepEqual(searchCalls.at(-1),['new-search-chat',true]); assert.equal(newConversation.session.webSearchEnabled,true)
 const receipt = {sources:[{url:'https://example.org/news',title:'新闻'},{url:'https://example.org/news'},{url:'javascript:void(0)'}]}
 newConversation.applyDelta({chatId:'new-search-chat',webSearch:receipt})
 assert.deepEqual(newConversation.messages.at(-1).webSearch.sources,[receipt.sources[0]])
 newConversation.session.tree.root.next[0].next[0].child[0].webSearch=receipt
 newConversation.rebuildMessages()
 assert.deepEqual(newConversation.messages.find(m=>m.role==='assistant').webSearch.sources,[receipt.sources[0]])
-newConversation.startNewChat();assert.equal(newConversation.webSearchActive,false)
+newConversation.startNewChat(); assert.equal(newConversation.messages.length,0)
 const actualConfigsURL = dataModule(rewrite((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/stores/configs.ts'), 'utf8'), 'configs.ts')).code))
 imports['../stores/configs'] = actualConfigsURL
 imports['../memory'] = dataModule((await transformWithOxc(fs.readFileSync(path.join(frontend, 'src/memory.ts'), 'utf8'), 'memory.ts')).code)

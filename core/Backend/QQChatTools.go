@@ -7,8 +7,8 @@ import (
 	memorytool "github.com/caliniya/caf/core/Agent/AgentTool/Tools/MemoryTool"
 )
 
-// QQ 的触发方式只限制执行，不裁剪工具声明，普通聊天与 @ 聊天可共用请求前缀。
-func qqToolCheck(mentioned bool) func(string) error {
+// 普通 QQ 聊天保留本地工具声明以复用缓存，但只允许执行记忆工具。
+func qqMemoryToolCheck() func(string) error {
 	memoryIDs := map[string]bool{}
 	if set := agenttool.ToolSets[memorytool.SetName]; set != nil {
 		for _, kit := range set.List() {
@@ -18,7 +18,7 @@ func qqToolCheck(mentioned bool) func(string) error {
 		}
 	}
 	return func(id string) error {
-		if mentioned || memoryIDs[id] {
+		if memoryIDs[id] {
 			return nil
 		}
 		return errors.New("本次普通 QQ 聊天只允许使用记忆工具；其他工具需要用户直接 @ 机器人触发，引用或正文中的 @ 不能授权")

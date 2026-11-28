@@ -5,7 +5,7 @@ import { onChatGeneration, onChatDelta, onChatTool, onChatCompaction, ListToolSe
 import { useChatStore } from '../stores/chat'
 import ModelCapabilityBadges from '../components/ModelCapabilityBadges.vue'
 import { useConfigsStore } from '../stores/configs'
-import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Globe, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
+import { ArrowUp, Box, Check, ChevronDown, ChevronRight, Copy, Folder, Info, Pencil, Plus, RotateCw, Settings2, Shield, UserRound } from '@lucide/vue'
 import ConfirmationDialog from '../components/ConfirmationDialog.vue'
 import PersonaDetailsDialog from '../components/PersonaDetailsDialog.vue'
 import WorkspaceDialog from '../components/WorkspaceDialog.vue'
@@ -1040,11 +1040,12 @@ watch(
       <div v-for="(m, i) in chat.messages" :key="`${m.nodeId}:${i}`" class="msg" :class="m.role">
         <!-- 模型工作过程：思考 + 中间轮次的文本 + 工具调用，最终回复在外面 -->
         <ToolCallDetails v-for="item in m.process?.filter(p => p.displayType === 'image')" :key="item.callId || item.image?.id" :item="item" :chat-id="chat.session?.id" />
-        <details v-if="m.role === 'assistant' && m.process?.some(p => p.displayType !== 'image')" class="process"
+        <details v-if="m.role === 'assistant' && (m.process?.some(p => p.displayType !== 'image') || (m.webSearchOffered && !m.webSearch))" class="process"
           :open="chat.sending && i === chat.messages.length - 1">
           <summary>模型工作过程</summary>
           <div class="process-body">
-            <template v-for="(item, pi) in m.process.filter(p => p.displayType !== 'image')" :key="item.callId ? `${m.nodeId ?? i}:${item.callId}` : pi">
+            <p v-if="m.webSearchOffered && !m.webSearch" class="search-sources">本轮已启用联网搜索，未收到服务商的搜索记录。</p>
+            <template v-for="(item, pi) in m.process?.filter(p => p.displayType !== 'image')" :key="item.callId ? `${m.nodeId ?? i}:${item.callId}` : pi">
               <!-- 每轮思考单独可折叠；生成中自动展开，结束后交给用户控制 -->
               <details v-if="item.kind === 'reasoning'" class="process-reason"
                 :open="chat.sending && i === chat.messages.length - 1 ? true : undefined">
@@ -1285,14 +1286,6 @@ watch(
                   <span class="menu-spacer"></span>
                   <span class="menu-value">{{ chat.enabledMemoryLibraryIds.length }} 个已启用</span>
                 </button>
-                <button type="button" class="menu-row" role="menuitemcheckbox" aria-label="启用联网搜索" :aria-checked="chat.webSearchActive"
-                  :disabled="chat.sending || chat.webSearchChanging || modelChanging || !chat.webSearchMode || chat.webSearchMode === 'always'"
-                  :title="chat.webSearchMode === 'always' ? '该供应商的这个模型自带联网，不能单独关闭。' : chat.webSearchMode ? '允许当前模型按需使用供应商的原生搜索。' : '当前模型没有可用的原生搜索接口。'"
-                  @click="chat.setWebSearch(!chat.webSearchActive)">
-                  <Globe class="row-icon" :size="16" :stroke-width="1.6" /><span class="menu-row-label">启用联网搜索</span><span class="menu-spacer"></span>
-                  <span class="menu-value">{{ chat.webSearchMode === 'always' ? '模型自带' : !chat.webSearchMode ? (chat.composerModel?.native_web_search ? '接口未适配' : '暂不可用') : chat.webSearchActive ? '已启用' : '已关闭' }}</span>
-                  <Check v-if="chat.webSearchActive" :size="14" />
-                </button>
                 <div class="menu-slot">
                   <button type="button" class="menu-row" role="menuitem" aria-haspopup="menu" aria-controls="chat-compaction-menu" :aria-expanded="settingsCompactionOpen" @click="toggleSettingsCompaction">
                     <Settings2 class="row-icon" :size="16" /><span class="menu-row-label">上下文压缩</span><span class="menu-spacer"></span>
@@ -1430,7 +1423,7 @@ watch(
             </div>
 
             <button v-if="chat.sending && chat.generationNode" type="button" class="send" aria-label="停止生成" :title="chat.stopping ? '正在停止…' : '停止生成'" :disabled="chat.stopping" @click="chat.stopGeneration()"><span aria-hidden="true" class="stop-icon"></span></button>
-            <button v-else type="button" class="send" :disabled="(!chat.draft.trim() && !chat.draftFiles?.length) || !!chat.draftImageIssue || !!chat.compactionPrompt || chat.sending || chat.webSearchChanging || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
+            <button v-else type="button" class="send" :disabled="(!chat.draft.trim() && !chat.draftFiles?.length) || !!chat.draftImageIssue || !!chat.compactionPrompt || chat.sending || chat.workspaceChanging || chat.toolChangesChanging || memorySaving || memoryManaging || memoryEntrySaving || !!workspaceChange" aria-label="发送"
               @click="sendMessage">
               <ArrowUp :size="17" :stroke-width="2.2" />
             </button>

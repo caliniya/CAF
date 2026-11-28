@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import {
   CreateChat, CompactChat, SetChatCompactionMode, SubmitCompactionDecision, GetPendingCompaction,
-  SetChatWebSearch, type SearchReceipt,
+  type SearchReceipt,
   builtInCompaction, type CompactionMode, type CompactionPrompt, type ChatTreeNode,
   CreateMemoryLibrary,
   CreateWorkspace,
@@ -51,7 +51,6 @@ import { useConfigsStore } from './configs'
 let openChatRequest = 0
 let contextWindowRequestId = 0
 let compactionUpdates: Promise<void> = Promise.resolve()
-let webSearchUpdate: Promise<void> = Promise.resolve()
 let effortUpdates: Promise<void> = Promise.resolve()
 let toolConfigUpdates: Promise<void> = Promise.resolve()
 let memorySettingsUpdates: Promise<void> = Promise.resolve()
@@ -115,6 +114,7 @@ export interface ProcessItem {
 }
 
 export interface ChatMessage {
+  webSearchOffered?: boolean
   webSearch?: SearchReceipt
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -149,8 +149,6 @@ export const useChatStore = defineStore('chat', {
     pendingToolConfig: null as ChatToolConfig | null,
     pendingMemoryLibraryIds: null as string[] | null,
     pendingCompactionMode: null as CompactionMode | null,
-    pendingWebSearch: false,
-    webSearchChanging: false,
     compactionChanging: false,
     compactionPrompts: {} as Record<string, CompactionPrompt>,
     answeringCompaction: false,
@@ -177,12 +175,6 @@ export const useChatStore = defineStore('chat', {
       const config = this.composerConfig
       const id = this.session ? this.session.model : config?.EnabledModel
       return config?.Model?.find(m => m.id === id)
-    },
-    webSearchMode(): Model['native_search_mode'] {
-      return this.composerModel?.native_web_search === true ? this.composerModel.native_search_mode : undefined
-    },
-    webSearchActive(): boolean {
-      return this.webSearchMode === 'always' || (!!this.webSearchMode && (this.session ? !!this.session.webSearchEnabled : this.pendingWebSearch))
     },
     imageInputIssue(): string {
       switch (imageInputState(this.composerModel)) {
@@ -344,7 +336,6 @@ export const useChatStore = defineStore('chat', {
       // 新建对话回到默认档位，不再沿用上一个对话的设置
       this.effort = 'high'
       this.pendingCompactionMode = null
-      this.pendingWebSearch = false
       this.compactionStatus = ''
       this.pendingMemoryLibraryIds = null
     },
@@ -355,16 +346,6 @@ export const useChatStore = defineStore('chat', {
       this.effort = saved === 'none' || saved === 'low' || saved === 'high' || saved === 'max'
         ? saved
         : 'high'
-    },
-    async setWebSearch(enabled: boolean) {
-      if (this.sending || this.webSearchChanging || !this.webSearchMode || this.webSearchMode === 'always') return
-      const id = this.session?.id
-      if (!id) { this.pendingWebSearch = enabled; return }
-      this.webSearchChanging = true
-      webSearchUpdate = SetChatWebSearch(id, enabled).then(saved => {
-        if (this.session?.id === id) this.session.webSearchEnabled = saved.webSearchEnabled
-      }).catch(err => { if (this.session?.id === id) this.error = String(err) })
-      try { await webSearchUpdate } finally { this.webSearchChanging = false }
     },
     async setCompactionMode(mode: CompactionMode | null) {
       if (this.sending || this.compactionChanging) return
@@ -541,7 +522,7 @@ export const useChatStore = defineStore('chat', {
       const text = this.draft.trim()
       const view = openChatRequest
       const files = [...this.draftFiles], startingChat = this.session?.id
-      if ((!text && !files.length) || this.compactionPrompt || this.sending || this.webSearchChanging || this.workspaceChanging || this.toolChangesChanging) return
+      if ((!text && !files.length) || this.compactionPrompt || this.sending || this.workspaceChanging || this.toolChangesChanging) return
       if (this.draftImageIssue) { this.error = this.draftImageIssue; return }
       const effort = this.effort
       let sentTo = '', previousLastUser: string | undefined
@@ -638,6 +619,7 @@ export const useChatStore = defineStore('chat', {
           this.messages.push({
             role: 'assistant',
             content: final.content ?? '',
+            webSearchOffered: node.webSearchOffered,
             webSearch: assistantChildren.reduce<SearchReceipt | undefined>((seen, m) => mergeWebSearch(seen, m.webSearch), undefined),
             process: process.length ? process : undefined,
             stopped: node.stopped, reasoningEffort: node.reasoningEffort,
@@ -806,7 +788,7 @@ export const useChatStore = defineStore('chat', {
     },
     async createChat(effort?: 'none' | 'low' | 'high' | 'max') {
       effort ??= this.effort
-      const view = openChatRequest, search = this.pendingWebSearch
+      const view = openChatRequest
       const configs = useConfigsStore()
       const session = await CreateChat(
         configs.enables?.ID ?? '',
@@ -817,12 +799,6 @@ export const useChatStore = defineStore('chat', {
       if (view !== openChatRequest) return
       this.session = session
       this.rebuildMessages()
-      if (search) {
-        const saved = await SetChatWebSearch(session.id, true)
-        if (view !== openChatRequest || this.session?.id !== session.id) return
-        this.session.webSearchEnabled = saved.webSearchEnabled
-        this.pendingWebSearch = false
-      }
       if (this.pendingWorkspaceId) {
         this.session = await SetChatWorkspace(session.id, this.pendingWorkspaceId)
       }
@@ -851,7 +827,7 @@ export const useChatStore = defineStore('chat', {
       const request = ++openChatRequest
       this.compactionStatus = ''
       this.error = ''
-      await Promise.all([webSearchUpdate, compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
+      await Promise.all([compactionUpdates, toolConfigUpdates, memorySettingsUpdates])
       const [session, prompt] = await Promise.all([GetChat(id), GetPendingCompaction(id)])
       if (request !== openChatRequest) return
       if (this.session?.id !== id) this.draftFiles = []
@@ -913,7 +889,6 @@ export const useChatStore = defineStore('chat', {
     async updateModel(configId: string, model: string) {
       if (!this.session) return
       const id = this.session.id
-      await webSearchUpdate
       const saved = await UpdateChatModel(id, configId, model)
       if (this.session?.id !== id) return
       this.session = saved
@@ -923,7 +898,7 @@ export const useChatStore = defineStore('chat', {
     },
     // 编辑用户消息：后端在该节点的父节点下挂新分支并重新生成，原分支保留
     async editMessage(message: ChatMessage, text: string) {
-      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending || this.webSearchChanging || this.toolChangesChanging) return
+      if (!this.session || !message.nodeId || message.role !== 'user' || this.sending || this.toolChangesChanging) return
       text = text.trim()
       if (!text || text === message.content) return
       const index = this.messages.indexOf(message)
@@ -949,12 +924,13 @@ export const useChatStore = defineStore('chat', {
       }
     },
     async regenerate(message: ChatMessage) {
-      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending || this.webSearchChanging || this.toolChangesChanging) return
+      if (!this.session || !message.nodeId || message.role !== 'assistant' || this.sending || this.toolChangesChanging) return
       const index = this.messages.indexOf(message)
       this.messages = this.messages.slice(0, index + 1)
       const pending = this.messages[index]
       pending.content = ''; pending.stopped = false
       pending.process = []
+      pending.webSearchOffered = undefined
       pending.webSearch = undefined
       pending.reasoningEffort = this.effort
       pending.reasoningTokens = undefined

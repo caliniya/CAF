@@ -23,7 +23,7 @@ type chatExecutionOptions struct {
 	readMemory    func(context.Context, string, string) (string, error)
 	searchMemory  func(context.Context, string, []string) (string, error)
 	listMemories  func(context.Context, string) (string, error)
-	// 声明保持稳定，宿主可以按当前入口另外限制工具执行。
+	// 非空时检查本地工具；服务端执行的可选搜索无法由宿主拦截，因此这类请求不提供它。
 	checkTool func(string) error
 	save      func(*chat.ChatTask) error
 	// 每次模型请求完成后调用一次；nil 表示该请求没有上报用量。
@@ -97,7 +97,7 @@ func (c *Core) chatExecutionClient(session *chat.ChatTask, config *Config) error
 	return nil
 }
 
-func chatExecutionPrefix(session *chat.ChatTask, ctx *agenttool.ToolContext, memoryContext string, options *chatExecutionOptions, strict bool) []api.ChatMessage {
+func chatExecutionPrefix(session *chat.ChatTask, ctx *agenttool.ToolContext, memoryContext string, options *chatExecutionOptions, strict bool, search api.NativeSearchMode) []api.ChatMessage {
 	prefix := make([]api.ChatMessage, 0, 5)
 	if session.Tree != nil && session.Tree.Root != nil {
 		if prompt, err := persona.Resolve(session.Tree.Root.PersonaID).Prompt(); err == nil {
@@ -110,6 +110,13 @@ func chatExecutionPrefix(session *chat.ChatTask, ctx *agenttool.ToolContext, mem
 	}
 	if options != nil && options.systemPrompt != "" {
 		prefix = append(prefix, api.ChatMessage{Role: "system", Content: options.systemPrompt})
+	}
+	if search != "" && (options == nil || options.checkTool == nil) {
+		prompt := texts.ChatWebSearch
+		if search == api.SearchDeepSeek {
+			prompt += texts.ChatDeepSeekSearch
+		}
+		prefix = append(prefix, api.ChatMessage{Role: "system", Content: prompt})
 	}
 	return append(prefix, api.ChatMessage{Role: "system", Content: toolPolicyPrompt(strict, ctx, session.ToolConfig)})
 }

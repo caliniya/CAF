@@ -134,6 +134,7 @@ func compactionRequest(ctx context.Context, client *netclient.APIClient, request
 	var output strings.Builder
 	var usage *api.TokenUsage
 	called, oversized := false, false
+	request.SkipWebSearch = true // 总结和复核只使用给定的对话快照。
 	err := client.StreamChat(ctx, request, &api.ChatCompletionAPI{}, func(delta api.Delta) {
 		if output.Len()+len(delta.Content) > 1024*1024 {
 			oversized = true
@@ -581,7 +582,7 @@ func (c *Core) CompactChat(id string) (*chat.ChatTask, error) {
 	tools := c.enabledTools(session, config.Model[modelIndex])
 	run := &toolExecutionRun{core: c, session: session, generation: generation, directory: directory,
 		nodeID: path[len(path)-1].ID, context: toolContext, enabled: tools, strict: c.strictToolMode(session)}
-	prefix := chatExecutionPrefix(session, toolContext, memoryContext, nil, run.strict)
+	prefix := chatExecutionPrefix(session, toolContext, memoryContext, nil, run.strict, session.Client.Config.SearchMode)
 	if err := c.compactChatSnapshot(run, path[len(path)-1], config.Model[modelIndex], prefix); err != nil {
 		return nil, err
 	}

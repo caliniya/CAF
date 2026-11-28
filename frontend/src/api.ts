@@ -56,7 +56,6 @@ interface CoreBindings {
   GetChatDefaults(): Promise<ChatDefaults>
   SetChatDefaults(defaults: ChatDefaults): Promise<ChatDefaults>
   SetChatCompactionMode(id: string, mode: CompactionMode | null): Promise<ChatTask>
-  SetChatWebSearch(id: string, enabled: boolean): Promise<ChatTask>
   CompactChat(id: string): Promise<ChatTask>
   GetPendingCompaction(id: string): Promise<CompactionPrompt | null>
   SubmitCompactionDecision(id: string, requestId: string, compact: boolean): Promise<void>
@@ -249,6 +248,7 @@ export interface ChatTreeNode {
   next: ChatTreeNode[] | null
   stopped?: boolean
   inputImages?: ChatAttachment[]
+  webSearchOffered?: boolean
   child: StoredChatMessage[] | null
   usage?: TokenUsage
   reasoningEffort?: string
@@ -309,7 +309,6 @@ export interface StoredChatMessage {
 }
 
 export interface ChatTask extends ChatSummary {
-  webSearchEnabled?: boolean
   compactionMode?: CompactionMode
   tree: ChatTree
   createdAt: string
@@ -577,7 +576,6 @@ export function GetChat(id: string): Promise<ChatTask> { return bridge().then((c
 export const GetChatDefaults = () => bridge().then(c => c.GetChatDefaults())
 export const SetChatDefaults = (value: ChatDefaults) => bridge().then(c => c.SetChatDefaults(value))
 export const SetChatCompactionMode = (id: string, mode: CompactionMode | null) => bridge().then(c => c.SetChatCompactionMode(id, mode))
-export const SetChatWebSearch = (id: string, enabled: boolean) => bridge().then(c => c.SetChatWebSearch(id, enabled))
 export const CompactChat = (id: string) => bridge().then(c => c.CompactChat(id))
 export const GetPendingCompaction = (id: string) => bridge().then(c => c.GetPendingCompaction(id))
 export const SubmitCompactionDecision = (id: string, requestId: string, compact: boolean) => bridge().then(c => c.SubmitCompactionDecision(id, requestId, compact))

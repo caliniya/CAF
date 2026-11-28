@@ -20,6 +20,8 @@ type ChatNode struct {
 	Usage *apiImpl.TokenUsage `json:"usage,omitempty"`
 	// 记录生成该回复时的设置，后续更改会话设置不影响历史回复。
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// 本节点至少有一轮携带原生搜索能力的请求成功返回；是否真的搜过以服务商回执为准。
+	WebSearchOffered bool `json:"webSearchOffered,omitempty"`
 	// 只保存已执行的可撤回工具；分支切换时按逆序撤回、正序重放。
 	ToolOperations []agenttool.ToolOperation `json:"toolOperations,omitempty"`
 	// 非空表示这个节点执行了已通过检查的压缩；原消息和工具恢复记录继续保留。

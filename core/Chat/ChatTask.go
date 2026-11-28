@@ -15,12 +15,11 @@ type CompactionMode struct {
 }
 
 type ChatTask struct {
-	WebSearchEnabled bool            `json:"webSearchEnabled,omitempty"`
-	CompactionMode   *CompactionMode `json:"compactionMode,omitempty"`
-	ID               string          `json:"id"`
-	Title            string          `json:"title"`
-	ConfigID         string          `json:"configId"`
-	Model            string          `json:"model"`
+	CompactionMode *CompactionMode `json:"compactionMode,omitempty"`
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	ConfigID       string          `json:"configId"`
+	Model          string          `json:"model"`
 	// 桌面对话未关联外部工作区时留空，由宿主按对话 ID 解析专属内部目录。
 	WorkspaceID      string                    `json:"workspaceId,omitempty"`
 	ReasoningEffort  string                    `json:"reasoningEffort,omitempty"`

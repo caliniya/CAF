@@ -1456,7 +1456,7 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		tools = nil
 	}
 	request := &apiImpl.ChatRequest{Model: model.ID, Thinking: session.ReasoningEffort, Tools: tools,
-		WebSearch: session.WebSearchEnabled, SearchConfigID: session.ConfigID}
+		SearchConfigID: session.ConfigID, SkipWebSearch: options != nil && options.checkTool != nil}
 	toolRun := &toolExecutionRun{
 		core: c, vision: vision, approvals: approvals, session: session, generation: run,
 		directory: directory, nodeID: reply.ID, context: toolContext, enabled: tools,
@@ -1464,7 +1464,8 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		options: options,
 	}
 	// 压缩只影响请求历史；produced 始终完整保存本节点实际产出的消息。
-	prefix := chatExecutionPrefix(session, toolContext, memoryContext, options, toolRun.strict)
+	search := session.Client.Config.SearchMode.ForRequest(request.SkipWebSearch)
+	prefix := chatExecutionPrefix(session, toolContext, memoryContext, options, toolRun.strict, search)
 	policyIndex := len(prefix) - 1
 	produced := make([]apiImpl.ChatMessage, 0, 4)
 	reply.Child = produced
@@ -1551,9 +1552,12 @@ func (c *Core) runChatNode(id string, session *chat.ChatTask, config *Config, di
 		}
 		streamErr := session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, receive)
 		if errors.Is(streamErr, netclient.ErrNativeSearchToolMix) && ctx.Err() == nil {
-			// This request was rejected before inference. Keep the user's search choice and enforce the reduced tool list locally too.
+			// This request was rejected before inference. Retry with native search only and enforce the reduced tool list locally too.
 			request.Tools, toolRun.enabled = nil, nil
 			streamErr = session.Client.StreamChat(ctx, *request, &apiImpl.ChatCompletionAPI{}, receive)
+		}
+		if streamErr == nil && search != "" {
+			reply.WebSearchOffered = true
 		}
 		// 流可能多次上报用量快照，只记录最后一份；不持有 ChatServer.mu。
 		if options != nil && options.recordUsage != nil {

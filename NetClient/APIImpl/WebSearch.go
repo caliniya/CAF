@@ -16,6 +16,20 @@ const (
 	SearchAlwaysOn  NativeSearchMode = "always" // OpenRouter Sonar has no documented off switch
 )
 
+// ForRequest resolves the actual search offering. Ordinary chats use every supported route;
+// internal tasks can omit optional search, but some providers have no off switch.
+func (mode NativeSearchMode) ForRequest(skipWebSearch bool) NativeSearchMode {
+	switch mode {
+	case SearchAlwaysOn:
+		return mode
+	case SearchDeepSeek, SearchDashScope, SearchSonar:
+		if !skipWebSearch {
+			return mode
+		}
+	}
+	return ""
+}
+
 type SearchSource struct {
 	URL   string `json:"url"`
 	Title string `json:"title,omitempty"`
@@ -59,21 +73,19 @@ func (r *SearchReceipt) Merge(next *SearchReceipt) *SearchReceipt {
 }
 
 func (api *ChatCompletionAPI) configureSearch(body *ChatCompletionsRequest, req ChatRequest) {
-	api.searchMode = ""
-	if req.WebSearch || req.SearchMode == SearchAlwaysOn {
-		api.searchMode = req.SearchMode
-	}
+	api.searchMode = req.SearchMode.ForRequest(req.SkipWebSearch)
+	enabled := api.searchMode != ""
 	switch req.SearchMode {
 	case SearchDeepSeek:
-		if req.WebSearch {
+		if enabled {
 			body.Tools = append(body.Tools, CCChatTool{Type: "deepseek_web_search"})
 		}
 	case SearchDashScope:
-		body.EnableSearch = new(req.WebSearch)
+		body.EnableSearch = new(enabled)
 	case SearchSonar:
 		body.ReasoningEffort = "" // these are the non-reasoning Sonar models
-		body.DisableSearch = new(!req.WebSearch)
-		body.EnableSearchClassifier = req.WebSearch // let Sonar decide whether the question needs retrieval
+		body.DisableSearch = new(!enabled)
+		body.EnableSearchClassifier = enabled // let Sonar decide whether the question needs retrieval
 	case SearchAlwaysOn:
 		body.ReasoningEffort = ""
 		body.Tools = nil // these native-only Sonar routes do not accept function tools

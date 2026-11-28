@@ -124,21 +124,6 @@ func (c *Core) SetChatDefaults(value ChatDefaults) (ChatDefaults, error) {
 
 // mode 为 nil 时恢复继承；立即压缩是独立的一次性操作，不更改这里的选择。
 func (c *Core) SetChatCompactionMode(id string, mode *chat.CompactionMode) (*chat.ChatTask, error) {
-	return c.updateIdleChatSetting(id, "压缩设置", func(session *chat.ChatTask) {
-		if mode != nil {
-			copy := *mode
-			copy.Automatic = copy.Enabled && copy.Automatic
-			mode = &copy
-		}
-		session.CompactionMode = mode
-	})
-}
-
-func (c *Core) SetChatWebSearch(id string, enabled bool) (*chat.ChatTask, error) {
-	return c.updateIdleChatSetting(id, "联网搜索设置", func(session *chat.ChatTask) { session.WebSearchEnabled = enabled })
-}
-
-func (c *Core) updateIdleChatSetting(id, setting string, change func(*chat.ChatTask)) (*chat.ChatTask, error) {
 	server, err := c.Servers.Get[*ChatServer](ChatServerName)
 	if err != nil {
 		return nil, err
@@ -146,7 +131,7 @@ func (c *Core) updateIdleChatSetting(id, setting string, change func(*chat.ChatT
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	if server.sending[id] != nil {
-		return nil, errors.New("对话正在生成，暂时无法修改" + setting)
+		return nil, errors.New("对话正在生成，暂时无法修改压缩设置")
 	}
 	dir, err := c.chatDirectory()
 	if err != nil {
@@ -156,7 +141,12 @@ func (c *Core) updateIdleChatSetting(id, setting string, change func(*chat.ChatT
 	if err != nil {
 		return nil, err
 	}
-	change(session)
+	if mode != nil {
+		copy := *mode
+		copy.Automatic = copy.Enabled && copy.Automatic
+		mode = &copy
+	}
+	session.CompactionMode = mode
 	session.UpdatedAt = time.Now().UTC()
 	if err := c.saveChatLocked(dir, session); err != nil {
 		return nil, err
